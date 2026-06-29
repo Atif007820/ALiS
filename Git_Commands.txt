@@ -1,0 +1,121 @@
+GIT COMMANDS FOR PLAYWRIGHT FRAMEWORKS
+======================================
+
+Repo folder:
+C:\Users\mohd.jamal\Downloads\Playwright
+
+GitHub repo:
+https://github.com/Atif007820/ALiS
+
+
+1. GO TO PLAYWRIGHT FOLDER
+--------------------------
+cd C:\Users\mohd.jamal\Downloads\Playwright
+
+
+2. CHECK CURRENT GIT STATUS
+---------------------------
+git status
+
+
+3. GET LATEST CODE FROM GITHUB
+------------------------------
+git pull origin main
+
+
+4. SEE WHICH FILES CHANGED
+--------------------------
+git diff --name-only
+
+
+5. PUSH CHANGES FOR A PARTICULAR FRAMEWORK
+------------------------------------------
+Example: Conv_E2E framework
+
+git add tests/LNI/Conv_E2E
+git commit -m "Update Conv_E2E framework"
+git push origin main
+
+
+Example: ALiS User Registration framework
+
+git add tests/ALiS_UserRegistration
+git commit -m "Update ALiS user registration framework"
+git push origin main
+
+
+Example: ALiS Baseline framework
+
+git add tests/ALiS_Baseline
+git commit -m "Update ALiS baseline framework"
+git push origin main
+
+
+6. PUSH ALL CHANGES IN THE REPO
+-------------------------------
+Use this only when you want to push every changed file.
+
+git add .
+git commit -m "Update Playwright frameworks"
+git push origin main
+
+
+7. CHECK IF EVERYTHING IS PUSHED
+--------------------------------
+git status
+
+Expected clean output:
+Your branch is up to date with 'origin/main'.
+nothing to commit, working tree clean
+
+
+8. SHARE FRAMEWORK WITH TEAM
+----------------------------
+Share this GitHub repo link:
+https://github.com/Atif007820/ALiS
+
+Team members can clone using:
+
+git clone https://github.com/Atif007820/ALiS.git
+
+Then:
+
+cd ALiS
+npm install
+npx playwright install
+
+
+9. RUN CONV_E2E FRAMEWORK
+-------------------------
+TEST Commercial headed:
+npm run test --env=TEST --licenseType=COMMERCIAL --headed
+
+TEST Residential headed:
+npm run test --env=TEST --licenseType=RESIDENTIAL --headed
+
+PRE PROD Commercial headed:
+npm run test --env=PREPROD --licenseType=COMMERCIAL --headed
+
+PRE PROD Residential headed:
+npm run test --env=PREPROD --licenseType=RESIDENTIAL --headed
+
+PROD Residential headed:
+npm run test --env=PROD --licenseType=RESIDENTIAL --headed
+
+
+10. BEST PRACTICE BEFORE PUSHING
+--------------------------------
+Always pull latest code first:
+
+git pull origin main
+
+Run the framework you changed:
+
+npm run test --env=TEST --licenseType=RESIDENTIAL --headed
+
+Then push:
+
+git add tests/LNI/Conv_E2E
+git commit -m "Update Conv_E2E framework"
+git push origin main
+
