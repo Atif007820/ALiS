@@ -1,0 +1,142 @@
+Flow 3
+
+URL abbv - DPBH
+
+BU - Health Facilities
+
+BU abbv - HF
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "HF_25-06-2026_07:05:55 PM";
+  await page.goto("http://172.16.3.2/ALiSDPBH2TESTING11.4.38.08/Login.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+
+  await page.getByLabel('Business Unit').selectOption("HHF");
+  await page.getByLabel("Application Type").selectOption("NHF");
+  await expect(page.getByRole('link', { name: "Credential Type" })).toBeVisible();
+  const page1Promise = page.waitForEvent('popup');
+  await page.getByRole('link', { name: "Credential Type" }).click();
+  const page1 = await page1Promise;
+  await page1.getByRole('radio', { name: "BUSINESS THAT PROVIDES" }).check();
+  await page1.getByRole('checkbox', { name: "CLASS - A", exact: true }).check();
+  await page1.getByRole('link', { name: "OK", exact: true }).click();
+  await page.getByRole('textbox', { name: "Facility Name (DBA Name)" }).fill(entityName);
+  await page.getByRole('textbox', { name: "Registered Name with" }).fill(entityName);
+  await page.getByRole('textbox', { name: "NV Business ID" }).fill("NV94873155569");
+  await page.getByLabel("Ownership Type").selectOption("COR");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_ddlCounty").selectOption("LA");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_ddlCounty").selectOption("LA");
+  await page.getByRole('textbox', { name: "First Name" }).fill("Brian");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("Miller");
+  await page.getByRole('textbox', { name: "Email", exact: true }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByLabel("Role").selectOption("ADM");
+  await page.getByRole('textbox', { name: "Phone", exact: true }).fill("993-969-0015");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtContactPerson").fill("Brian Miller");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet1").fill("417 Main Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet2").fill("Suite 43");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtCity").fill("Dallas");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtZip").fill("77203-8958");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtPhone").fill("751-536-3094");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtFax").fill("144-930-5205");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet1").fill("417 Main Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet2").fill("Suite 43");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtCity").fill("Dallas");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtZip").fill("77203-8958");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtPhone").fill("751-536-3094");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtFax").fill("144-930-5205");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_ddlCounty").selectOption("LA");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_ddlCounty").selectOption("LA");
+  await page.getByRole('textbox', { name: "First Name" }).fill("Brian");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("Miller");
+  await page.getByRole('textbox', { name: "Email", exact: true }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByLabel("Role").selectOption("ADM");
+  await page.getByRole('textbox', { name: "Phone", exact: true }).fill("993-969-0015");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtContactPerson").fill("Brian Miller");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet1").fill("417 Main Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet2").fill("Suite 43");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtCity").fill("Dallas");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtZip").fill("77203-8958");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtPhone").fill("751-536-3094");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtFax").fill("144-930-5205");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet1").fill("417 Main Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet2").fill("Suite 43");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtCity").fill("Dallas");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtZip").fill("77203-8958");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtPhone").fill("751-536-3094");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtFax").fill("144-930-5205");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  // No actions configured.
+  await page.getByRole('link', { name: 'Save' }).or(page.getByRole('button', { name: 'Save' })).click();
+
+  // After saving, framework opens Modify and searches the created entity.
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Health Facilities" }).click();
+  await page.getByRole('textbox', { name: "Facility Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+
+  await page.getByText("Activity Log(s)").click();
+  await page.getByRole('link', { name: "Add" }).click();
+await expect(page.getByLabel("Action Code")).toBeVisible();
+await page.getByLabel("Action Code").selectOption("CHOWHHF");
+await page.locator(".angular-editor-textarea").fill("Test");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+  
+  
+  await page.getByText("Payment(s)").click();
+  await page.getByRole('link', { name: 'Add' }).click();
+  await page.getByRole('row', { name: 'Search Receipt Print Delete' }).getByRole('img').click();
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('link', { name: '/23/2026' }).click();
+  page.once('dialog', dialog => {
+    console.log(`Dialog message: ${dialog.message()}`);
+    dialog.dismiss().catch(() => {});
+  });
+  await page.getByRole('button', { name: 'Save' }).click();
+  
+  
+   await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'View' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Health Facilities" }).click();
+  await page.getByRole('textbox', { name: "Facility Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  // Current framework keeps this detail tab disabled for now: Owner(s)
+  // await page.getByText("Owner(s)").click();
+  // Current framework keeps this detail tab disabled for now: Additional Information
+  // await page.getByText("Additional Information").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Payment(s)").click();
+  await page.getByText("Invoice(s)").click();
+  
+  
+});

@@ -1,0 +1,86 @@
+Flow 1
+
+URL abbv - LNI
+
+BU - Conveyance Building Owner
+
+BU abbv - CONV_BO
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "BO_25-06-2026_07:05:55 PM";
+  await page.goto("http://172.16.3.2/ALiSWADLNI2TESTING11.4.38.08/LoginCMS.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+
+  await page.getByLabel('Business Unit').selectOption("CMS");
+  await page.getByRole('radio', { name: "Building Owner", exact: true }).check();
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('textbox', { name: "UBI #" }).fill("968-900-615");
+  await page.getByRole('textbox', { name: "First Name" }).fill("Andrew");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("Johnson");
+  await page.getByLabel("Role").selectOption("OWN");
+  await page.getByRole('textbox', { name: "Email" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#txtPhone").fill("093-413-6809");
+  await page.getByRole('textbox', { name: "Address" }).fill("225 Main Street");
+  await page.getByRole('textbox', { name: "Suite/Apt/Unit/etc." }).fill("Unit 70");
+  await page.getByRole('textbox', { name: "City" }).fill("Henderson");
+  await page.getByLabel("State/Province").selectOption("HI");
+  await page.getByRole('textbox', { name: "Zip" }).fill("58635-1172");
+  await page.getByRole('textbox', { name: "Primary Phone #", exact: true }).fill("276-899-7115");
+  await page.getByRole('textbox', { name: "Primary E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByRole('textbox', { name: "Alternate E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  // No actions configured.
+  // No actions configured.
+  await page.getByRole('link', { name: 'Save' }).or(page.getByRole('button', { name: 'Save' })).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Conveyance" }).click();
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Activity Log(s)").click();
+  await page.getByRole('link', { name: "Add", exact: true }).click();
+  await page.getByLabel("Action Code").selectOption("INR");
+  await page.getByRole('button', { name: "Save", exact: true }).click();
+  
+  await page.getByText("Payment(s)").click();
+  await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+
+
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'View' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Conveyance" }).click();
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Invoice(s)").click();
+  await page.getByText("Payment(s)").click();
+
+});
+
+

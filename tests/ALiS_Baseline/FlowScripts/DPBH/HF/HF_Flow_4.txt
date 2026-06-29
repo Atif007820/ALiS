@@ -1,0 +1,40 @@
+Flow 4
+
+URL abbv - DPBH
+
+BU - Health Facilities
+
+BU abbv - HF
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "HF_22-06-2026_09:48:35 AM";
+  await page.goto("http://172.16.3.2/ALiSDPBH2TESTING11.4.38.08/Login.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'View' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Health Facilities" }).click();
+  await page.getByRole('textbox', { name: "Facility Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  // Current framework keeps this detail tab disabled for now: Owner(s)
+  // await page.getByText("Owner(s)").click();
+  // Current framework keeps this detail tab disabled for now: Additional Information
+  // await page.getByText("Additional Information").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Payment(s)").click();
+  await page.getByText("Invoice(s)").click();
+
+});

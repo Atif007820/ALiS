@@ -1,0 +1,23 @@
+{
+  "defaultProject": "chromium",
+  "headless": true,
+  "fullyParallel": false,
+  "workers": 1,
+  "slowMo": 0,
+  "testTimeout": 1200000,
+  "defaultTimeout": 30000,
+  "navigationTimeout": 60000,
+  "actionTimeout": 20000,
+  "overlayTimeout": 3000,
+  "maximizeWindow": true,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "submitApplication": true,
+  "submitPayment": true,
+  "openHtmlReport": true,
+  "documentDirectory": "Documents",
+  "uploadComment": "Test12",
+  "userDataFile": "testData/lastRegisteredHmbUser.json"
+}

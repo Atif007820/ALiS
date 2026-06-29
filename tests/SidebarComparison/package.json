@@ -1,0 +1,19 @@
+{
+  "name": "sidebar-comparision",
+  "version": "1.0.0",
+  "description": "Playwright framework for comparing sidebar menu items between two environments.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:sidebar": "playwright test CompareSidebar.spec.js",
+    "test:chrome": "playwright test --project=chromium",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "list": "playwright test --list",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "exceljs": "^4.4.0"
+  }
+}

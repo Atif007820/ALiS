@@ -1,0 +1,163 @@
+LNI Conveyance E2E Playwright Framework - Commands
+==================================================
+
+Recommended run location:
+  C:\Users\mohd.jamal\Downloads\Playwright
+
+You can also run from:
+  C:\Users\mohd.jamal\Downloads\Playwright\tests\LNI\Conv_E2E
+
+When you run "npm run test", the framework runs both scripts in serial order:
+  01_RegisterUser.spec.js -> 02_LoginApply.spec.js
+
+
+Main Serial Flow Commands
+=========================
+
+npm run test
+npm run test --env=TEST --headed --project=chromium --repeat-each=2
+npm run test --env=PROD --project=chromium --repeat-each=2
+npm run test --env=PREPROD --headed --licenseType=COMMERCIAL
+npm run test --env PREPROD --headed --licenseType COMMERCIAL
+npm run test --env=PRE PROD --headed --licenseType=COMMERCIAL --parallel 3
+npm run test --env=PRE PROD --headed --licenseType RESIDENTIAL --parallel=3
+
+
+Environment Examples
+====================
+
+npm run test --env=TEST
+npm run test --env=PREPROD
+npm run test --env=PRE PROD
+npm run test --env=PROD
+npm run test --env=ALL
+npm run test --env=TEST,PROD,PREPROD
+
+
+License Type Examples
+=====================
+
+npm run test --licenseType=COMMERCIAL
+npm run test --licenseType=RESIDENTIAL
+npm run test --env=TEST --licenseType=COMMERCIAL
+npm run test --env=PRE PROD --licenseType RESIDENTIAL
+
+
+Browser / Headed Examples
+=========================
+
+npm run test --project=chromium
+npm run test --project=firefox
+npm run test --project="Microsoft Edge"
+npm run test --headed --project=chromium
+npm run test --debug --project=chromium
+
+
+Repeat / Parallel Examples
+==========================
+
+npm run test --repeat-each=2
+npm run test --env=TEST --repeat-each=2
+npm run test --env=PROD --project=chromium --repeat-each=2
+npm run test --env=PRE PROD --parallel 3
+npm run test --env=PRE PROD --parallel=3
+
+Note:
+  The full Register -> Apply flow is kept in serial order.
+  --parallel controls Playwright workers, but the default full flow still runs Script 1 and Script 2 together in one Playwright run so the HTML report includes both scripts.
+  The HTML report opens automatically after the selected run finishes.
+
+
+Standalone Script Commands
+==========================
+
+Run only Script 1 registration:
+  npm run test --spec=register --env=TEST --headed
+  npm run test --spec=01_RegisterUser.spec.js --env=PREPROD --project=chromium
+
+Run only Script 2 login/apply:
+  npm run test --spec=apply --env=TEST --headed
+  npm run test --spec=02_LoginApply.spec.js --env=PROD --project=chromium
+
+For standalone Script 2 credentials, edit:
+  tests\LNI\Conv_E2E\config\script2LoginCredentials.js
+
+If loginName/password are blank in that file, Script 2 uses the latest saved user:
+  tests\LNI\Conv_E2E\testData\userData.json
+
+
+Config Files
+============
+
+Main run defaults:
+  tests\LNI\Conv_E2E\config\runSettings.json
+
+Important values in runSettings.json:
+  environment
+  licenseType
+  defaultProject
+  workers
+  parallelWorkers
+  registrationLoginRetryLimit
+  headless
+  maximizeWindow
+  viewport
+
+Editable test data:
+  tests\LNI\Conv_E2E\config\editableData.js
+
+Standalone Script 2 credentials:
+  tests\LNI\Conv_E2E\config\script2LoginCredentials.js
+
+
+Login / Entity Name Format
+==========================
+
+Login names use this format in TEST, PRE PROD, and PROD:
+  Conv_CC_12
+  Conv_CC_123
+  Conv_CC_1234
+
+The first registration attempt uses 2 digits.
+If the login name is taken, retry attempts use 3 digits, then 4 digits, then 5 digits, and so on.
+The maximum number of attempts is controlled here:
+  runSettings.json -> registrationLoginRetryLimit
+
+Entity names use this format in TEST, PRE PROD, and PROD:
+  CONV_DD-MM-YYYY_HH:MM:SS AM/PM
+
+Example:
+  CONV_25-06-2026_09:54:12 AM
+
+
+Useful Existing Package Shortcuts
+=================================
+
+From tests\LNI\Conv_E2E:
+  npm run test
+  npm run test:headed
+  npm run test:list
+  npm run test:test
+  npm run test:preprod
+  npm run test:prod
+  npm run test:register
+  npm run test:apply
+npm run clean
+  npm run report
+
+From workspace root:
+  npm run test
+  npm run conv:e2e
+  npm run conv:e2e:headed
+  npm run conv:e2e:list
+
+
+Notes
+=====
+
+- "test" means run Script 1 then Script 2 in serial order.
+- The HTML report opens automatically after the selected run finishes.
+- Use npm run report only when you want to reopen the latest report manually.
+- Environment names are normalized, so PREPROD and PRE PROD both work.
+- PROD existing-owner UBI is configured in editableData.js.
+- Questions tab answers still avoid selecting Yes.

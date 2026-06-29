@@ -1,0 +1,81 @@
+Flow 1
+
+URL abbv - LNI
+
+BU - Conveyance Property Manager
+
+BU abbv - CONV_PM
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "PM_25-06-2026_07:05:55 PM";
+  await page.goto("http://172.16.3.2/ALiSWADLNI2TESTING11.4.38.08/LoginCMS.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+
+  await page.getByLabel('Business Unit').selectOption("CMS");
+  await page.getByRole('radio', { name: "Property Manager", exact: true }).check();
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('textbox', { name: "UBI #" }).fill("527-627-444");
+  await page.getByRole('textbox', { name: "First Name" }).fill("Anna");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("Martin");
+  await page.getByLabel("Role").selectOption("OWN");
+  await page.getByRole('textbox', { name: "Email" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#txtPhone").fill("688-092-9074");
+  await page.getByRole('textbox', { name: "Address" }).fill("154 State Street");
+  await page.getByRole('textbox', { name: "Suite/Apt/Unit/etc." }).fill("Apt 16");
+  await page.getByRole('textbox', { name: "City" }).fill("Henderson");
+  await page.getByLabel("State/Province").selectOption("NC");
+  await page.getByRole('textbox', { name: "Zip" }).fill("21426-5223");
+  await page.getByRole('textbox', { name: "Primary Phone #", exact: true }).fill("744-832-0689");
+  await page.getByRole('textbox', { name: "Primary E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByRole('textbox', { name: "Alternate E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  // No actions configured.
+  // No actions configured.
+  await page.getByRole('link', { name: 'Save' }).or(page.getByRole('button', { name: 'Save' })).click();
+
+  // After saving, framework opens Modify and searches the created entity.
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Conveyance" }).click();
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Invoice(s)").click();
+  await page.getByText("Payment(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_Baseline framework.
+
+// Activity Log(s)
+// Precondition name: CONV activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Activity Log
+// Precondition name: CONV activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.getByRole('button', { name: "Save", exact: true }).click();

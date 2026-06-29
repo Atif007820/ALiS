@@ -1,0 +1,22 @@
+{
+  "defaultEnvironment": "PROD",
+  "defaultSite": "ALL",
+  "defaultProduct": "ALL",
+  "defaultProject": "chromium",
+  "fullyParallel": true,
+  "workers": 3,
+  "parallelWorkers": 3,
+  "headless": true,
+  "slowMo": 0,
+  "maximizeWindow": true,
+  "viewport": null,
+  "openPlaywrightReport": true,
+  "openExcelReport": false,
+  "retryLimit": 8,
+  "profileRetryLimit": 5,
+  "validationRetryLimit": 3,
+  "includeSites": "ALL",
+  "includeProducts": "ALL",
+  "userDataDir": "testData",
+  "logLevel": "info"
+}

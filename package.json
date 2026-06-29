@@ -1,0 +1,39 @@
+{
+  "name": "mohd.jamal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node ./tests/LNI/Conv_E2E/scripts/run-env.mjs",
+    "register": "node ./tests/ALiS_UserRegistration/tools/register.js",
+    "register:list": "node ./tests/ALiS_UserRegistration/tools/register.js --list",
+    "register:headed": "node ./tests/ALiS_UserRegistration/tools/register.js --headed",
+    "register:chromium": "node ./tests/ALiS_UserRegistration/tools/register.js --project=chromium",
+    "register:firefox": "node ./tests/ALiS_UserRegistration/tools/register.js --project=firefox",
+    "register:edge": "node ./tests/ALiS_UserRegistration/tools/register.js --project=msedge",
+    "register:browsers": "npm --prefix ./tests/ALiS_UserRegistration run browsers:install",
+    "hls": "npm --prefix ./tests/ALiS_Baseline run hls --",
+    "hls:validate": "npm --prefix ./tests/ALiS_Baseline run validate",
+    "conv:e2e": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs",
+    "conv:e2e:headed": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs:headed",
+    "conv:e2e:list": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs:list"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.6.0",
+    "allure-commandline": "^2.41.0",
+    "allure-playwright": "^3.9.0"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.9.0",
+    "@xmldom/xmldom": "^0.8.13",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "pdfjs-dist": "^5.7.284"
+  }
+}

@@ -1,0 +1,98 @@
+HMB Framework Commands
+======================
+
+Framework Location
+------------------
+C:\Users\mohd.jamal\Downloads\Playwright\tests\HMB
+
+
+Setup
+-----
+npm install
+npm run browsers:install
+
+
+List Tests
+----------
+npm run hmb:list
+
+
+Run Register Only
+-----------------
+npm run hmb:register -- --project=chromium --headed
+
+
+Run Login Apply Using Last Registered User
+------------------------------------------
+npm run hmb:apply -- --project=chromium --headed
+
+This uses:
+  testData\lastRegisteredHmbUser.json
+
+
+Run Full E2E
+------------
+npm run hmb:e2e -- --project=chromium --headed
+
+This runs the two framework files in sequence:
+  1. tests\01_Register.spec.js
+  2. tests\02_LoginApply.spec.js
+
+Register creates a fresh HMB user and saves it. LoginApply uses the saved user,
+applies, uploads documents, submits, attempts payment, captures the transaction
+number when available, and prints annotations.
+
+
+Current Test Files
+------------------
+tests\01_Register.spec.js
+tests\02_LoginApply.spec.js
+
+
+Run All HMB Tests
+-----------------
+npm run hmb -- --project=chromium --headed
+
+
+Browser Options
+---------------
+Chromium:
+  npm run hmb:e2e -- --project=chromium --headed
+
+Firefox:
+  npm run hmb:e2e -- --project=firefox --headed
+
+Microsoft Edge:
+  npm run hmb:e2e -- --project=msedge --headed
+
+
+Config Files
+------------
+URLs and run behavior:
+  config\urls.js
+  config\runSettings.json
+
+Fixtures:
+  fixtures\hmb.fixture.js
+
+Hardcoded test data:
+  config\editableData.js
+
+Generated random data:
+  utils\randomData.js
+  utils\hmbDataFactory.js
+
+Last registered user:
+  testData\lastRegisteredHmbUser.json
+
+Upload documents:
+  Documents\*.doc
+  Documents\*.docx
+  Documents\*.pdf
+  Documents\*.rtf
+  Documents\*.txt
+
+Document upload behavior:
+  The framework randomly selects an upload file from the Documents folder for
+  every personnel and mandatory document upload. Add future upload samples to
+  Documents; no script change is needed.

@@ -1,0 +1,25 @@
+{
+  "name": "content-comparison",
+  "version": "2.0.0",
+  "description": "Playwright framework for comparing generated document content against a template.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:content": "playwright test CompareContent.spec.js",
+    "test:chrome": "playwright test --project=chromium",
+    "test:debug": "playwright test --debug",
+    "test:ci": "LOG_LEVEL=warn playwright test",
+    "list": "playwright test --list",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "exceljs": "^4.4.0"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.13",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "pdfjs-dist": "^5.7.284"
+  }
+}

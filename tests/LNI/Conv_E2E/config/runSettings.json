@@ -1,0 +1,18 @@
+{
+  "environment": "",
+  "licenseType": "",
+  "defaultProject": "chromium",
+  "workers": 3,
+  "parallelWorkers": 3,
+  "registrationLoginRetryLimit": 8,
+  "fullyParallel": false,
+  "testTimeoutMs": 600000,
+  "expectTimeoutMs": 100000,
+  "actionTimeoutMs": 30000,
+  "navigationTimeoutMs": 150000,
+  "slowFieldTimeoutMs": 30000,
+  "slowMo": 0,
+  "headless": true,
+  "maximizeWindow": true,
+  "viewport": null
+}

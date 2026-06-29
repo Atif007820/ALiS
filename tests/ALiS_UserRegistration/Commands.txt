@@ -1,0 +1,260 @@
+Run these from:
+cd C:\Users\mohd.jamal\Downloads\Playwright\tests\ALiS_UserRegistration
+
+Open the latest Playwright report:
+npm run report
+
+Registration Excel report is generated at:
+test-results\latest-registration-report.xlsx
+
+Common run-level Excel link used inside Playwright report:
+playwright-report\latest-registration-report.xlsx
+
+Do not use "npx playwright test report"; Playwright treats "report" as a test-file filter.
+
+============================================================
+ENVIRONMENT COMMANDS
+============================================================
+
+Default environment comes from config/runSettings.json:
+"defaultEnvironment": "TEST"
+
+Report auto-open flags in config/runSettings.json:
+"openPlaywrightReport": true
+"openExcelReport": true
+
+Run one environment:
+npm run register -- --env TEST --site ALL --product ALL
+npm run register -- --env PROD --site ALL --product ALL
+
+Environment shortcuts:
+npm run register:test -- --site NJ --product ALL
+npm run register:prod -- --site NVRCP --product RPM
+
+Run the same sites/products on two environments:
+npm run register -- --env TEST,PROD --site NJ --product CL,BB
+npm run register -- --env TEST,PROD --site NJ,NVRCP --product ALL --parallel 3
+
+Run different sites on different environments:
+npm run register -- --target TEST:NJ,PROD:NVRCP --product ALL --parallel 3
+npm run register -- --target TEST:DPBH,PROD:SAPTA --product ALL
+
+List without executing:
+npm run register:list -- --env PROD --site ALL --product ALL
+npm run register:list -- --env TEST,PROD --site NJ --product ALL
+npm run register:list -- --target TEST:NJ,PROD:NVRCP --product ALL
+
+Notes:
+- PROD has no CRANES URL, so PROD + CRANES is not generated.
+- PROD NJ uses version 11.3.24, so only CL and BB are generated.
+- TEST NJ uses version 11.4.38.05, so CL, BB, HMB, and ESF are generated.
+- Update environment URLs only in config/urls.js when a URL changes from .05 to .06.
+- Credentials are saved under testData\<ENVIRONMENT>\ to prevent TEST/PROD overwrite within the same run.
+
+============================================================
+NPM RUN REGISTER COMMANDS
+============================================================
+
+All combinations:
+npm run register -- --headed --project=chromium
+npm run register:parallel -- --project=chromium
+npm run register -- --parallel 3 --project=chromium
+
+All products for one site:
+npm run register -- --site NJ --headed --project=chromium
+npm run register -- --site DPBH --headed --project=chromium
+npm run register -- --site TXOCA --headed --project=chromium
+npm run register -- --site NVRCP --headed --project=chromium
+npm run register -- --site SAPTA --headed --project=chromium
+npm run register -- --site CONV --headed --project=chromium
+npm run register -- --site CRANES --headed --project=chromium
+
+Parallel examples:
+npm run register -- --site CONV --parallel 3 --project=chromium
+npm run register -- --site NJ --parallel 4 --project=chromium
+npm run register -- --site DPBH --product HF,DL,MTL --parallel 3 --project=chromium
+npm run register -- --site ALL --parallel 3 --project=chromium
+
+Short DPBH commands:
+npm run register:dpbh -- --headed --project=chromium
+npm run register:dpbh -- --product HF --headed --project=chromium
+npm run register:dpbh -- --product DL --headed --project=chromium
+npm run register:dpbh -- --product MTL --headed --project=chromium
+npm run register:dpbh -- --product MLL --headed --project=chromium
+npm run register:dpbh -- --product MEDLAB --headed --project=chromium
+npm run register:dpbh -- --product CCFL --headed --project=chromium
+npm run register:dpbh -- --product CCFD --headed --project=chromium
+npm run register:dpbh -- --product CBA --headed --project=chromium
+npm run register:dpbh -- --product TP --headed --project=chromium
+
+Short SAPTA commands:
+npm run register:sapta -- --headed --project=chromium
+npm run register:sapta -- --product SPC --headed --project=chromium
+npm run register:sapta -- --product STC --headed --project=chromium
+npm run register:sapta -- --product DC --headed --project=chromium
+
+NJ combinations:
+npm run register -- --site NJ --product CL --headed --project=chromium
+npm run register -- --site NJ --product BB --headed --project=chromium
+npm run register -- --site NJ --product HMB --headed --project=chromium
+npm run register -- --site NJ --product ESF --headed --project=chromium
+
+DPBH combinations:
+npm run register -- --site DPBH --product HF --headed --project=chromium
+npm run register -- --site DPBH --product DL --headed --project=chromium
+npm run register -- --site DPBH --product MTL --headed --project=chromium
+npm run register -- --site DPBH --product MLL --headed --project=chromium
+npm run register -- --site DPBH --product MEDLAB --headed --project=chromium
+npm run register -- --site DPBH --product CCFL --headed --project=chromium
+npm run register -- --site DPBH --product CCFD --headed --project=chromium
+npm run register -- --site DPBH --product CBA --headed --project=chromium
+npm run register -- --site DPBH --product TP --headed --project=chromium
+
+TXOCA combinations:
+npm run register -- --site TXOCA --product GRD --headed --project=chromium
+npm run register -- --site TXOCA --product CF --headed --project=chromium
+npm run register -- --site TXOCA --product CR --headed --project=chromium
+npm run register -- --site TXOCA --product CRF --headed --project=chromium
+npm run register -- --site TXOCA --product PS --headed --project=chromium
+npm run register -- --site TXOCA --product CI --headed --project=chromium
+npm run register -- --site TXOCA --product PROFESSIONAL_CG --headed --project=chromium
+npm run register -- --site TXOCA --product GP --headed --project=chromium
+
+NVRCP combinations:
+npm run register -- --site NVRCP --product RPM --headed --project=chromium
+npm run register -- --site NVRCP --product RPM_INS --headed --project=chromium
+npm run register -- --site NVRCP --product RM --headed --project=chromium
+npm run register -- --site NVRCP --product MAMMO --headed --project=chromium
+npm run register -- --site NVRCP --product MQSA --headed --project=chromium
+npm run register -- --site NVRCP --product PLR --headed --project=chromium
+npm run register -- --site NVRCP --product LL --headed --project=chromium
+npm run register -- --site NVRCP --product SL --headed --project=chromium
+npm run register -- --site NVRCP --product RTRI --headed --project=chromium
+npm run register -- --site NVRCP --product CTF --headed --project=chromium
+npm run register -- --site NVRCP --product RURAL --headed --project=chromium
+npm run register -- --site NVRCP --product CTOMO --headed --project=chromium
+npm run register -- --site NVRCP --product OUTSIDE --headed --project=chromium
+
+SAPTA combinations:
+npm run register -- --site SAPTA --product SPC --headed --project=chromium
+npm run register -- --site SAPTA --product STC --headed --project=chromium
+npm run register -- --site SAPTA --product DC --headed --project=chromium
+
+CONV combinations:
+npm run register -- --site CONV --product CC --headed --project=chromium
+npm run register -- --site CONV --product BO --headed --project=chromium
+npm run register -- --site CONV --product PM --headed --project=chromium
+
+CRANES combinations:
+npm run register -- --site CRANES --product CRN --headed --project=chromium
+
+Browser examples:
+npm run register -- --site NJ --product CL --headed --project=firefox
+npm run register -- --site NJ --product CL --headed --project=msedge
+
+List without running:
+npm run register:list
+npm run register:list -- --site CONV
+npm run register:list -- --site CONV --product CC
+npm run register:list -- --site CRANES
+npm run register:list -- --site CRANES --product CRN
+
+============================================================
+DIRECT NPX PLAYWRIGHT TEST COMMANDS
+============================================================
+
+Important:
+npx playwright test does not understand --site or --product.
+Use REGISTER_SITES and REGISTER_PRODUCTS environment variables.
+For Playwright grep commands in PowerShell, always quote tags like "@DPBH".
+
+Short DPBH grep commands:
+npx playwright test -c .\playwright.config.js --grep "@DPBH" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@HF" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@DL" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@MTL" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@MLL" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@MEDLAB" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@CCFL" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@CCFD" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@CBA" --headed --project=chromium
+npx playwright test -c .\playwright.config.js --grep "@DPBH.*@TP" --headed --project=chromium
+
+All combinations:
+$env:REGISTER_SITES='ALL'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='ALL'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --workers=3 --project=chromium
+
+All products for one site:
+$env:REGISTER_SITES='NJ'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='SAPTA'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='CONV'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='CRANES'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+NJ combinations:
+$env:REGISTER_SITES='NJ'; $env:REGISTER_PRODUCTS='CL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NJ'; $env:REGISTER_PRODUCTS='BB'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NJ'; $env:REGISTER_PRODUCTS='HMB'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NJ'; $env:REGISTER_PRODUCTS='ESF'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+DPBH combinations:
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='HF'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='DL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='MTL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='MLL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='MEDLAB'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='CCFL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='CCFD'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='CBA'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='DPBH'; $env:REGISTER_PRODUCTS='TP'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+TXOCA combinations:
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='GRD'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='CF'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='CR'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='CRF'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='PS'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='CI'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='PROFESSIONAL_CG'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='TXOCA'; $env:REGISTER_PRODUCTS='GP'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+NVRCP combinations:
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='RPM'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='RPM_INS'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='RM'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='MAMMO'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='MQSA'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='PLR'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='LL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='SL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='RTRI'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='CTF'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='RURAL'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='CTOMO'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='NVRCP'; $env:REGISTER_PRODUCTS='OUTSIDE'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+SAPTA combinations:
+$env:REGISTER_SITES='SAPTA'; $env:REGISTER_PRODUCTS='SPC'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='SAPTA'; $env:REGISTER_PRODUCTS='STC'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='SAPTA'; $env:REGISTER_PRODUCTS='DC'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+CONV combinations:
+$env:REGISTER_SITES='CONV'; $env:REGISTER_PRODUCTS='CC'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='CONV'; $env:REGISTER_PRODUCTS='BO'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+$env:REGISTER_SITES='CONV'; $env:REGISTER_PRODUCTS='PM'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+CRANES combinations:
+$env:REGISTER_SITES='CRANES'; $env:REGISTER_PRODUCTS='CRN'; npx playwright test -c .\playwright.config.js --headed --project=chromium
+
+Browser project examples:
+$env:REGISTER_SITES='NJ'; $env:REGISTER_PRODUCTS='CL'; npx playwright test -c .\playwright.config.js --headed --project=firefox
+$env:REGISTER_SITES='NJ'; $env:REGISTER_PRODUCTS='CL'; npx playwright test -c .\playwright.config.js --headed --project=msedge
+
+List without running:
+$env:REGISTER_SITES='ALL'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --project=chromium --list
+$env:REGISTER_SITES='CONV'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --project=chromium --list
+$env:REGISTER_SITES='CONV'; $env:REGISTER_PRODUCTS='CC'; npx playwright test -c .\playwright.config.js --project=chromium --list
+$env:REGISTER_SITES='CRANES'; $env:REGISTER_PRODUCTS='ALL'; npx playwright test -c .\playwright.config.js --project=chromium --list
+$env:REGISTER_SITES='CRANES'; $env:REGISTER_PRODUCTS='CRN'; npx playwright test -c .\playwright.config.js --project=chromium --list

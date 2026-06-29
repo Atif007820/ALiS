@@ -1,0 +1,37 @@
+{
+  "fullyParallel": false,
+  "workers": 1,
+  "timeoutMs": 600000,
+  "retries": 0,
+  "browser": {
+    "headless": false,
+    "slowMo": 0,
+    "maximizeWindow": true,
+    "viewport": null,
+    "ignoreHTTPSErrors": true
+  },
+  "reports": {
+    "openPlaywrightReport": true,
+    "outputDir": "test-results",
+    "playwrightReportDir": "playwright-report",
+    "jsonOutputFile": "test-results/results.json",
+    "latestExcelFile": "latest-report.xlsx",
+    "latestJsonFile": "latest-results.json",
+    "latestHtmlFile": "latest-report.html",
+    "attachExcel": true,
+    "attachHtml": true
+  },
+  "excel": {
+    "headerColor": "FF1F4E78",
+    "titleColor": "FF17365D",
+    "passColor": "FFC6EFCE",
+    "failColor": "FFFFC7CE",
+    "warnColor": "FFFFEB9C",
+    "zebraColor": "FFF7FAFC",
+    "borderColor": "FFD8DEE9"
+  },
+  "html": {
+    "title": "Content Comparison Report",
+    "subtitle": "Expected document and Actual document comparison"
+  }
+}

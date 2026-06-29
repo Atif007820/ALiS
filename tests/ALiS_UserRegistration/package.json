@@ -1,0 +1,30 @@
+{
+  "name": "alis-user-registration",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AllUserRegistration Playwright framework for ALiS registration flows.",
+  "type": "module",
+  "scripts": {
+    "register": "node ./tools/register.js",
+    "register:test": "node ./tools/register.js --env TEST",
+    "register:prod": "node ./tools/register.js --env PROD",
+    "register:list": "node ./tools/register.js --list",
+    "register:headed": "node ./tools/register.js --headed",
+    "register:parallel": "node ./tools/register.js --parallel",
+    "register:chromium": "node ./tools/register.js --project=chromium",
+    "register:firefox": "node ./tools/register.js --project=firefox",
+    "register:edge": "node ./tools/register.js --project=msedge",
+    "register:dpbh": "node ./tools/register.js --site DPBH",
+    "register:sapta": "node ./tools/register.js --site SAPTA",
+    "report": "playwright show-report playwright-report",
+    "browsers:install": "playwright install chromium firefox msedge"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.9.0",
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "allure-playwright": "^3.9.0"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "name": "lni-permit-playwright-framework",
+  "version": "2.0.0",
+  "description": "Reusable Playwright POM framework for LNI permit registration and application flows.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "setup": "npx playwright install",
+
+    "test":                 "node scripts/run-env.mjs",
+    "test:serial":          "node scripts/run-env.mjs -- --workers=1 --project=chromium",
+    "test:headed":          "node scripts/run-env.mjs -- --project=chromium --headed",
+    "test:debug":           "node scripts/run-env.mjs -- --project=chromium --debug",
+    "test:all":             "node scripts/run-env.mjs -- --project=chromium",
+    "test:list":            "node scripts/run-env.mjs -- --list",
+
+    "test:test":            "node scripts/run-env.mjs --env=TEST -- --workers=1 --project=chromium",
+    "test:test:parallel":   "node scripts/run-env.mjs --env=TEST -- --project=chromium",
+    "test:test:headed":     "node scripts/run-env.mjs --env=TEST -- --workers=1 --project=chromium --headed",
+
+    "test:preprod":         "node scripts/run-env.mjs --env=PREPROD -- --workers=1 --project=chromium",
+    "test:preprod:parallel": "node scripts/run-env.mjs --env=PREPROD -- --project=chromium",
+    "test:preprod:headed":  "node scripts/run-env.mjs --env=PREPROD -- --workers=1 --project=chromium --headed",
+
+    "test:prod":            "node scripts/run-env.mjs --env=PROD -- --workers=1 --project=chromium",
+    "test:prod:parallel":   "node scripts/run-env.mjs --env=PROD -- --project=chromium",
+    "test:prod:headed":     "node scripts/run-env.mjs --env=PROD -- --workers=1 --project=chromium --headed",
+
+    "test:all-envs":         "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --max-failures=1 --project=chromium",
+    "test:all-envs:headed":  "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --max-failures=1 --project=chromium --headed",
+    "test:all-envs:list":    "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --project=chromium --list",
+
+    "test:register":        "node scripts/run-env.mjs -- testScripts/01_RegisterUser.spec.js --workers=1 --project=chromium",
+    "test:apply":           "node scripts/run-env.mjs -- testScripts/02_LoginApply.spec.js --workers=1 --project=chromium",
+
+    "test:firefox":         "node scripts/run-env.mjs -- --workers=1 --project=firefox",
+    "test:edge":            "node scripts/run-env.mjs -- --workers=1 --project=\"Microsoft Edge\"",
+    "test:chrome":          "node scripts/run-env.mjs -- --workers=1 --project=chromium",
+
+    "report":               "playwright show-report",
+    "clean":                "node scripts/clean-results.mjs"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.9.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

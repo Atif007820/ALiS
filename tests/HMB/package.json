@@ -1,0 +1,25 @@
+{
+  "name": "hmb-playwright-framework",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reusable Playwright framework for NJ HMB register and login-apply flows.",
+  "type": "module",
+  "scripts": {
+    "hmb": "playwright test --config=playwright.config.js",
+    "test": "playwright test --config=playwright.config.js",
+    "hmb:list": "playwright test --config=playwright.config.js --list",
+    "hmb:register": "playwright test tests/01_Register.spec.js --config=playwright.config.js",
+    "hmb:apply": "playwright test tests/02_LoginApply.spec.js --config=playwright.config.js",
+    "hmb:e2e": "playwright test tests/01_Register.spec.js tests/02_LoginApply.spec.js --config=playwright.config.js --workers=1",
+    "hmb:headed": "playwright test --config=playwright.config.js --headed",
+    "hmb:e2e:headed": "playwright test tests/01_Register.spec.js tests/02_LoginApply.spec.js --config=playwright.config.js --workers=1 --headed",
+    "report": "playwright show-report playwright-report",
+    "browsers:install": "playwright install chromium firefox msedge"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.9.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

@@ -1,0 +1,56 @@
+Flow 2
+
+URL abbv - DPBH
+
+BU - Medical Laboratories
+
+BU abbv - ML
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "ML_22-06-2026_12:30:46 PM";
+  await page.goto("http://172.16.3.2/ALiSDPBH2TESTING11.4.38.08/Login.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Medical Laboratories" }).click();
+  await page.getByRole('textbox', { name: "Facility Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  // Current framework keeps this detail tab disabled for now: Owner(s)
+  // await page.getByText("Owner(s)").click();
+  // Current framework keeps this detail tab disabled for now: Additional Information
+  // await page.getByText("Additional Information").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Payment(s)").click();
+  await page.getByText("Invoice(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_Baseline framework.
+
+// Activity Log(s)
+// Precondition name: ML activity log row
+await page.getByRole('link', { name: "Add" }).click();
+await expect(page.getByLabel("Action Code")).toBeVisible();
+await page.getByLabel("Action Code").selectOption("IPNT");
+await page.locator(".angular-editor-textarea").fill("Test");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Payment(s)
+// Precondition name: ML payment row
+await page.getByRole('link', { name: "Add", exact: true }).click();

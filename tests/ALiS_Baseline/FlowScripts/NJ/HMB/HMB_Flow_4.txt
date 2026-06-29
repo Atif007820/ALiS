@@ -1,0 +1,35 @@
+Flow 4
+
+URL abbv - NJ
+
+BU - Human Milk Bank
+
+BU abbv - HMB
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "HMB_22-06-2026_08:28:51 AM";
+  await page.goto("http://172.16.3.2/ALiSNJDOH2TESTING11.4.38.08/LoginNJ.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'View' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Human Milk Bank" }).click();
+  await page.getByRole('textbox', { name: "Entity Name (Legal Name)" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Owner(s)").click();
+  await page.getByText("Personnel(s)").click();
+  await page.getByText("Additional Information").click();
+  await page.getByText("Activity Log(s)").click();
+
+});

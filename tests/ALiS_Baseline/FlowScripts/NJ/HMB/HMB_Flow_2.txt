@@ -1,0 +1,80 @@
+Flow 2
+
+URL abbv - NJ
+
+BU - Human Milk Bank
+
+BU abbv - HMB
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "HMB_22-06-2026_08:28:51 AM";
+  await page.goto("http://172.16.3.2/ALiSNJDOH2TESTING11.4.38.08/LoginNJ.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Human Milk Bank" }).click();
+  await page.getByRole('textbox', { name: "Entity Name (Legal Name)" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Owner(s)").click();
+  await page.getByText("Personnel(s)").click();
+  await page.getByText("Additional Information").click();
+  await page.getByText("Activity Log(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_Baseline framework.
+
+// Owner(s)
+// Precondition name: HMB owner row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByRole('textbox', { name: "Last Name" }).fill("Jamal");
+await page.getByRole('textbox', { name: "First Name" }).fill("Atif");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Personnel(s)
+// Precondition name: HMB personnel row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByRole('textbox', { name: "Last Name" }).fill("Jamal");
+await page.getByRole('textbox', { name: "First Name" }).fill("Atif");
+await page.getByRole('radio', { name: "HMB ADMINISTRATOR", exact: true }).check();
+await page.getByRole('textbox', { name: "Address" }).fill("ABC");
+await page.getByRole('textbox', { name: "City" }).fill("Newark");
+await page.getByRole('textbox', { name: "Zip" }).fill("23534-6456");
+await page.getByRole('textbox', { name: "Primary Phone #", exact: true }).fill("465-645-6546");
+await page.getByRole('textbox', { name: "Primary E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Additional Information
+// Precondition name: HMB additional information row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByRole('textbox', { name: "Name" }).fill("Atif");
+await page.getByRole('textbox', { name: "HMB Service(s) Performed" }).fill("HMB service");
+await page.getByRole('textbox', { name: "Address" }).fill("ABC");
+await page.getByRole('textbox', { name: "Zip" }).fill("34546-4564");
+await page.getByRole('textbox', { name: "City" }).fill("N");
+await page.getByRole('textbox', { name: "Primary Phone #", exact: true }).fill("365-465-6567");
+await page.getByRole('textbox', { name: "Primary E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Activity Log(s)
+// Precondition name: HMB activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.locator(".angular-editor-textarea").fill("Test");
+await page.getByRole('button', { name: "Save", exact: true }).click();

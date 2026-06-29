@@ -1,0 +1,76 @@
+Flow 2
+
+URL abbv - NJ
+
+BU - Blood Bank
+
+BU abbv - BB
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "BB_22-06-2026_08:25:17 AM";
+  await page.goto("http://172.16.3.2/ALiSNJDOH2TESTING11.4.38.08/LoginNJ.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Blood Bank" }).click();
+  await page.getByRole('textbox', { name: "Facility Name (Legal Name)" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Owner(s)").click();
+  await page.getByText("Personnel(s)").click();
+  await page.getByText("Additional Information").click();
+  await page.getByText("Activity Log(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_Baseline framework.
+
+// Owner(s)
+// Precondition name: BB owner row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByRole('textbox', { name: "Last Name" }).fill("Atif");
+await page.getByRole('textbox', { name: "First Name" }).fill("Jamal");
+await page.getByRole('checkbox', { name: "Owner" }).check();
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Personnel(s)
+// Precondition name: BB personnel row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByRole('textbox', { name: "Last Name" }).fill("Atif");
+await page.getByRole('textbox', { name: "First Name" }).fill("Jamal");
+await page.getByRole('checkbox', { name: "Blood Bank Director" }).check();
+await page.getByRole('row', { name: "Sunday -- Choose One --" }).getByLabel("Work Hours").selectOption("OCL");
+await page.getByRole('row', { name: "Monday -- Choose One --" }).getByLabel("Work Hours").selectOption("OCL");
+await page.getByRole('row', { name: "Tuesday -- Choose One --" }).getByLabel("Work Hours").selectOption("NAV");
+await page.getByRole('row', { name: "Wednesday -- Choose One --" }).getByLabel("Work Hours").selectOption("NAV");
+await page.getByRole('row', { name: "Thursday -- Choose One --" }).getByLabel("Work Hours").selectOption("OCL");
+await page.getByRole('row', { name: "Friday -- Choose One --" }).getByLabel("Work Hours").selectOption("OCL");
+await page.locator("#ddlEventHours_0_6").selectOption("OCL");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Additional Information
+// Precondition name: BB Blood Bank Information row
+// Near section/text: Blood Bank Information
+await page.getByRole('link', { name: "Add" }).click();
+
+// Activity Log(s)
+// Precondition name: BB activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.locator(".angular-editor-textarea").fill("Test");
+await page.getByRole('button', { name: "Save", exact: true }).click();

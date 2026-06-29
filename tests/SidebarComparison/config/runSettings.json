@@ -1,0 +1,17 @@
+{
+  "fullyParallel": false,
+  "workers": 1,
+  "headless": true,
+  "slowMo": 0,
+  "maximizeWindow": true,
+  "viewport": null,
+  "gotoTimeout": 60000,
+  "loginTimeout": 45000,
+  "sidebarTimeout": 45000,
+  "sidebarPollInterval": 500,
+  "openHtmlReport": false,
+  "openExcelReport": false,
+  "attachReports": true,
+  "outputDir": "test-results",
+  "logLevel": "info"
+}
