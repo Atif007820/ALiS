@@ -21,7 +21,7 @@ export const TEST_DATA = {
   ownerExistingUbiByEnvironment: {
     TEST: '222-555-888',
     PREPROD: '111-000-222',
-    PROD: '556-431-031',
+    PROD: '999-888-777',
   },
   ownerComments: 'Testing the Comments field',
 
