@@ -1,0 +1,67 @@
+Flow 3
+
+URL abbv - LNI
+
+BU - Child Labor
+
+BU abbv - CL
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "CL_25-06-2026_07:05:55 PM";
+  await page.goto("http://172.16.3.2/ALiSWADLNI2TESTING11.4.38.08/LoginCMS.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+
+  await page.getByLabel('Business Unit').selectOption("CL");
+  // No actions configured.
+  await page.getByRole('textbox', { name: "Entity Name (Legal Name)" }).fill(entityName);
+  await page.getByRole('textbox', { name: "Business Name (DBA)" }).fill("CL_15453");
+  await page.getByRole('textbox', { name: "UBI #" }).fill("124-220-822");
+  await page.getByRole('textbox', { name: "Location ID" }).fill("99700");
+  await page.getByRole('textbox', { name: "First Name" }).fill("Charles");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("Martin");
+  await page.getByLabel("Role").selectOption("PAR");
+  await page.getByRole('textbox', { name: "Email" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#txtPhone").fill("945-076-3022");
+  await page.getByRole('textbox', { name: "Address" }).fill("212 Park Street");
+  await page.getByRole('textbox', { name: "Suite/Apt/Unit/etc." }).fill("Apt 69");
+  await page.getByRole('textbox', { name: "City" }).fill("Reno");
+  await page.getByLabel("State/Province").selectOption("NV");
+  await page.getByRole('textbox', { name: "Zip" }).fill("69881-3971");
+  await page.getByRole('textbox', { name: "Primary Phone #", exact: true }).fill("855-023-9011");
+  await page.getByRole('textbox', { name: "Primary E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByRole('textbox', { name: "Alternate E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  // No actions configured.
+  // No actions configured.
+  await page.getByRole('link', { name: 'Save' }).or(page.getByRole('button', { name: 'Save' })).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'View' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Child Labor" }).click();
+  await page.getByRole('textbox', { name: "Entity Name(Legal Name)" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Revocations").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_BusinessEntity_Baseline framework.
+
+// No tab/table precondition steps are configured for this BU in the baseline framework.

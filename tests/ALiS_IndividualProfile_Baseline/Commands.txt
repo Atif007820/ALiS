@@ -1,0 +1,112 @@
+ALiS Individual Profile Baseline Commands
+========================================
+
+Framework Location
+------------------
+C:\Users\mohd.jamal\Downloads\Playwright\tests\ALiS_IndividualProfile_Baseline
+
+
+Setup / Validation
+------------------
+npm install
+npm run browsers:install
+npm run validate
+npm run list
+
+
+Run Syntax
+----------
+npm run baseline -- --flow=<FLOW> --bu=<BU> --url=<URL> --tc=<TC> --project=<BROWSER>
+
+Flow:
+  --flow=1      New Profile - Modify
+  --flow=2      Existing Profile - Modify
+  --flow=3      New Profile - View
+  --flow=4      Existing Profile - View
+  --flow=1,2    Modify flows only
+  --flow=3,4    View flows only
+  --flow=all    All four flows
+
+Business Unit:
+  --bu=MAMMO
+  --bu=all
+
+URL:
+  --url=NVRCP
+  --url=all
+
+Test Case:
+  --tc=TC01
+  --tc=TC02
+  --tc=TC03
+  --tc=TC04
+  --tc=TC05
+  --tc=all
+
+Browser:
+  --project=chromium
+  --project=firefox
+  --project=msedge
+  --project=all
+
+Useful Flags:
+  --headed
+  --dry-run
+  --entity="FIRST_NAME LAST_NAME"
+  --entity="LAST_NAME,FIRST_NAME"
+  --login-url="FULL_LOGIN_URL"
+
+
+Mammo Commands
+--------------
+Mammo, all four flows, all test cases:
+  npm run baseline -- --flow=all --bu=MAMMO --url=NVRCP --tc=all --project=chromium
+
+Mammo, New Profile - Modify:
+  npm run baseline -- --flow=1 --bu=MAMMO --url=NVRCP --tc=all --project=chromium
+
+Mammo, Existing Profile - Modify:
+  npm run baseline -- --flow=2 --bu=MAMMO --url=NVRCP --tc=all --project=chromium
+
+Mammo, New Profile - View:
+  npm run baseline -- --flow=3 --bu=MAMMO --url=NVRCP --tc=all --project=chromium
+
+Mammo, Existing Profile - View:
+  npm run baseline -- --flow=4 --bu=MAMMO --url=NVRCP --tc=all --project=chromium
+
+Mammo, headed mode:
+  npm run baseline -- --flow=all --bu=MAMMO --url=NVRCP --tc=all --project=chromium --headed
+
+Mammo, Existing Profile - Modify with temporary profile override:
+  npm run baseline -- --flow=2 --bu=MAMMO --url=NVRCP --entity="IND_1 MAMMO_1" --tc=all --project=chromium
+
+Mammo, Existing Profile - View with temporary profile override:
+  npm run baseline -- --flow=4 --bu=MAMMO --url=NVRCP --entity="MAMMO_1,IND_1" --tc=all --project=chromium
+
+
+Existing Profile Default Names
+------------------------------
+Change Flow 2 Modify profile here:
+  config\flow2EntityNames.js
+
+Change Flow 4 View profile here:
+  config\flow4EntityNames.js
+
+Last Name format:
+  MAMMO_<number>
+
+First Name format:
+  IND_<number>
+
+
+Output
+------
+Latest run index:
+  test-results\latest-run\index.html
+
+Playwright test report:
+  test-results\latest-run\playwright-test-report\index.html
+
+Each BU/flow report folder:
+  test-results\latest-run\<BU>_<FLOW_NAME>\latest-report.xlsx
+  test-results\latest-run\<BU>_<FLOW_NAME>\latest-results.json

@@ -1,6 +1,6 @@
 {
-  "environment": "",
-  "licenseType": "",
+  "environment": "PRE PROD",
+  "licenseType": "RESIDENTIAL",
   "defaultProject": "chromium",
   "workers": 3,
   "parallelWorkers": 3,

@@ -1,0 +1,54 @@
+Flow 2
+
+URL abbv - LNI
+
+BU - Conveyance Property Manager
+
+BU abbv - CONV_PM
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "PM_24-06-2026_10:56:48 AM";
+  await page.goto("http://172.16.3.2/ALiSWADLNI2TESTING11.4.38.08/LoginCMS.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Conveyance" }).click();
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Invoice(s)").click();
+  await page.getByText("Payment(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_BusinessEntity_Baseline framework.
+
+// Activity Log(s)
+// Precondition name: CONV activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Activity Log
+// Precondition name: CONV activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.getByRole('button', { name: "Save", exact: true }).click();

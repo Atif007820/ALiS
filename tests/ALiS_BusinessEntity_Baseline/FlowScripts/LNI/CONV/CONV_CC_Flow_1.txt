@@ -1,0 +1,83 @@
+Flow 1
+
+URL abbv - LNI
+
+BU - Conveyance Contractor
+
+BU abbv - CONV_CC
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "CC_25-06-2026_07:05:55 PM";
+  await page.goto("http://172.16.3.2/ALiSWADLNI2TESTING11.4.38.08/LoginCMS.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+
+  await page.getByLabel('Business Unit').selectOption("CMS");
+  await page.getByRole('radio', { name: "Conveyance Contractor", exact: true }).check();
+  await page.getByRole('textbox', { name: "Elevator Contractor License #" }).fill("ECL6667");
+  await page.getByRole('textbox', { name: "General Contractor License #" }).fill("GCL6051");
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('textbox', { name: "UBI #" }).fill("874-938-273");
+  await page.getByRole('textbox', { name: "First Name" }).fill("Susan");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("Wilson");
+  await page.getByLabel("Role").selectOption("OWN");
+  await page.getByRole('textbox', { name: "Email" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#txtPhone").fill("650-862-6636");
+  await page.getByRole('textbox', { name: "Address" }).fill("953 Broad Street");
+  await page.getByRole('textbox', { name: "Suite/Apt/Unit/etc." }).fill("Unit 25");
+  await page.getByRole('textbox', { name: "City" }).fill("Newark");
+  await page.getByLabel("State/Province").selectOption("HI");
+  await page.getByRole('textbox', { name: "Zip" }).fill("67255-1400");
+  await page.getByRole('textbox', { name: "Primary Phone #", exact: true }).fill("387-485-6206");
+  await page.getByRole('textbox', { name: "Primary E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByRole('textbox', { name: "Alternate E-mail" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  // No actions configured.
+  // No actions configured.
+  await page.getByRole('link', { name: 'Save' }).or(page.getByRole('button', { name: 'Save' })).click();
+
+  // After saving, framework opens Modify and searches the created entity.
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Conveyance" }).click();
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Invoice(s)").click();
+  await page.getByText("Payment(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_BusinessEntity_Baseline framework.
+
+// Activity Log(s)
+// Precondition name: CONV activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Activity Log
+// Precondition name: CONV activity log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("INR");
+await page.getByRole('button', { name: "Save", exact: true }).click();

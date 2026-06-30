@@ -1,0 +1,22 @@
+{
+  "name": "alis-business-entity-baseline",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable Playwright framework for comparing ALiS UI text against Excel baselines.",
+  "scripts": {
+    "baseline": "node ./scripts/run.js",
+    "baseline:parallel": "node ./scripts/run.js --parallel",
+    "baseline:chromium": "node ./scripts/run.js --project=chromium",
+    "baseline:firefox": "node ./scripts/run.js --project=firefox",
+    "baseline:edge": "node ./scripts/run.js --project=msedge",
+    "run": "node ./scripts/run.js",
+    "validate": "node ./scripts/validate.js",
+    "list": "node ./scripts/run.js --list",
+    "browsers:install": "playwright install chromium firefox msedge"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.60.0",
+    "exceljs": "^4.4.0"
+  }
+}

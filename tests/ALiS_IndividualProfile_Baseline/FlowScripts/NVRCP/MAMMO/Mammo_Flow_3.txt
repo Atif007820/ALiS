@@ -1,0 +1,112 @@
+Flow 3
+
+URL abbv - NVRCP
+
+BU - Mammography, Licensing and Registrations
+
+BU abbv - MAMMO
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  await page.goto('http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.08/LoginRadiation.aspx');
+  await page.getByRole('textbox', { name: 'Login Name' }).fill('admin');
+  await page.getByRole('textbox', { name: 'Password' }).fill('password');
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+  
+  
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Individual' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+  await page.getByLabel('Application Type *').selectOption('MAMLIC');
+  await page.goto('http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.08/Protected/LIC/DOE/IndividualProfile.aspx?EpData=MsGMrKNTndVWRWDMGFlMwOx6WMxWWu013tm74XUU3%2fKpYzsGNa9CbJ3oFvPEeXHf#noback');
+  const page1Promise = page.waitForEvent('popup');
+  await page.getByRole('link', { name: 'License/Credential Type' }).click();
+  const page1 = await page1Promise;
+  await page1.getByRole('radio', { name: 'RADIATION THERAPIST RRT' }).check();
+  await page1.getByRole('link', { name: 'OK' }).click();
+  await page.goto('http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.08/Protected/LIC/DOE/IndividualProfile.aspx?EpData=MsGMrKNTndVWRWDMGFlMwOx6WMxWWu013tm74XUU3%2fKpYzsGNa9CbJ3oFvPEeXHf#noback');
+  await page.getByRole('textbox', { name: 'Last Name *' }).click();
+  await page.getByRole('textbox', { name: 'Last Name *' }).fill('Jamal');
+  await page.getByRole('textbox', { name: 'First Name *' }).click();
+  await page.getByRole('textbox', { name: 'First Name *' }).fill('Atif');
+  await page.getByRole('textbox', { name: 'Name on Radiographer' }).click();
+  await page.getByRole('textbox', { name: 'Name on Radiographer' }).fill('Atif');
+  await page.getByRole('textbox', { name: 'SSN' }).click();
+  await page.getByRole('textbox', { name: 'SSN' }).fill('325-34-5435');
+  await page.getByRole('textbox', { name: 'API#' }).click();
+  await page.getByRole('textbox', { name: 'API#' }).fill('453545435345435');
+  await page.getByRole('textbox', { name: 'ARRT, NMTCB, and/or CMA' }).click();
+  await page.getByRole('textbox', { name: 'ARRT, NMTCB, and/or CMA' }).fill('3243254354354353454546456');
+  await page.getByRole('row', { name: 'Address * Apt/Unit/etc.' }).getByLabel('Street One').click();
+  await page.getByRole('row', { name: 'Address * Apt/Unit/etc.' }).getByLabel('Street One').fill('ADE Building ');
+  await page.getByRole('row', { name: 'City * State/Province *' }).getByLabel('City').click();
+  await page.getByRole('row', { name: 'City * State/Province *' }).getByLabel('City').fill('Newark');
+  await page.getByRole('row', { name: 'City * Newark State/Province' }).getByLabel('Zip').click();
+  await page.getByRole('cell', { name: '#####-####' }).getByLabel('Zip').fill('43546-5465');
+  await page.getByLabel('County *').selectOption('LA');
+  await page.getByRole('row', { name: 'County * LANDER Primary Phone' }).getByLabel('Phone', { exact: true }).click();
+  await page.getByRole('cell', { name: '###-###-####' }).getByLabel('Phone', { exact: true }).fill('333-333-3333');
+  await page.locator('#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtEMail').click();
+  await page.locator('#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtEMail').fill('a@a.com');
+  await page.getByRole('row', { name: 'Fax Primary E-mail a@a.com' }).getByLabel('Alt Email').click();
+  await page.getByRole('row', { name: 'Fax Primary E-mail a@a.com' }).getByLabel('Alt Email').fill('a@a.com');
+  await page.getByRole('row', { name: 'Address Apt/Unit/etc.' }).getByLabel('Street One').click();
+  await page.getByRole('row', { name: 'Address Apt/Unit/etc.' }).getByLabel('Street One').fill('DEF Building, Yung Street, NY');
+  await page.getByRole('row', { name: 'Address DEF Building, Yung' }).getByLabel('Street Two').click();
+  await page.getByRole('row', { name: 'Address DEF Building, Yung' }).getByLabel('Street Two').fill('Apt - 3/D');
+  await page.getByRole('row', { name: 'City State/Province NEVADA Zip' }).getByLabel('City').click();
+  await page.getByRole('row', { name: 'City State/Province NEVADA Zip' }).getByLabel('City').fill('New York');
+  await page.getByRole('row', { name: 'Fax Primary E-mail Alternate' }).getByLabel('Fax').click();
+  await page.getByRole('cell', { name: '###-###-####' }).getByLabel('Fax').fill('354-354-6546');
+  await page.getByRole('row', { name: 'Fax 354-354-6546 Primary E-' }).getByLabel('Email', { exact: true }).click();
+  await page.getByRole('row', { name: 'Fax 354-354-6546 Primary E-' }).getByLabel('Email', { exact: true }).fill('s@a.com');
+  await page.getByRole('row', { name: 'Fax 354-354-6546 Primary E-' }).getByLabel('Alt Email').click();
+  await page.getByRole('row', { name: 'Fax 354-354-6546 Primary E-' }).getByLabel('Alt Email').fill('a@q.com');
+  await page.getByRole('link', { name: 'Save' }).click();
+  
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Individual' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+  
+  
+  await page.getByRole('textbox', { name: 'Last Name' }).fill('Jamal');
+  await page.getByRole('textbox', { name: 'First Name' }).fill('Atif');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: 'ATIF JAMAL' }).click();
+  
+  
+  await page.getByText('Activity Log(s)').click();
+  await page.getByRole('link', { name: 'Add' }).click();
+  await page.getByLabel('Action Code').selectOption('ASG');
+  await page.locator('.angular-editor-textarea').fill('Test');
+  await page.getByRole('button', { name: 'Save' }).click();
+  
+  
+  await page.getByText('Payment(s)').click();
+   await page.getByRole('link', { name: 'Add' }).click();
+  await page.getByRole('row', { name: 'Search Receipt Print Delete' }).getByRole('img').click();
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.locator('#ValidationDate0').getByRole('link', { name: '/09/2026' }).click();
+  
+  
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Individual' }).hover();
+  await page.getByRole('link', { name: 'View' }).click();
+  
+  
+  await page.getByRole('textbox', { name: 'Last Name' }).fill('Jamal');
+  await page.getByRole('textbox', { name: 'First Name' }).fill('Atif');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: 'ATIF JAMAL' }).click();
+  
+  
+  await page.getByText('Entity Information').click();
+  await page.getByText('Additional Information').click();
+  await page.getByText('Permit(s)').click();
+  await page.getByText('Activity Log(s)').click();
+  await page.getByText('Payment(s)').click();
+  await page.getByText('Invoice(s)').click();
+  
+   });

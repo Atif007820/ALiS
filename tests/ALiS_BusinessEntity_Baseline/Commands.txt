@@ -1,0 +1,160 @@
+ALiS Business Entity Baseline Commands
+======================
+
+Framework Location
+------------------
+C:\Users\mohd.jamal\Downloads\Playwright\tests\ALiS_BusinessEntity_Baseline
+
+
+Setup / Validation
+------------------
+npm install
+npm run browsers:install
+npm run validate
+npm run list
+
+
+Run Syntax
+----------
+npm run baseline -- --flow=<FLOW> --bu=<BU> --url=<URL> --tc=<TC> --project=<BROWSER>
+
+Flow:
+  --flow=1      New Entity - Modify
+  --flow=2      Existing Entity - Modify
+  --flow=3      New Entity - View
+  --flow=4      Existing Entity - View
+  --flow=1,2    Modify flows only
+  --flow=3,4    View flows only
+  --flow=all    All four flows
+
+Business Unit:
+  --bu=HLS
+  --bu=CL
+  --bu=BB
+  --bu=CLAB
+  --bu=ESF
+  --bu=HMB
+  --bu=HF
+  --bu=ML
+  --bu=EHS
+  --bu=CCP
+  --bu=KPS
+  --bu=CONV_CC
+  --bu=CONV_BO
+  --bu=CONV_PM
+  --bu=RPM
+  --bu=RM
+  --bu=MAMMO
+  --bu=all
+
+URL:
+  --url=LNI
+  --url=NJ
+  --url=DPBH
+  --url=NVRCP
+  --url=all
+
+Test Case:
+  --tc=TC01
+  --tc=TC02
+  --tc=TC03
+  --tc=TC04
+  --tc=TC05
+  --tc=all
+
+Browser:
+  --project=chromium
+  --project=firefox
+  --project=msedge
+  --project=all
+
+Useful Flags:
+  --headed
+  --dry-run
+  --entity="YOUR_ENTITY_NAME"
+  --login-url="FULL_LOGIN_URL"
+
+
+KPS Commands
+------------
+KPS, Modify flows, all test cases TC01 to TC05:
+  npm run baseline -- --flow=1,2 --bu=KPS --url=DPBH --tc=all --project=chromium
+
+KPS, New Entity - Modify, all test cases TC01 to TC05:
+  npm run baseline -- --flow=1 --bu=KPS --url=DPBH --tc=all --project=chromium
+
+KPS, Existing Entity - Modify, all test cases TC01 to TC05:
+  npm run baseline -- --flow=2 --bu=KPS --url=DPBH --tc=all --project=chromium
+
+KPS, View flows, all test cases TC01 to TC05:
+  npm run baseline -- --flow=3,4 --bu=KPS --url=DPBH --tc=all --project=chromium
+
+KPS, TC05 only:
+  npm run baseline -- --flow=all --bu=KPS --url=DPBH --tc=TC05 --project=chromium
+
+KPS, headed mode:
+  npm run baseline -- --flow=all --bu=KPS --url=DPBH --tc=all --project=chromium --headed
+
+KPS, Existing Entity - Modify with temporary entity override:
+  npm run baseline -- --flow=2 --bu=KPS --url=DPBH --entity="YOUR_FACILITY_NAME" --tc=all --project=chromium
+
+KPS, Existing Entity - View with temporary entity override:
+  npm run baseline -- --flow=4 --bu=KPS --url=DPBH --entity="YOUR_FACILITY_NAME" --tc=all --project=chromium
+
+
+DPBH Commands
+-------------
+All DPBH BUs, all four flows, all test cases:
+  npm run baseline -- --flow=all --bu=HF,ML,EHS,CCP,KPS --url=DPBH --tc=all --project=chromium
+
+All DPBH BUs, TC05 only:
+  npm run baseline -- --flow=all --bu=HF,ML,EHS,CCP,KPS --url=DPBH --tc=TC05 --project=chromium
+
+Use --bu=all with DPBH URL:
+  npm run baseline -- --flow=all --bu=all --url=DPBH --tc=all --project=chromium
+
+
+All Framework Commands
+----------------------
+All configured BUs, Existing Entity - Modify, all test cases:
+  npm run baseline -- --flow=2 --bu=all --url=all --tc=all --project=chromium
+
+All configured BUs, all four flows, all test cases:
+  npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium
+
+All configured BUs, all four flows, parallel:
+  npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium --parallel=3
+
+
+Current DPBH Business Units
+---------------------------
+HF  = Health Facilities
+ML  = Medical Laboratories
+EHS = Environmental Health Section
+CCP = Child Care Program
+KPS = Kitchen Pool & Spa
+
+
+Existing Entity Flow Default Entity Name
+----------------------------------------
+Change KPS default Flow 2 Modify entity here:
+  config\flow2EntityNames.js
+
+Change KPS default Flow 4 View entity here:
+  config\flow4EntityNames.js
+
+Current KPS default:
+  KPS_24-06-2026_09:08:31 AM
+
+
+Output
+------
+Latest run index:
+  test-results\latest-run\index.html
+
+Playwright test report:
+  test-results\latest-run\playwright-test-report\index.html
+
+Each BU/flow report folder:
+  test-results\latest-run\<BU>_<FLOW_NAME>\latest-report.xlsx
+  test-results\latest-run\<BU>_<FLOW_NAME>\latest-results.json

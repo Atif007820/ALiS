@@ -1,0 +1,107 @@
+Flow 1
+
+URL abbv - NVRCP
+
+BU - Radiation Producing Machines
+
+BU abbv - RPM
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "RPM_25-06-2026_07:05:55 PM";
+  await page.goto("http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.08/LoginRadiation.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+
+  await page.getByLabel('Business Unit').selectOption("RPM");
+  await page.getByLabel("Application Type").selectOption("RPMLIC");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucBEInformationAdd_txtFacilityName").fill(entityName);
+  await page.getByRole('textbox', { name: "Registered Name with" }).fill("Charles");
+  await page.getByRole('textbox', { name: "NV Business ID" }).fill("NV3440343");
+  await page.getByRole('textbox', { name: "Local License #" }).fill("LL#110");
+  await page.getByLabel("Facility Type").selectOption("63");
+  await page.getByRole('textbox', { name: "First Name" }).fill("Hannah");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("Miller");
+  await page.getByLabel("Title").selectOption("ADM");
+  await page.getByRole('textbox', { name: "Person Responsible for Maintaining this Registration" }).fill("Hannah Miller");
+  await page.getByRole('textbox', { name: "Person Responsible for Radiation Safety" }).fill("Anna Baker");
+  await page.getByRole('textbox', { name: "Email" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByRole('textbox', { name: "Phone" }).fill("004-116-7111");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet1").fill("368 Center Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet2").fill("Suite 33");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtCity").fill("Las Vegas");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtZip").fill("62220-2533");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_ddlCounty").selectOption("PE");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtPhone").fill("610-885-1442");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_ddlCopyAddressFrom").selectOption("MLG");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet1").fill("368 Center Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet2").fill("Suite 33");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtCity").fill("Las Vegas");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtZip").fill("62220-2533");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_ddlCounty").selectOption("PE");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtPhone").fill("610-885-1442");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_ddlCounty").selectOption("PE");
+  await expect(page.getByRole('link', { name: "License/Credential Type" })).toBeVisible();
+  const page1Promise = page.waitForEvent('popup');
+  await page.getByRole('link', { name: "License/Credential Type" }).click();
+  const page1 = await page1Promise;
+  await page1.getByRole('radio', { name: "Intraoral", exact: true }).check();
+  await page1.getByRole('textbox', { name: "Serial No." }).fill("979875");
+  await page1.getByRole('textbox', { name: "Number of Tubes" }).fill("44");
+  await page1.getByRole('textbox', { name: "Manufacturer" }).fill("MANUFAC_3571");
+  await page1.getByRole('textbox', { name: "Model No." }).fill("Mod965");
+  await page1.getByRole('radio', { name: "No", exact: true }).check();
+  await page1.getByRole('textbox', { name: "Use Location" }).fill("TestLoc");
+  await page1.getByRole('link', { name: "OK", exact: true }).click();
+  await page.getByRole('link', { name: 'Save' }).or(page.getByRole('button', { name: 'Save' })).click();
+
+  // After saving, framework opens Modify and searches the created entity.
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Radiation Producing Machine" }).click();
+  // Framework selects Entity Type when this field is present: Agency
+  await page.getByLabel('Entity Type').selectOption({ label: "Agency" }).catch(() => {});
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Invoice(s)").click();
+  await page.getByText("Payment(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_BusinessEntity_Baseline framework.
+
+// Activity Log(s)
+// Precondition name: NVRCP Activity Log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("ASG");
+await page.locator(".angular-editor-textarea").fill("test");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Payment(s)
+// Precondition name: NVRCP Payment row
+await page.getByRole('link', { name: "Add", exact: true }).click();

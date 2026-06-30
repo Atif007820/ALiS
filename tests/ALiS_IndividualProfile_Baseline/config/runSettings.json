@@ -1,0 +1,22 @@
+{
+  "defaultBusinessUnit": ["MAMMO"],
+  "defaultUrl": "NVRCP",
+  "defaultFlow": "2",
+  "defaultTestCases": ["TC01", "TC02", "TC03", "TC04", "TC05"],
+  "defaultProject": "chromium",
+  "fullyParallel": true,
+  "workers": 1,
+  "parallelWorkers": 3,
+  "ciWorkers": 3,
+  "runtimeRetries": 1,
+  "headless": true,
+  "slowMo": 0,
+  "maximizeWindow": true,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "openHtmlReport": false,
+  "openExcelReport": false,
+  "logLevel": "info"
+}

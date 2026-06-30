@@ -1,0 +1,36 @@
+Flow 4
+
+URL abbv - NVRCP
+
+BU - Mammography, Licensing and Registrations
+
+BU abbv - MAMMO
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  await page.goto('http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.08/LoginRadiation.aspx');
+  await page.getByRole('textbox', { name: 'Login Name' }).fill('admin');
+  await page.getByRole('textbox', { name: 'Password' }).fill('password');
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+  
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Individual' }).hover();
+  await page.getByRole('link', { name: 'View' }).click();
+  
+  
+  await page.getByRole('textbox', { name: 'Last Name' }).fill('Jamal');
+  await page.getByRole('textbox', { name: 'First Name' }).fill('Atif');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: 'ATIF JAMAL' }).click();
+  
+  
+  await page.getByText('Entity Information').click();
+  await page.getByText('Additional Information').click();
+  await page.getByText('Permit(s)').click();
+  await page.getByText('Activity Log(s)').click();
+  await page.getByText('Payment(s)').click();
+  await page.getByText('Invoice(s)').click();
+  
+  });

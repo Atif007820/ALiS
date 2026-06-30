@@ -44,9 +44,9 @@ git commit -m "Update ALiS user registration framework"
 git push origin main
 
 
-Example: ALiS Baseline framework
+Example: ALiS Business Entity Baseline framework
 
-git add tests/ALiS_Baseline
+git add tests/ALiS_BusinessEntity_Baseline
 git commit -m "Update ALiS baseline framework"
 git push origin main
 

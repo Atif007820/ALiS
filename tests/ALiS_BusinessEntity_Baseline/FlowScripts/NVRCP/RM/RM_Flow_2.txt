@@ -1,0 +1,56 @@
+Flow 2
+
+URL abbv - NVRCP
+
+BU - Radioactive Materials
+
+BU abbv - RM
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "RM_22-06-2026_09:53:29 AM";
+  await page.goto("http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.08/LoginRadiation.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Radioactive Material" }).click();
+  // Framework selects Entity Type when this field is present: Agency
+  await page.getByLabel('Entity Type').selectOption({ label: "Agency" }).catch(() => {});
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Additional Information").click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Invoice(s)").click();
+  await page.getByText("Payment(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_BusinessEntity_Baseline framework.
+
+// Activity Log(s)
+// Precondition name: NVRCP Activity Log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("ASG");
+await page.locator(".angular-editor-textarea").fill("test");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Payment(s)
+// Precondition name: NVRCP Payment row
+await page.getByRole('link', { name: "Add", exact: true }).click();

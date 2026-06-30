@@ -1,0 +1,102 @@
+Flow 1
+
+URL abbv - NVRCP
+
+BU - Radioactive Materials
+
+BU abbv - RM
+
+
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  const entityName = "RM_25-06-2026_07:05:55 PM";
+  await page.goto("http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.08/LoginRadiation.aspx");
+  await page.getByRole('textbox', { name: 'Login Name' }).fill("admin");
+  await page.getByRole('textbox', { name: 'Password' }).fill("password");
+  await page.getByRole('link', { name: 'Login', exact: true }).click();
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'New' }).click();
+
+  await page.getByLabel('Business Unit').selectOption("RAM");
+  await page.getByLabel("Application Type").selectOption("RAMLIC");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucBEInformationAdd_txtFacilityName").fill(entityName);
+  await page.getByRole('textbox', { name: "Registered Name with" }).fill("RM_5025");
+  await page.getByRole('textbox', { name: "NV Business ID" }).fill("NV71564");
+  await page.getByRole('textbox', { name: "Local License #" }).fill("LL#785");
+  await page.getByLabel("Facility Type").selectOption("15");
+  await page.getByRole('textbox', { name: "First Name" }).fill("William");
+  await page.getByRole('textbox', { name: "Last Name" }).fill("White");
+  await page.getByLabel("Title").selectOption("RSO");
+  await page.getByRole('textbox', { name: "Email" }).fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.getByRole('textbox', { name: "Phone" }).fill("977-304-1864");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet1").fill("648 Market Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtStreet2").fill("Unit 50");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtCity").fill("Elko");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtZip").fill("88346-4058");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_ddlCounty").selectOption("LY");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtPhone").fill("994-238-4782");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtAltPhone").fill("362-093-8708");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_ddlCopyAddressFrom").selectOption("MLG");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet1").fill("648 Market Street");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtStreet2").fill("Unit 50");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtCity").fill("Elko");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtZip").fill("88346-4058");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_ddlCounty").selectOption("LY");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtPhone").fill("994-238-4782");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtAltPhone").fill("362-093-8708");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtEMail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucPhysicalAddressAdd_txtAltEmail").fill("mohdatif.jamal@ops1.advancedgrc.com");
+  await page.locator("#ctl00_ContentPlaceHolder2_ucMailingAddressAdd_ddlCounty").selectOption("LY");
+  await expect(page.getByRole('link', { name: "License/Credential Type" })).toBeVisible();
+  const page1Promise = page.waitForEvent('popup');
+  await page.getByRole('link', { name: "License/Credential Type" }).click();
+  const page1 = await page1Promise;
+  await page1.getByRole('radio', { name: "Gas chromatograph", exact: true }).check();
+  await page1.getByRole('link', { name: "OK", exact: true }).click();
+  await page.getByRole('link', { name: 'Save' }).or(page.getByRole('button', { name: 'Save' })).click();
+
+  // After saving, framework opens Modify and searches the created entity.
+
+  await page.getByRole('link', { name: 'Licensing' }).hover();
+  await page.getByRole('link', { name: 'Business Entity' }).hover();
+  await page.getByRole('link', { name: 'Modify' }).click();
+
+  await page.locator('#select2-ddlProgramInternal-container').click();
+  await page.getByRole('option', { name: "Radioactive Material" }).click();
+  // Framework selects Entity Type when this field is present: Agency
+  await page.getByLabel('Entity Type').selectOption({ label: "Agency" }).catch(() => {});
+  await page.getByRole('textbox', { name: "Entity Name" }).fill(entityName);
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('link', { name: entityName }).click();
+
+  await page.getByText("Entity Information", { exact: true }).click();
+  await page.getByText("Additional Information").click();
+  await page.getByText("Permit(s)").click();
+  await page.getByText("Inspection(s)").click();
+  await page.getByText("Activity Log(s)").click();
+  await page.getByText("Invoice(s)").click();
+  await page.getByText("Payment(s)").click();
+
+});
+
+// ============================================================
+// Framework Precondition Test Steps
+// ============================================================
+// Execute these only when the related tab/section table column headers are not displayed.
+// Source: businessUnit.tableHeaderPreconditions from the current ALiS_BusinessEntity_Baseline framework.
+
+// Activity Log(s)
+// Precondition name: NVRCP Activity Log row
+await page.getByRole('link', { name: "Add", exact: true }).click();
+await page.getByLabel("Action Code").selectOption("ASG");
+await page.locator(".angular-editor-textarea").fill("test");
+await page.getByRole('button', { name: "Save", exact: true }).click();
+
+// Payment(s)
+// Precondition name: NVRCP Payment row
+await page.getByRole('link', { name: "Add", exact: true }).click();
