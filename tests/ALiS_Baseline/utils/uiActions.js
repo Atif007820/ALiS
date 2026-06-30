@@ -898,6 +898,11 @@ async function openPopupTargetFromLink(page, action, timeoutMs) {
     throw new Error(`Visible link "${action.name}" was not available.`);
   }
 
+  await waitForAspNetPostback(page, {
+    minimumWaitMs: Number(action.afterClickMinimumWaitMs || 750),
+    timeoutMs: Number(action.afterClickTimeoutMs || Math.min(timeoutMs, 15_000)),
+  });
+
   const openedPage = await Promise.race([
     popupPromise,
     contextPagePromise,
@@ -915,7 +920,7 @@ async function openPopupTargetFromLink(page, action, timeoutMs) {
   return findPageForFirstAction(
     [page],
     action.actions?.[0],
-    Number(action.samePageFallbackTimeoutMs || Math.min(timeoutMs, 10_000)),
+    Number(action.samePageFallbackTimeoutMs || Math.min(timeoutMs, 15_000)),
   );
 }
 
@@ -981,8 +986,13 @@ async function findPageForFirstAction(pages, firstAction, timeoutMs) {
         continue;
       }
 
-      await candidate.waitForLoadState('domcontentloaded', { timeout: 500 }).catch(() => {});
-      if (await actionAppearsOnPage(candidate, firstAction, 300)) {
+      await candidate.waitForLoadState('domcontentloaded', { timeout: 1_000 }).catch(() => {});
+      await waitForAspNetPostback(candidate, {
+        minimumWaitMs: 250,
+        timeoutMs: 2_000,
+      });
+
+      if (await actionAppearsOnPage(candidate, firstAction, 1_000)) {
         return candidate;
       }
     }
