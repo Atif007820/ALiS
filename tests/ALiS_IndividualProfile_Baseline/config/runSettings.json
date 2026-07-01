@@ -1,7 +1,7 @@
 {
   "defaultBusinessUnit": ["MAMMO"],
   "defaultUrl": "NVRCP",
-  "defaultFlow": "2",
+  "defaultFlow": "1",
   "defaultTestCases": ["TC01", "TC02", "TC03", "TC04", "TC05"],
   "defaultProject": "chromium",
   "fullyParallel": true,
