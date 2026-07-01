@@ -5,6 +5,53 @@ import { logger } from '../utils/logger.js';
 import { waitForPageTimeout } from '../utils/pageGuards.js';
 import { waitForProfileWorkspace } from './ModifySearchFlow.js';
 
+export function classifyCreateSaveState(bodyText, path, saveVisible = false) {
+  const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const normalizedBodyText = clean(bodyText);
+  const normalizedPath = clean(path);
+  const saved = (
+    /\/SuccessPage\.aspx/i.test(normalizedPath)
+    || /Individual Profile has been saved successfully/i.test(normalizedBodyText)
+    || /Individual has been saved successfully/i.test(normalizedBodyText)
+    || /saved successfully/i.test(normalizedBodyText)
+    || /return to search/i.test(normalizedBodyText)
+    || (
+      /\b(?:Modify|View)?\s*Individual\b/i.test(normalizedBodyText)
+      && /\bReturn to Search\b/i.test(normalizedBodyText)
+    )
+  );
+
+  if (saved) {
+    return { status: 'saved', message: `Saved page: ${normalizedPath}` };
+  }
+
+  if (/License\/Credential information details/i.test(normalizedBodyText)) {
+    return { status: 'validation', message: 'License/Credential information details' };
+  }
+
+  const validationPatterns = [
+    /Please review following errors and correct them\.?\s*(.*?)(?:Application Details|Mailing Address|$)/i,
+    /(The following field contains invalid characters:[^.]*\.?)/i,
+    /(?:^|\s)((?:[A-Za-z][A-Za-z0-9 #/().'-]*\s+)?is a required field\.?)/i,
+    /(?:^|\s)(Please (?:enter|select|provide)[^.]*\.)/i,
+  ];
+
+  for (const pattern of validationPatterns) {
+    const match = normalizedBodyText.match(pattern);
+    const message = clean(match?.[1] || '');
+    if (message && !/^Fields marked with asterisk/i.test(message)) {
+      return { status: 'validation', message };
+    }
+  }
+
+  const stillCreateForm = /\bNew Individual\b/i.test(normalizedBodyText);
+
+  return {
+    status: 'pending',
+    message: `URL=${normalizedPath}, stillCreateForm=${stillCreateForm}, saveVisible=${saveVisible}`,
+  };
+}
+
 export async function createProfile(page, { businessUnit }) {
   const actionContext = {
     businessUnit,
@@ -61,6 +108,7 @@ async function repairLicenseCredentialDetails(page, businessUnit, actionContext)
 
   logger.warn('Restoring configured License/Credential details before retrying profile Save.');
   await runUiActions(page, actions, actionContext);
+  await runUiActions(page, [{ type: 'reloadCurrentPage', waitAfterReloadMs: 1_000 }], actionContext);
   await waitForAppIdle(page);
 }
 
@@ -81,8 +129,27 @@ async function saveCreatedProfile(page, { repairForm } = {}) {
   let lastState = null;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    lastState = await readCreateSaveState(page);
+
+    if (lastState.status === 'saved') {
+      return;
+    }
+
+    if (lastState.status === 'validation') {
+      if (attempt < attempts && repairForm && isRecoverableRequiredFieldValidation(lastState.message)) {
+        logger.warn(
+          `Create Save reported required fields before clicking Save on attempt ${attempt}; restoring the configured profile values and retrying.`,
+        );
+        await repairForm();
+        continue;
+      }
+    }
+
     const clicked = await clickSave(page);
     if (!clicked) {
+      if (lastState.status === 'pending' && /Saved page:/i.test(lastState.message)) {
+        return;
+      }
       throw new Error('Could not find individual profile Save control.');
     }
 
@@ -116,75 +183,176 @@ async function saveCreatedProfile(page, { repairForm } = {}) {
 }
 
 async function clickSave(page) {
-  const candidates = [
-    page.getByRole('link', { name: 'Save', exact: true }).first(),
-    page.getByRole('button', { name: 'Save', exact: true }).first(),
-    page.locator('input[type="submit"][value="Save"], input[type="button"][value="Save"]').first(),
-  ];
+  const timeoutMs = baselineConfig.timeouts.actionMs || 15_000;
+  const deadline = Date.now() + timeoutMs;
 
-  for (const candidate of candidates) {
-    if (await clickIfVisible(candidate)) {
+  while (Date.now() <= deadline) {
+    for (const candidate of saveLocators(page)) {
+      if (await clickIfVisible(candidate)) {
+        return true;
+      }
+    }
+
+    if (await clickSaveByDom(page)) {
       return true;
     }
+
+    await waitForPageTimeout(page, 300, 'waiting for individual profile Save control');
+    await waitForAppIdle(page).catch(() => {});
   }
 
   return false;
 }
 
-async function readCreateSaveState(page) {
-  return page.evaluate(() => {
-    const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-    const bodyText = clean(document.body?.innerText);
-    const path = location.pathname;
-    const saved = (
-      /\/SuccessPage\.aspx$/i.test(path)
-      || /Individual Profile has been saved successfully/i.test(bodyText)
-      || /Individual has been saved successfully/i.test(bodyText)
-      || (
-        /\b(?:Modify|View)?\s*Individual\b/i.test(bodyText)
-        && /\bReturn to Search\b/i.test(bodyText)
-      )
-    );
+function saveLocators(page) {
+  return [
+    page.getByRole('link', { name: 'Save', exact: true }).first(),
+    page.getByRole('button', { name: 'Save', exact: true }).first(),
+    page.getByRole('link', { name: /^Save\b/i }).first(),
+    page.getByRole('button', { name: /^Save\b/i }).first(),
+    page.locator([
+      'input[type="submit"][value*="Save" i]',
+      'input[type="button"][value*="Save" i]',
+      'input[type="image"][alt*="Save" i]',
+      'a[title*="Save" i]',
+      'button[title*="Save" i]',
+      '[role="button"][aria-label*="Save" i]',
+      '[role="link"][aria-label*="Save" i]',
+      '[id*="Save" i]',
+      '[name*="Save" i]',
+    ].join(',')).first(),
+    page.locator('a:has-text("Save"), button:has-text("Save")').first(),
+  ];
+}
 
-    if (saved) {
-      return { status: 'saved', message: `Saved page: ${path}` };
-    }
-
-    const validationPatterns = [
-      /Please review following errors and correct them\.?\s*(.*?)(?:Application Details|Mailing Address|$)/i,
-      /(The following field contains invalid characters:[^.]*\.?)/i,
-      /(?:^|\s)((?:[A-Za-z][A-Za-z0-9 #/().'-]*\s+)?is a required field\.?)/i,
-      /(?:^|\s)(Please (?:enter|select|provide)[^.]*\.)/i,
-    ];
-
-    for (const pattern of validationPatterns) {
-      const match = bodyText.match(pattern);
-      const message = clean(match?.[1] || '');
-      if (message && !/^Fields marked with asterisk/i.test(message)) {
-        return { status: 'validation', message };
-      }
-    }
-
-    const stillCreateForm = /\bNew Individual\b/i.test(bodyText);
-    const saveVisible = Array.from(document.querySelectorAll('button, a, input[type="submit"], input[type="button"]'))
-      .filter((element) => {
+async function clickSaveByDom(page) {
+  try {
+    return await page.evaluate(() => {
+      function isVisible(element) {
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== 'none'
           && style.visibility !== 'hidden'
           && rect.width > 0
           && rect.height > 0;
-      })
-      .some((element) => /^save$/i.test(clean(element.textContent || element.value)));
+      }
 
+      function labelFor(element) {
+        return [
+          element.textContent,
+          element.value,
+          element.getAttribute('aria-label'),
+          element.getAttribute('title'),
+          element.getAttribute('alt'),
+          element.getAttribute('id'),
+          element.getAttribute('name'),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      function scoreSaveControl(element) {
+        const label = labelFor(element);
+        const normalized = label.toLowerCase();
+        if (!normalized.includes('save')) {
+          return 0;
+        }
+
+        if (/\b(search|cancel|reset|delete)\b/i.test(label) && !/^save\b/i.test(label)) {
+          return 0;
+        }
+
+        let score = 1;
+        if (/^save$/i.test(label)) score += 30;
+        if (/^save\b/i.test(label)) score += 20;
+        if (element.matches('input[type="submit"], input[type="button"], button, a')) score += 5;
+        if (element.id && /save/i.test(element.id)) score += 3;
+        if (element.name && /save/i.test(element.name)) score += 3;
+        return score;
+      }
+
+      const controls = Array.from(document.querySelectorAll([
+        'a',
+        'button',
+        'input[type="submit"]',
+        'input[type="button"]',
+        'input[type="image"]',
+        '[role="button"]',
+        '[role="link"]',
+      ].join(',')))
+        .filter(isVisible)
+        .map((element) => ({ element, score: scoreSaveControl(element) }))
+        .filter((candidate) => candidate.score > 0)
+        .sort((left, right) => right.score - left.score);
+
+      const target = controls[0]?.element;
+      if (!target) {
+        return false;
+      }
+
+      target.scrollIntoView({ block: 'center', inline: 'center' });
+      target.click();
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function readCreateSaveState(page) {
+  try {
+    const state = await page.evaluate(() => {
+      function isVisible(element) {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== 'none'
+          && style.visibility !== 'hidden'
+          && rect.width > 0
+          && rect.height > 0;
+      }
+
+      function labelFor(element) {
+        return [
+          element.textContent,
+          element.value,
+          element.getAttribute('aria-label'),
+          element.getAttribute('title'),
+          element.getAttribute('alt'),
+          element.getAttribute('id'),
+          element.getAttribute('name'),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      const bodyText = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+      const path = location.pathname;
+      const saveVisible = Array.from(document.querySelectorAll([
+        'button',
+        'a',
+        'input[type="submit"]',
+        'input[type="button"]',
+        'input[type="image"]',
+        '[role="button"]',
+        '[role="link"]',
+      ].join(',')))
+        .filter(isVisible)
+        .some((element) => /^save\b/i.test(labelFor(element)));
+
+      return { bodyText, path, saveVisible };
+    });
+
+    return classifyCreateSaveState(state.bodyText, state.path, state.saveVisible);
+  } catch {
     return {
       status: 'pending',
-      message: `URL=${location.href}, stillCreateForm=${stillCreateForm}, saveVisible=${saveVisible}`,
+      message: `URL=${page.url()}, page state unavailable`,
     };
-  }).catch(() => ({
-    status: 'pending',
-    message: `URL=${page.url()}, page state unavailable`,
-  }));
+  }
 }
 
 function isRecoverableRequiredFieldValidation(message) {

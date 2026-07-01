@@ -27,7 +27,6 @@ test('test', async ({ page }) => {
   
   
   await page.getByText('Entity Information').click();
-  await page.getByText('Additional Information').click();
   await page.getByText('Permit(s)').click();
   await page.getByText('Activity Log(s)').click();
   await page.getByText('Payment(s)').click();

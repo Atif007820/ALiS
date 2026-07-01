@@ -658,6 +658,12 @@ async function runPopupFromLink(page, action, context) {
         await targetPage.waitForEvent('close', { timeout: 5_000 }).catch(() => {});
       }
 
+      await waitForAspNetPostback(page, {
+        minimumWaitMs: Number(action.parentPostbackWaitMs || action.settleMs || 750),
+        timeoutMs: Number(action.parentPostbackTimeoutMs || 15_000),
+      }).catch(() => {});
+      await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
+
       return;
     } catch (error) {
       lastError = error;

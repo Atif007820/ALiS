@@ -75,6 +75,18 @@ export const baselineConfig = {
       'h4',
     ],
     ignoredSectionHeaders: ['Search Results', 'Modify Individual Profile', 'View Individual Profile'],
+    pageHeadingPatterns: [
+      '^View Individual$',
+      '^Modify Individual$',
+      '^New Individual$',
+      '^View Individual Profile$',
+      '^Modify Individual Profile$',
+      '^New Individual Profile$',
+    ],
+    fieldLabelMetadataPatterns: [
+      '^Business Unit$',
+    ],
+    enableAdditionalInformationTab: false,
     fieldLabelSelectors: [
       'label',
       '.control-label',

@@ -28,7 +28,13 @@ export class CaptureEngine {
     const ignored = new Set((this.config.ignoredSectionHeaders || []).map(normalizeText));
     const texts = await this.collectVisibleTexts(page, this.config.sectionHeaderSelectors);
 
-    return uniqueBy(texts, (text) => text).filter((text) => text && !ignored.has(text));
+    return uniqueBy(texts, (text) => text).filter((text) => {
+      if (!text || ignored.has(text)) {
+        return false;
+      }
+
+      return !this.shouldIgnoreCapturedText(text, 'sectionHeader');
+    });
   }
 
   async captureSectionHeadersByTab(page, tabNames, { businessUnit } = {}) {
@@ -248,6 +254,10 @@ export class CaptureEngine {
         await this.ensureSectionHeaderPreconditions(page, tabName);
         const headers = await this.captureSectionHeaders(page);
         for (const header of headers) {
+          if (this.shouldIgnoreCapturedText(header, 'sectionHeader')) {
+            continue;
+          }
+
           snapshot.sectionHeaderRows.push({
             'Section Header': header,
             'Parent Tab': tabName,
@@ -299,13 +309,51 @@ export class CaptureEngine {
         .filter(Boolean),
     );
 
-    if (!skippedTabs.size) {
-      return tabNames;
+    const includeAdditionalInformation = this.config.enableAdditionalInformationTab !== false
+      && businessUnit?.enableAdditionalInformationTab !== false;
+
+    const filteredTabs = tabNames.filter((tabName) => {
+      const normalizedTab = normalizeText(tabName).toLowerCase();
+      if (skippedTabs.has(normalizedTab)) {
+        return false;
+      }
+
+      if (!includeAdditionalInformation && normalizedTab === 'additional information') {
+        return false;
+      }
+
+      return true;
+    });
+
+    return filteredTabs;
+  }
+
+  shouldIgnoreCapturedText(text, type = 'fieldLabel') {
+    const normalized = normalizeText(text);
+    if (!normalized) {
+      return false;
     }
 
-    return tabNames.filter(
-      (tabName) => !skippedTabs.has(normalizeText(tabName).toLowerCase()),
-    );
+    if (this.matchesConfiguredPattern(normalized, 'pageHeadingPatterns')) {
+      return true;
+    }
+
+    if (type === 'fieldLabel' && this.matchesConfiguredPattern(normalized, 'fieldLabelMetadataPatterns')) {
+      return true;
+    }
+
+    if (type === 'fieldLabel' && /:\s*/.test(normalized)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  matchesConfiguredPattern(text, configKey) {
+    return (this.config[configKey] || [])
+      .map((pattern) => String(pattern || '').trim())
+      .filter(Boolean)
+      .some((pattern) => new RegExp(pattern, 'i').test(text));
   }
 
   informativeTextIgnorePatterns(businessUnit) {
@@ -1387,6 +1435,8 @@ export class CaptureEngine {
       ignoredSectionHeaders: this.config.ignoredSectionHeaders || [],
       ignoredFieldLabels: this.config.ignoredFieldLabels || [],
       ignoredFieldLabelPatterns: this.config.ignoredFieldLabelPatterns || [],
+      pageHeadingPatterns: this.config.pageHeadingPatterns || [],
+      fieldLabelMetadataPatterns: this.config.fieldLabelMetadataPatterns || [],
       includeControlFallback,
       expectedRows,
       requiredFieldOverrides,
@@ -1590,6 +1640,8 @@ export class CaptureEngine {
         captureOptions.ignoredFieldLabels.map((text) => cleanText(text).toLowerCase()),
       );
       const ignoredFieldLabelPatterns = captureOptions.ignoredFieldLabelPatterns.map((pattern) => new RegExp(pattern, 'i'));
+      const pageHeadingPatterns = captureOptions.pageHeadingPatterns.map((pattern) => new RegExp(pattern, 'i'));
+      const fieldLabelMetadataPatterns = captureOptions.fieldLabelMetadataPatterns.map((pattern) => new RegExp(pattern, 'i'));
       const excludedTags = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'BUTTON', 'SCRIPT', 'STYLE']);
       const visibleElements = Array.from(elements).filter(isVisible);
       const order = new Map(visibleElements.map((element, index) => [element, index]));
@@ -1599,7 +1651,11 @@ export class CaptureEngine {
           index: order.get(element),
           text: cleanText(textFromElement(element)),
         }))
-        .filter((section) => section.text && !ignoredSectionHeaders.has(section.text));
+        .filter((section) => (
+          section.text
+          && !ignoredSectionHeaders.has(section.text)
+          && !matchesPatternList(section.text, pageHeadingPatterns)
+        ));
 
       function findSectionHeader(element) {
         const index = order.get(element) ?? 0;
@@ -1618,10 +1674,59 @@ export class CaptureEngine {
         return (
           !label ||
           (!allowLong && label.length > 90) ||
+          matchesPatternList(label, pageHeadingPatterns) ||
+          matchesPatternList(label, fieldLabelMetadataPatterns) ||
           isValueOnlyCellLabel(label, element) ||
           ignoredFieldLabels.has(lowerLabel) ||
           ignoredFieldLabelPatterns.some((pattern) => pattern.test(label))
         );
+      }
+
+      function matchesPatternList(value, patterns) {
+        return patterns.some((pattern) => pattern.test(value));
+      }
+
+      function isMeaningfulFieldLabelCandidate(element, label) {
+        if (!element || !label) {
+          return false;
+        }
+
+        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName)) {
+          return true;
+        }
+
+        if (label.includes(':')) {
+          return false;
+        }
+
+        const hasAssociatedControl = () => {
+          if (element.getAttribute('for')) {
+            const controlId = element.getAttribute('for');
+            const control = document.getElementById(controlId);
+            return Boolean(control && ['INPUT', 'SELECT', 'TEXTAREA'].includes(control.tagName));
+          }
+
+          const nearbyControl = element.querySelector('input, select, textarea')
+            || element.previousElementSibling?.matches?.('input, select, textarea')
+            || element.nextElementSibling?.matches?.('input, select, textarea');
+          if (nearbyControl) {
+            return true;
+          }
+
+          const container = element.closest('.form-group, .form-row, .mb-3');
+          if (!container) {
+            return false;
+          }
+
+          return Boolean(container.querySelector('input, select, textarea'));
+        };
+
+        return Boolean(
+          element.tagName === 'LABEL'
+          || element.matches('.control-label, .form-label, .field-label, .label-control')
+          || element.getAttribute('controlname')
+          || element.getAttribute('aria-label')
+        ) && hasAssociatedControl();
       }
 
       function canonicalNearLabelText(value) {
@@ -1822,7 +1927,7 @@ export class CaptureEngine {
         const rawText = textFromElement(element);
         const label = cleanText(rawText);
 
-        if (shouldIgnoreLabel(label, element)) {
+        if (shouldIgnoreLabel(label, element) || !isMeaningfulFieldLabelCandidate(element, label)) {
           continue;
         }
 
@@ -1842,7 +1947,7 @@ export class CaptureEngine {
           const rawText = controlLabelText(element);
           const label = cleanText(rawText);
 
-          if (shouldIgnoreLabel(label, element)) {
+          if (shouldIgnoreLabel(label, element) || !isMeaningfulFieldLabelCandidate(element, label)) {
             continue;
           }
 
@@ -1916,7 +2021,14 @@ export class CaptureEngine {
 
         const candidates = visibleElements
           .filter((element) => !excludedTags.has(element.tagName))
-          .filter((element) => expectedTextMatches(cleanText(textFromElement(element)), expectedLabel))
+          .filter((element) => {
+            const candidateText = cleanText(textFromElement(element));
+            return (
+              !matchesPatternList(candidateText, pageHeadingPatterns) &&
+              !matchesPatternList(candidateText, fieldLabelMetadataPatterns) &&
+              expectedTextMatches(candidateText, expectedLabel)
+            );
+          })
           .filter((element) => !matchesAny(element, captureOptions.tabSelectors))
           .map((element, index) => ({
             element,
@@ -1970,10 +2082,12 @@ export class CaptureEngine {
       }
     }, options);
 
-    return rows.map((row) => ({
-      ...row,
-      'Parent Tab': parentTab,
-    }));
+    return rows
+      .filter((row) => !this.shouldIgnoreCapturedText(row['Field Label'], 'fieldLabel'))
+      .map((row) => ({
+        ...row,
+        'Parent Tab': parentTab,
+      }));
   }
 
   async clickTab(page, tabName) {

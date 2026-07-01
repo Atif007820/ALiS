@@ -1,6 +1,6 @@
 export const flow4EntityNames = {
   MAMMO: {
-    lastName: 'MAMMO_982',
-    firstName: 'IND_982',
+    lastName: 'MAMMO_9294',
+    firstName: 'IND_9294',
   },
 };

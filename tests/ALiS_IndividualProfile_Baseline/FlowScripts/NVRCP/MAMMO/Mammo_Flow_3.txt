@@ -89,7 +89,7 @@ test('test', async ({ page }) => {
   await page.getByRole('row', { name: 'Search Receipt Print Delete' }).getByRole('img').click();
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.locator('#ValidationDate0').getByRole('link', { name: '/09/2026' }).click();
-  
+  await page.getByRole('button', { name: 'Save' }).click();
   
   await page.getByRole('link', { name: 'Licensing' }).hover();
   await page.getByRole('link', { name: 'Individual' }).hover();
@@ -103,7 +103,6 @@ test('test', async ({ page }) => {
   
   
   await page.getByText('Entity Information').click();
-  await page.getByText('Additional Information').click();
   await page.getByText('Permit(s)').click();
   await page.getByText('Activity Log(s)').click();
   await page.getByText('Payment(s)').click();

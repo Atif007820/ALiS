@@ -1,5 +1,5 @@
 {
-  "defaultEnvironment": "TEST",
+  "defaultEnvironment": "PROD",
   "defaultSite": "ALL",
   "defaultProduct": "ALL",
   "defaultProject": "chromium",
