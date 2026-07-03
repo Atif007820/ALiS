@@ -3,7 +3,7 @@ export const environments = {
     key: 'TEST',
     name: 'Testing',
     urls: {
-      DPBH: 'http://172.16.3.2/ALiSDPBH2TESTING11.4.38.09/Login.aspx',
+      DPBH: 'http://172.16.3.2/ALiSDPBH2TESTING11.4.39/Login.aspx',
       TXOCA: 'http://172.16.3.2/ALiSTXOCA2TESTING11.4.38.09/DefaultTexas.aspx',
       NVRCP: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.09/LoginRadiation.aspx',
       NJ: 'http://172.16.3.2/ALiSNJDOH2TESTING11.4.38.09/LoginNJ.aspx',
