@@ -961,6 +961,7 @@ async function runModifySearchAttempts(page, {
     entityName,
     entityId,
     searchFallbacks,
+    actionName,
   });
   const retryDelayMs = Number(businessUnit.modifySearchRetryDelayMs || 5_000);
   let lastSearchSummary = '';
@@ -987,7 +988,7 @@ async function runModifySearchAttempts(page, {
       }
 
       if (await clickEntityResult(page, entityName || attempt.value, {
-        allowFirstResult: attempt.type === 'entityId' || attempt.type === 'field',
+        allowFirstResult: attempt.allowFirstResult || attempt.type === 'entityId' || attempt.type === 'field',
       })) {
         return;
       }
@@ -1050,6 +1051,7 @@ function buildSearchAttempts({
   entityName,
   entityId,
   searchFallbacks = [],
+  actionName = 'Modify',
 }) {
   const attempts = [];
   const nameRetries = Number(businessUnit.modifySearchNameRetries || 5);
@@ -1100,6 +1102,27 @@ function buildSearchAttempts({
       fieldNames,
       label: `${fallback.label || fieldNames.join('/')} "${value}"`,
       retries: fallback.retries || fallbackRetries,
+    });
+  }
+
+  if (
+    normalizeActionName(actionName) === 'View'
+    && businessUnit.viewExistingEntityFallbackToPrefix
+    && !entityId
+    && businessUnit.entityPrefix
+    && !nameVariants.some((value) => normalizeText(value) === normalizeText(businessUnit.entityPrefix))
+  ) {
+    attempts.push({
+      type: 'field',
+      value: businessUnit.entityPrefix,
+      fieldNames: uniqueValues([
+        ...(businessUnit.modifyEntitySearchFieldNames || []),
+        'Entity Name',
+        'Facility Name',
+      ]),
+      label: `Entity prefix fallback "${businessUnit.entityPrefix}"`,
+      retries: 1,
+      allowFirstResult: true,
     });
   }
 
@@ -1280,6 +1303,7 @@ async function clickEntityResult(page, entityName, { allowFirstResult = false } 
 async function clickNormalizedSearchResult(page, entityName) {
   const clicked = await page.evaluate((wantedText) => {
     const wanted = clean(wantedText);
+    const wantedCompact = compact(wantedText);
     if (!wanted) return false;
 
     const candidates = Array.from(document.querySelectorAll('a, button, [role="link"], [role="button"], tr, [role="row"]'))
@@ -1287,15 +1311,22 @@ async function clickNormalizedSearchResult(page, entityName) {
       .map((element) => ({
         element,
         text: clean(element.innerText || element.textContent),
+        compactText: compact(element.innerText || element.textContent),
       }))
-      .filter((candidate) => candidate.text && candidate.text.includes(wanted));
+      .filter((candidate) => (
+        candidate.text
+        && (
+          candidate.text.includes(wanted)
+          || candidate.compactText.includes(wantedCompact)
+        )
+      ));
 
     const target = candidates
       .map((candidate) => {
-        const clickable = clickableChild(candidate.element, wanted) || candidate.element;
+        const clickable = clickableChild(candidate.element, wanted, wantedCompact) || candidate.element;
         return {
           element: clickable,
-          score: scoreCandidate(candidate.text, wanted, clickable),
+          score: scoreCandidate(candidate.text, wanted, candidate.compactText, wantedCompact, clickable),
         };
       })
       .sort((left, right) => right.score - left.score)[0]?.element;
@@ -1305,20 +1336,27 @@ async function clickNormalizedSearchResult(page, entityName) {
     target.click?.();
     return true;
 
-    function clickableChild(element, text) {
-      if (matchesClickable(element, text)) return element;
+    function clickableChild(element, text, compactText) {
+      if (matchesClickable(element, text, compactText)) return element;
       return Array.from(element.querySelectorAll('a, button, [role="link"], [role="button"]'))
-        .find((item) => matchesClickable(item, text)) || null;
+        .find((item) => matchesClickable(item, text, compactText)) || null;
     }
 
-    function matchesClickable(element, text) {
-      return isVisible(element) && clean(element.innerText || element.textContent).includes(text);
+    function matchesClickable(element, text, compactText) {
+      const elementText = element.innerText || element.textContent;
+      return isVisible(element)
+        && (
+          clean(elementText).includes(text)
+          || compact(elementText).includes(compactText)
+        );
     }
 
-    function scoreCandidate(text, wanted, element) {
+    function scoreCandidate(text, wanted, compactText, wantedCompact, element) {
       let score = 0;
       if (text === wanted) score += 100;
       if (text.startsWith(wanted)) score += 60;
+      if (compactText === wantedCompact) score += 90;
+      if (compactText.startsWith(wantedCompact)) score += 50;
       if (element.matches?.('a, button, [role="link"], [role="button"]')) score += 30;
       return score - Math.max(0, text.length - wanted.length) * 0.01;
     }
@@ -1340,6 +1378,10 @@ async function clickNormalizedSearchResult(page, entityName) {
 
     function clean(value) {
       return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function compact(value) {
+      return String(value || '').replace(/[^a-z0-9]+/gi, '').toLowerCase();
     }
   }, entityName).catch(() => false);
 

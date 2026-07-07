@@ -674,6 +674,7 @@ export const editableData = {
       modifyEntitySearchFieldNames: ['Entity Name', 'Facility Name'],
 
       entityPrefix: 'RPM',
+      viewExistingEntityFallbackToPrefix: true,
       flow2EntityName: flow2EntityNames.RPM,
       flow4EntityName: flow4EntityNames.RPM,
       createEntityNameSelectors: ['#ctl00_ContentPlaceHolder2_ucBEInformationAdd_txtFacilityName'],
@@ -691,6 +692,7 @@ export const editableData = {
       modifyEntitySearchFieldNames: ['Entity Name', 'Facility Name'],
 
       entityPrefix: 'RM',
+      viewExistingEntityFallbackToPrefix: true,
       flow2EntityName: flow2EntityNames.RM,
       flow4EntityName: flow4EntityNames.RM,
       createEntityNameSelectors: ['#ctl00_ContentPlaceHolder2_ucBEInformationAdd_txtFacilityName'],
@@ -708,6 +710,7 @@ export const editableData = {
       modifyEntitySearchFieldNames: ['Entity Name', 'Facility Name'],
 
       entityPrefix: 'MAMMO',
+      viewExistingEntityFallbackToPrefix: true,
       flow2EntityName: flow2EntityNames.MAMMO,
       flow4EntityName: flow4EntityNames.MAMMO,
       createEntityNameSelectors: ['#ctl00_ContentPlaceHolder2_ucBEInformationAdd_txtFacilityName'],

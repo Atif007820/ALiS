@@ -35,7 +35,7 @@ export async function login(page, { environment, credentials }) {
 }
 
 async function gotoLogin(page, loginUrl) {
-  const attempts = 3;
+  const attempts = 5;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -49,7 +49,8 @@ async function gotoLogin(page, loginUrl) {
         throw error;
       }
 
-      await waitForPageTimeout(page, 1000, 'login retry delay');
+      await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => {});
+      await waitForPageTimeout(page, 1500, 'login retry delay');
     }
   }
 }
