@@ -1,7 +1,7 @@
 import { environment } from './runConfig.js';
 
 const BASE_URLS = {
-  TEST: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.38.07',
+  TEST: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.39',
   PREPROD: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.37.04.03',
   PROD: 'https://aliswalni-uat.aithent.com/ALiSINVPROD',
 };
