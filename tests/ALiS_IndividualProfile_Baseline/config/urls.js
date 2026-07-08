@@ -2,7 +2,7 @@ export const urlProfiles = {
   NVRCP: {
     id: 'NVRCP',
     name: 'NVRCP',
-    loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.38.09/LoginRadiation.aspx',
+    loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.39.01/LoginRadiation.aspx',
   },
 };
 
