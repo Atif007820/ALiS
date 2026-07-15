@@ -13,7 +13,7 @@ export const CONFIG = {
   },
 
   urlB: {
-    loginUrl: 'http://172.16.3.2/ALiSDPBH2TESTING11.4.38.04.04/login.aspx',
+    loginUrl: 'http://172.16.3.2/ALiSDPBH2TESTING11.4.40.01/login.aspx',
     username: 'EH_TP_4686',
     password: 'Password@1',
     businessUnit: 'HCQC',
