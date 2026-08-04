@@ -125,7 +125,7 @@ function licenseCredentialActions(businessUnit) {
 }
 
 async function saveCreatedProfile(page, { repairForm } = {}) {
-  const attempts = 4;
+  const attempts = 6;
   let lastState = null;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -348,10 +348,38 @@ async function readCreateSaveState(page) {
 
     return classifyCreateSaveState(state.bodyText, state.path, state.saveVisible);
   } catch {
+    const fallbackState = await readCreateSaveStateWithLocators(page);
+    if (fallbackState) {
+      return fallbackState;
+    }
+
     return {
       status: 'pending',
       message: `URL=${page.url()}, page state unavailable`,
     };
+  }
+}
+
+async function readCreateSaveStateWithLocators(page) {
+  try {
+    if (await page.getByText(/License\/Credential information details/i).first().isVisible({ timeout: 1_000 }).catch(() => false)) {
+      return { status: 'validation', message: 'License/Credential information details' };
+    }
+
+    if (await page.getByText(/saved successfully|Return to Search/i).first().isVisible({ timeout: 1_000 }).catch(() => false)) {
+      return { status: 'saved', message: `Saved page: ${page.url()}` };
+    }
+
+    const saveVisible = await page.getByRole('button', { name: /^Save\b/i }).first().isVisible({ timeout: 500 }).catch(() => false)
+      || await page.getByRole('link', { name: /^Save\b/i }).first().isVisible({ timeout: 500 }).catch(() => false)
+      || await page.locator('input[type="submit"][value*="Save" i], input[type="button"][value*="Save" i]').first().isVisible({ timeout: 500 }).catch(() => false);
+
+    return {
+      status: 'pending',
+      message: `URL=${page.url()}, page state unavailable, saveVisible=${saveVisible}`,
+    };
+  } catch {
+    return null;
   }
 }
 

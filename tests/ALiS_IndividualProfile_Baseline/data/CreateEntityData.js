@@ -33,10 +33,13 @@ export function buildMammoRunData(testData) {
         exact: false,
         popupTimeoutMs: 30_000,
         samePageFallbackTimeoutMs: 15_000,
+        parentPostbackWaitMs: 1_500,
+        parentPostbackTimeoutMs: 30_000,
         attempts: 5,
         retryDelayMs: 1_500,
         actions: [
           { type: 'radio', name: 'RADIATION THERAPIST RRT', exact: true },
+          { type: 'wait', ms: 500 },
           { type: 'clickLink', name: 'OK' },
         ],
       },

@@ -880,7 +880,52 @@ async function runPopupFromLocator(page, action, context) {
     }
   }
 
+  if (await applyPopupLocatorFallback(page, action, context)) {
+    return;
+  }
+
   throw new Error(`Popup action from "${action.selector}" failed after ${attempts} attempt(s): ${lastError?.message || lastError}`);
+}
+
+async function applyPopupLocatorFallback(page, action, context) {
+  const fallbackSelector = action.fallbackSelector || inferDateTextboxSelector(action.selector);
+  if (!fallbackSelector || !action.fallbackValue) {
+    return false;
+  }
+
+  const fallbackValue = resolveValue(action.fallbackValue, context);
+  const locator = page.locator(fallbackSelector).first();
+  const available = await locator.count().catch(() => 0);
+  if (!available) {
+    return false;
+  }
+
+  await locator.waitFor({
+    state: 'visible',
+    timeout: Number(action.fallbackTimeoutMs || 5_000),
+  }).catch(() => {});
+
+  const canFill = await locator.isVisible().catch(() => false);
+  if (!canFill) {
+    return false;
+  }
+
+  await setElementValue(locator, fallbackValue);
+  await waitForAspNetPostback(page, {
+    minimumWaitMs: Number(action.fallbackSettleMs || 500),
+    timeoutMs: Number(action.fallbackPostbackTimeoutMs || 10_000),
+  }).catch(() => {});
+
+  return true;
+}
+
+function inferDateTextboxSelector(selector) {
+  const text = String(selector || '').trim();
+  if (!text || !/_img\b/i.test(text)) {
+    return '';
+  }
+
+  return text.replace(/_img\b/i, '');
 }
 
 async function openPopupTargetFromLink(page, action, timeoutMs) {
@@ -1596,7 +1641,17 @@ function resolveValue(value, context) {
     return context.entityName || '';
   }
 
+  if (value === '$TODAY') {
+    return formatTodayForAlis();
+  }
+
   return value ?? '';
+}
+
+function formatTodayForAlis() {
+  const now = new Date();
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${pad(now.getMonth() + 1)}/${pad(now.getDate())}/${now.getFullYear()}`;
 }
 
 async function selectConfiguredOption(locator, action, value, context) {

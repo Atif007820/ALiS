@@ -600,6 +600,8 @@ export function buildMammoRunData(testData) {
       type: 'popupFromLocator',
       selector: '#ctl00_ContentPlaceHolder1_ucMachineInformation_txtDateManuf_img',
       popupTimeoutMs: 10_000,
+      fallbackSelector: '#ctl00_ContentPlaceHolder1_ucMachineInformation_txtDateManuf',
+      fallbackValue: '$TODAY',
       actions: [
         { type: 'clickButton', name: 'OK' },
       ],

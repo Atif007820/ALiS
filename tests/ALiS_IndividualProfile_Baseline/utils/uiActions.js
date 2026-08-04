@@ -211,10 +211,9 @@ export async function runUiAction(page, action, context = {}) {
   }
 
   if (action.type === 'clickLink') {
-    await page.getByRole('link', {
-      name: action.name,
-      exact: action.exact ?? true,
-    }).nth(action.index || 0).click();
+    if (!await clickConfiguredLink(page, action)) {
+      throw new Error(`Visible link "${action.name}" was not available for click.`);
+    }
     return;
   }
 
@@ -228,10 +227,13 @@ export async function runUiAction(page, action, context = {}) {
       return;
     }
 
-    await page.getByRole('link', {
+    const clicked = await clickConfiguredLink(page, {
+      ...action,
       name: action.name || 'Add',
-      exact: action.exact ?? true,
-    }).nth(action.index || 0).click();
+    });
+    if (!clicked) {
+      throw new Error(`Visible link "${action.name || 'Add'}" was not available near "${action.nearText}".`);
+    }
     return;
   }
 
@@ -1129,6 +1131,97 @@ function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function clickConfiguredLink(page, action) {
+  const timeoutMs = Number(action.timeoutMs || 8_000);
+  const deadline = Date.now() + timeoutMs;
+  const index = Number(action.index || 0);
+
+  while (Date.now() <= deadline) {
+    const roleLink = page.getByRole('link', {
+      name: action.name,
+      exact: action.exact ?? true,
+    }).nth(index);
+
+    if (await clickIfVisible(roleLink)) {
+      if (page.isClosed()) {
+        return true;
+      }
+
+      await waitForPageTimeout(page, Number(action.settleMs || 500), `link click "${action.name}"`).catch(() => {});
+      if (page.isClosed()) {
+        return true;
+      }
+
+      await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
+      return true;
+    }
+
+    if (await clickLinkByDomText(page, action.name, {
+      exact: action.exact ?? true,
+      index,
+    })) {
+      if (page.isClosed()) {
+        return true;
+      }
+
+      await waitForPageTimeout(page, Number(action.settleMs || 500), `DOM link click "${action.name}"`).catch(() => {});
+      if (page.isClosed()) {
+        return true;
+      }
+
+      await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
+      return true;
+    }
+
+    await wait(250);
+  }
+
+  return false;
+}
+
+async function clickLinkByDomText(page, name, { exact = true, index = 0 } = {}) {
+  return page.evaluate(({ name, exact, index }) => {
+    const wanted = normalize(name);
+    const links = Array.from(document.querySelectorAll('a, [role="link"], button[onclick], input[type="button"], input[type="submit"]'))
+      .filter(isVisible)
+      .filter((element) => {
+        const text = normalize([
+          element.textContent,
+          element.value,
+          element.getAttribute('aria-label'),
+          element.getAttribute('title'),
+          element.id,
+          element.name,
+        ].filter(Boolean).join(' '));
+
+        return exact ? text === wanted : text.includes(wanted);
+      });
+
+    const target = links[index];
+    if (!target) {
+      return false;
+    }
+
+    target.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+    target.click?.();
+    return true;
+
+    function isVisible(element) {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && Number(style.opacity) !== 0
+        && rect.width > 0
+        && rect.height > 0;
+    }
+
+    function normalize(value) {
+      return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+  }, { name, exact, index }).catch(() => false);
 }
 
 async function clickLinkNearText(page, nearText, linkName) {

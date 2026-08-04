@@ -10,6 +10,41 @@ import {
 import { runUiActions } from '../utils/uiActions.js';
 import { ensurePageOpen, waitForPageTimeout } from '../utils/pageGuards.js';
 
+function tabNameAliases(tabName) {
+  const text = normalizeText(tabName);
+  const withoutParentheticalPlural = text.replace(/\(s\)/gi, '');
+  const withParentheticalPlural = /\(s\)/i.test(text)
+    ? text
+    : text.replace(/\b(Payment|Invoice|Permit|Document|Inspection|Activity Log)\b/i, '$1(s)');
+
+  return uniqueBy([
+    text,
+    withoutParentheticalPlural,
+    withParentheticalPlural,
+  ], (value) => normalizeText(value).toLowerCase()).filter(Boolean);
+}
+
+function canonicalTabName(tabName) {
+  return normalizeText(tabName)
+    .replace(/\(s\)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function tabNamesMatch(left, right) {
+  return canonicalTabName(left) === canonicalTabName(right);
+}
+
+function tabNamePattern(tabName) {
+  const aliases = tabNameAliases(tabName).map(escapeRegex);
+  return new RegExp(`^(?:${aliases.join('|')})$`, 'i');
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export class CaptureEngine {
   constructor(config = baselineConfig.capture) {
     this.config = config;
@@ -872,10 +907,9 @@ export class CaptureEngine {
 
   tableHeaderPreconditionForTab(businessUnit, tabName) {
     const preconditions = businessUnit?.tableHeaderPreconditions || {};
-    const normalizedTabName = normalizeText(tabName).toLowerCase();
 
     return Object.entries(preconditions)
-      .find(([key]) => normalizeText(key).toLowerCase() === normalizedTabName)?.[1] || null;
+      .find(([key]) => tabNamesMatch(key, tabName))?.[1] || null;
   }
 
   async runConfiguredTableHeaderPrecondition(page, tabName, businessUnit, precondition) {
@@ -2095,20 +2129,33 @@ export class CaptureEngine {
       return;
     }
 
-    const selectorCandidate = page
-      .locator(this.config.tabSelectors.join(','))
-      .filter({ hasText: tabName })
-      .first();
-    if (await this.clickIfVisible(selectorCandidate)) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const tabPattern = tabNamePattern(tabName);
+      const selectorCandidate = page
+        .locator(this.config.tabSelectors.join(','))
+        .filter({ hasText: tabPattern })
+        .first();
+      if (await this.clickIfVisible(selectorCandidate)) {
+        if (await this.waitForLegacyTabActivation(page, tabName, 8_000)) {
+          return;
+        }
+      }
+
+      const linkCandidate = page.getByRole('link', { name: tabPattern }).first();
+      if (await this.clickIfVisible(linkCandidate)) {
+        if (await this.waitForLegacyTabActivation(page, tabName, 8_000)) {
+          return;
+        }
+      }
+
+      await waitForPageTimeout(page, 300, `retrying "${tabName}" tab click`);
+    }
+
+    if (await this.currentTabLooksActive(page, tabName)) {
       return;
     }
 
-    const exactLink = page.getByRole('link', { name: tabName, exact: true }).first();
-    if (await this.clickIfVisible(exactLink)) {
-      return;
-    }
-
-    this.warnings.push(`Could not click tab "${tabName}". Capturing currently visible section headers.`);
+    this.warnings.push(`Could not activate tab "${tabName}". Capturing currently visible page.`);
   }
 
   async clickAngularRoleTab(page, tabName) {
@@ -2157,6 +2204,70 @@ export class CaptureEngine {
     }
 
     return false;
+  }
+
+  async waitForLegacyTabActivation(page, tabName, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() <= deadline) {
+      await this.waitForCaptureReady(page);
+
+      if (await this.currentTabLooksActive(page, tabName)) {
+        return true;
+      }
+
+      await waitForPageTimeout(page, 250, `waiting for "${tabName}" legacy tab activation`);
+    }
+
+    return false;
+  }
+
+  async currentTabLooksActive(page, tabName) {
+    return page.evaluate(({ tabNames, tabSelectors }) => {
+      const wanted = tabNames.map(normalize).filter(Boolean);
+      const tabs = tabSelectors.flatMap((selector) => {
+        try {
+          return Array.from(document.querySelectorAll(selector));
+        } catch {
+          return [];
+        }
+      });
+
+      return tabs.some((tab) => {
+        if (!isVisible(tab) || !wanted.includes(normalize(tab.textContent))) {
+          return false;
+        }
+
+        const candidates = [
+          tab,
+          tab.parentElement,
+          tab.closest?.('li'),
+          tab.closest?.('[role="tab"]'),
+          tab.closest?.('.ajax__tab_active, .active, .selected'),
+        ].filter(Boolean);
+
+        return candidates.some((candidate) => (
+          candidate.getAttribute?.('aria-selected') === 'true'
+          || /\b(active|selected|ajax__tab_active|mdc-tab--active)\b/i.test(String(candidate.className || ''))
+        ));
+      });
+
+      function normalize(value) {
+        return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      }
+
+      function isVisible(element) {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden'
+          && style.display !== 'none'
+          && rect.width > 0
+          && rect.height > 0;
+      }
+    }, {
+      tabNames: tabNameAliases(tabName),
+      tabSelectors: this.config.tabSelectors || [],
+    }).catch(() => false);
   }
 
   async roleTabIsSelected(locator) {
