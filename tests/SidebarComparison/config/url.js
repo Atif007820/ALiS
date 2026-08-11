@@ -5,7 +5,7 @@
 
 export const CONFIG = {
   urlA: {
-    loginUrl: 'http://172.16.3.2/ALiSDPBH2TESTING11.3.24.04/login.aspx',
+    loginUrl: 'http://172.16.3.2/ALiSDPBH2TESTING11.3.24.06/login.aspx',
     username: 'EH_TP_6563',
     password: 'Password@1',
     businessUnit: 'HCQC',
@@ -13,7 +13,7 @@ export const CONFIG = {
   },
 
   urlB: {
-    loginUrl: 'http://172.16.3.2/ALiSDPBH2TESTING11.4.40.01/login.aspx',
+    loginUrl: 'http://172.16.3.2/ALiSDPBH2TESTING11.4.40.07/login.aspx',
     username: 'EH_TP_4686',
     password: 'Password@1',
     businessUnit: 'HCQC',
