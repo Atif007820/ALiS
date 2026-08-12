@@ -7,6 +7,7 @@ import { NjStrategy } from '../strategies/NjStrategy.js';
 import { NvrcpStrategy } from '../strategies/NvrcpStrategy.js';
 import { SaptaStrategy } from '../strategies/SaptaStrategy.js';
 import { TxocaStrategy } from '../strategies/TxocaStrategy.js';
+import { TxfscStrategy } from '../strategies/TxfscStrategy.js';
 
 const strategyMap = {
   CONV: ConvStrategy,
@@ -15,6 +16,7 @@ const strategyMap = {
   NJ: NjStrategy,
   NVRCP: NvrcpStrategy,
   SAPTA: SaptaStrategy,
+  TXFSC: TxfscStrategy,
   TXOCA: TxocaStrategy,
 };
 

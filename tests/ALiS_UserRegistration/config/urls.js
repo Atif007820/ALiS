@@ -10,6 +10,7 @@ export const environments = {
       CONV: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.40.07/LoginCMS.aspx',
       CRANES: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.40.07/LoginCMS.aspx',
       SAPTA: 'http://172.16.3.2/ALiSNVSAPTA2TESTING11.4.40.07/LoginBHCEN.aspx',
+      TXFSC: 'http://172.16.3.2/ALiSTXFSC2TESTING11.4.40.07/LoginTXFSC.aspx',
     },
   },
 

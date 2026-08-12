@@ -16,6 +16,7 @@
     "register:edge": "node ./tools/register.js --project=msedge",
     "register:dpbh": "node ./tools/register.js --site DPBH",
     "register:sapta": "node ./tools/register.js --site SAPTA",
+    "register:txfsc": "node ./tools/register.js --env TEST --site TXFSC",
     "report": "playwright show-report playwright-report",
     "browsers:install": "playwright install chromium firefox msedge"
   },

@@ -67,6 +67,24 @@ export const sites = {
     ],
   },
 
+  TXFSC: {
+    key: 'TXFSC',
+    displayName: 'TXFSC User Registration',
+    strategy: 'TXFSC',
+    retryLimit: 8,
+    profileRetryLimit: 3,
+    products: [
+      {
+        key: 'FSC',
+        name: 'Forensic Science Commission',
+        registrationLinkId: 'Test_tabCredentialDetail_LinkButton11',
+        loginPrefix: 'FSC_',
+        entityPrefix: 'FSC',
+        preferredCounty: '027',
+      },
+    ],
+  },
+
   CONV: {
     key: 'CONV',
     displayName: 'LNI Conveyance User Registration',
