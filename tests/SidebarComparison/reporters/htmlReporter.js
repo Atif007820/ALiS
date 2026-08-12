@@ -12,7 +12,7 @@ const reportSubtitle = 'Sidebar Menu Comparison';
 export async function writeHtmlReport(payload, { reportDir = defaultReportDir } = {}) {
   await fs.mkdir(reportDir, { recursive: true });
 
-  const htmlPath = path.join(reportDir, latestHtmlFile);
+  const htmlPath = path.join(reportDir, reportFileName(payload, 'html'));
   const html = buildHtml(payload);
   await fs.writeFile(htmlPath, html, 'utf8');
 
@@ -21,6 +21,7 @@ export async function writeHtmlReport(payload, { reportDir = defaultReportDir } 
 
 function buildHtml(payload) {
   const {
+    productName,
     labelA,
     labelB,
     urlA,
@@ -39,6 +40,7 @@ function buildHtml(payload) {
   const textMatched = [...matched, ...iconMismatch.map((item) => item.title)];
   const issueCount = missing.length + iconMismatch.length + extraB.length + (error ? 1 : 0);
   const generatedAt = formatReportTimestamp();
+  const title = productName ? `${reportTitle} - ${productName}` : reportTitle;
 
   return `<!doctype html>
 <html lang="en">
@@ -92,7 +94,7 @@ function buildHtml(payload) {
 </head>
 <body>
   <header>
-    <h1>${escapeHtml(reportTitle)}</h1>
+    <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(reportSubtitle)} | ${escapeHtml(generatedAt)}</p>
   </header>
   <main>
@@ -107,6 +109,7 @@ function buildHtml(payload) {
     <section class="panel">
       <h2>Run Details</h2>
       <div class="meta">
+        ${productName ? `<div>Product</div><div>${escapeHtml(productName)}</div>` : ''}
         <div>URL A</div><div>${escapeHtml(labelA)} (${escapeHtml(urlA)})</div>
         <div>URL B</div><div>${escapeHtml(labelB)} (${escapeHtml(urlB)})</div>
         <div>Generated At</div><div>${escapeHtml(generatedAt)}</div>
@@ -144,6 +147,11 @@ function buildHtml(payload) {
   </main>
 </body>
 </html>`;
+}
+
+function reportFileName(payload, extension) {
+  const slug = payload.reportSlug || payload.productKey || '';
+  return slug ? `latest-report-${slug}.${extension}` : latestHtmlFile;
 }
 
 function metric(label, value, tone = '') {

@@ -1,6 +1,7 @@
 {
-  "fullyParallel": false,
-  "workers": 1,
+  "fullyParallel": true,
+  "workers": 3,
+  "parallelWorkers": 3,
   "headless": true,
   "slowMo": 0,
   "maximizeWindow": true,

@@ -1,0 +1,247 @@
+============================================================
+SidebarComparison Commands
+============================================================
+
+Framework folder
+------------------------------------------------------------
+cd C:\Users\mohd.jamal\Downloads\Playwright\tests\SidebarComparison
+
+
+Recommended command format
+------------------------------------------------------------
+npm run sidebar -- --headed --product= 1,2,3,4,5,6 --parallel 3
+
+Short format also works, but npm may show warnings for --product:
+npm run sidebar --headed --product= 1,2,3,4,5,6 --parallel 3
+
+
+Supported options
+------------------------------------------------------------
+--headed              Run browser in headed mode
+--product= 1,2,3      Run only selected product numbers
+--parallel 3          Run selected product comparisons with 3 workers
+--parallel            Use config/runSettings.json parallelWorkers
+--project=chromium    Run a specific Playwright project
+--list                List tests without running them
+
+
+Product number mapping
+------------------------------------------------------------
+1 = Product 1
+2 = Product 2
+3 = Product 3
+4 = Product 4
+5 = Product 5
+6 = Product 6
+
+
+Basic commands
+------------------------------------------------------------
+npm run sidebar
+npm run sidebar -- --headed
+npm run sidebar -- --parallel
+npm run sidebar -- --parallel 3
+npm run sidebar -- --headed --parallel
+npm run sidebar -- --headed --parallel 3
+npm run sidebar -- --project=chromium
+npm run sidebar -- --headed --project=chromium
+npm run sidebar -- --list
+npm run report
+
+
+Run every product individually
+------------------------------------------------------------
+npm run sidebar -- --product= 1
+npm run sidebar -- --product= 2
+npm run sidebar -- --product= 3
+npm run sidebar -- --product= 4
+npm run sidebar -- --product= 5
+npm run sidebar -- --product= 6
+
+
+Run every product individually in headed mode
+------------------------------------------------------------
+npm run sidebar -- --headed --product= 1
+npm run sidebar -- --headed --product= 2
+npm run sidebar -- --headed --product= 3
+npm run sidebar -- --headed --product= 4
+npm run sidebar -- --headed --product= 5
+npm run sidebar -- --headed --product= 6
+
+
+Run every two-product combination
+------------------------------------------------------------
+npm run sidebar -- --product= 1,2
+npm run sidebar -- --product= 1,3
+npm run sidebar -- --product= 1,4
+npm run sidebar -- --product= 1,5
+npm run sidebar -- --product= 1,6
+npm run sidebar -- --product= 2,3
+npm run sidebar -- --product= 2,4
+npm run sidebar -- --product= 2,5
+npm run sidebar -- --product= 2,6
+npm run sidebar -- --product= 3,4
+npm run sidebar -- --product= 3,5
+npm run sidebar -- --product= 3,6
+npm run sidebar -- --product= 4,5
+npm run sidebar -- --product= 4,6
+npm run sidebar -- --product= 5,6
+
+
+Run every two-product combination in headed mode with 2 workers
+------------------------------------------------------------
+npm run sidebar -- --headed --product= 1,2 --parallel 2
+npm run sidebar -- --headed --product= 1,3 --parallel 2
+npm run sidebar -- --headed --product= 1,4 --parallel 2
+npm run sidebar -- --headed --product= 1,5 --parallel 2
+npm run sidebar -- --headed --product= 1,6 --parallel 2
+npm run sidebar -- --headed --product= 2,3 --parallel 2
+npm run sidebar -- --headed --product= 2,4 --parallel 2
+npm run sidebar -- --headed --product= 2,5 --parallel 2
+npm run sidebar -- --headed --product= 2,6 --parallel 2
+npm run sidebar -- --headed --product= 3,4 --parallel 2
+npm run sidebar -- --headed --product= 3,5 --parallel 2
+npm run sidebar -- --headed --product= 3,6 --parallel 2
+npm run sidebar -- --headed --product= 4,5 --parallel 2
+npm run sidebar -- --headed --product= 4,6 --parallel 2
+npm run sidebar -- --headed --product= 5,6 --parallel 2
+
+
+Run every three-product combination
+------------------------------------------------------------
+npm run sidebar -- --product= 1,2,3
+npm run sidebar -- --product= 1,2,4
+npm run sidebar -- --product= 1,2,5
+npm run sidebar -- --product= 1,2,6
+npm run sidebar -- --product= 1,3,4
+npm run sidebar -- --product= 1,3,5
+npm run sidebar -- --product= 1,3,6
+npm run sidebar -- --product= 1,4,5
+npm run sidebar -- --product= 1,4,6
+npm run sidebar -- --product= 1,5,6
+npm run sidebar -- --product= 2,3,4
+npm run sidebar -- --product= 2,3,5
+npm run sidebar -- --product= 2,3,6
+npm run sidebar -- --product= 2,4,5
+npm run sidebar -- --product= 2,4,6
+npm run sidebar -- --product= 2,5,6
+npm run sidebar -- --product= 3,4,5
+npm run sidebar -- --product= 3,4,6
+npm run sidebar -- --product= 3,5,6
+npm run sidebar -- --product= 4,5,6
+
+
+Run every three-product combination in headed mode with 3 workers
+------------------------------------------------------------
+npm run sidebar -- --headed --product= 1,2,3 --parallel 3
+npm run sidebar -- --headed --product= 1,2,4 --parallel 3
+npm run sidebar -- --headed --product= 1,2,5 --parallel 3
+npm run sidebar -- --headed --product= 1,2,6 --parallel 3
+npm run sidebar -- --headed --product= 1,3,4 --parallel 3
+npm run sidebar -- --headed --product= 1,3,5 --parallel 3
+npm run sidebar -- --headed --product= 1,3,6 --parallel 3
+npm run sidebar -- --headed --product= 1,4,5 --parallel 3
+npm run sidebar -- --headed --product= 1,4,6 --parallel 3
+npm run sidebar -- --headed --product= 1,5,6 --parallel 3
+npm run sidebar -- --headed --product= 2,3,4 --parallel 3
+npm run sidebar -- --headed --product= 2,3,5 --parallel 3
+npm run sidebar -- --headed --product= 2,3,6 --parallel 3
+npm run sidebar -- --headed --product= 2,4,5 --parallel 3
+npm run sidebar -- --headed --product= 2,4,6 --parallel 3
+npm run sidebar -- --headed --product= 2,5,6 --parallel 3
+npm run sidebar -- --headed --product= 3,4,5 --parallel 3
+npm run sidebar -- --headed --product= 3,4,6 --parallel 3
+npm run sidebar -- --headed --product= 3,5,6 --parallel 3
+npm run sidebar -- --headed --product= 4,5,6 --parallel 3
+
+
+Randomly picked larger combinations
+------------------------------------------------------------
+npm run sidebar -- --product= 1,2,3,4
+npm run sidebar -- --product= 1,3,5,6
+npm run sidebar -- --product= 2,4,5,6
+npm run sidebar -- --product= 1,4,5,6
+npm run sidebar -- --product= 1,2,3,4,5
+npm run sidebar -- --product= 2,3,4,5,6
+npm run sidebar -- --product= 1,2,3,4,5,6
+
+
+Randomly picked headed and parallel combinations
+------------------------------------------------------------
+npm run sidebar -- --headed --product= 1,4 --parallel 2
+npm run sidebar -- --headed --product= 2,3,6 --parallel 3
+npm run sidebar -- --headed --product= 1,2,4,5 --parallel 3
+npm run sidebar -- --headed --product= 3,4,5,6 --parallel 4
+npm run sidebar -- --headed --product= 1,2,3,4,5,6 --parallel 6
+
+
+List commands for checking selection before running
+------------------------------------------------------------
+npm run sidebar -- --list --product= 1
+npm run sidebar -- --list --product= 1,4
+npm run sidebar -- --list --product= 1,2,3
+npm run sidebar -- --list --product= 1,3,6
+npm run sidebar -- --list --product= 1,2,3,4,5,6
+
+
+Same commands using short npm style
+------------------------------------------------------------
+npm run sidebar --headed --product= 1,4 --parallel 3
+npm run sidebar --list --product= 1,4
+npm run sidebar --product= 1,3,6
+
+Note:
+The short npm style works, but npm may print warnings for --product.
+Use the recommended command format with "--" after sidebar when you want
+clean output without npm warnings.
+
+
+Configured product URL mapping
+------------------------------------------------------------
+Product 1
+URL A: http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx
+URL B: https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx
+
+Product 2
+URL A: http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx
+URL B: https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx
+
+Product 3
+URL A: http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx
+URL B: https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx
+
+Product 4
+URL A: http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx
+URL B: https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx
+
+Product 5
+URL A: http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx
+URL B: https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx
+
+Product 6
+URL A: http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx
+URL B: https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx
+
+
+Edit product credentials
+------------------------------------------------------------
+Each product has separate URL A and URL B credentials in:
+C:\Users\mohd.jamal\Downloads\Playwright\tests\SidebarComparison\config\url.js
+
+Example:
+urlA: {
+  loginUrl: '...',
+  username: '...',
+  password: '...',
+  businessUnit: '...',
+  label: 'NVRCP URL A',
+}
+
+
+Notes
+------------------------------------------------------------
+- Product names can be changed anytime in config\url.js.
+- Product numbers like --product= 1,2,3 will still work even if names change.
+- A selected product will run even if enabled is false.
+- Numeric command style preferred:
+  --product= 1,2,3,4,5,6

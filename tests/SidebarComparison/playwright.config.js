@@ -3,6 +3,10 @@ import { defineConfig } from '@playwright/test';
 import runSettings from './config/runSettings.json' with { type: 'json' };
 
 const outputDir = runSettings.outputDir || 'test-results';
+const workers = positiveInteger(process.env.WORKERS)
+  || (process.env.SIDEBAR_PARALLEL ? positiveInteger(runSettings.parallelWorkers) : 0)
+  || positiveInteger(runSettings.workers)
+  || 1;
 
 export default defineConfig({
   testDir: '.',
@@ -16,7 +20,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   timeout: 10 * 60 * 1000,
   retries: 0,
-  workers: runSettings.workers,
+  workers,
 
   reporter: [
     ['list'],
@@ -47,3 +51,8 @@ export default defineConfig({
     },
   ],
 });
+
+function positiveInteger(value) {
+  const parsed = Number.parseInt(String(value || '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}

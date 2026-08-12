@@ -3,12 +3,37 @@ import runSettings from '../config/runSettings.json' with { type: 'json' };
 
 const SIDEBAR_SIGNATURES = {
   angular: {
-    containerCSS: '#dashboardSidebar',
-    menuItemsCSS: '#left-panel ul.nav.navbar-nav li a',
+    containerSelectors: [
+      '#dashboardSidebar',
+      '#left-panel',
+      'app-sidebar',
+      'aside.sidebar',
+      '.main-sidebar',
+      '.sidebar',
+      'nav.sidebar',
+    ],
+    menuItemSelectors: [
+      '#left-panel ul.nav.navbar-nav li a',
+      '#dashboardSidebar a',
+      'app-sidebar a',
+      'aside.sidebar a',
+      '.main-sidebar a',
+      '.sidebar a',
+      'nav.sidebar a',
+    ],
   },
   legacy: {
-    containerXPath: '//div[@id="SecureMenu"]',
-    menuItemsXPath: '//div[@id="SecureMenu"]//a[contains(@class,"MenuAnchor")]',
+    containerSelectors: [
+      'xpath=//div[@id="SecureMenu"]',
+      '#SecureMenu',
+      'table[id*="SecureMenu"]',
+    ],
+    menuItemSelectors: [
+      'xpath=//div[@id="SecureMenu"]//a[contains(@class,"MenuAnchor")]',
+      '#SecureMenu a.MenuAnchor',
+      '#SecureMenu a',
+      'a.MenuAnchor',
+    ],
   },
 };
 
@@ -19,8 +44,6 @@ const SIDEBAR_POLL_INTERVAL = Number(runSettings.sidebarPollInterval || 500);
 
 async function detectAndScrape(page, label) {
   const started = Date.now();
-  const angular = SIDEBAR_SIGNATURES.angular;
-  const legacy = SIDEBAR_SIGNATURES.legacy;
 
   console.log(`   Detecting sidebar type on ${label}...`);
   const sidebarType = await detectSidebarType(page, label);
@@ -28,15 +51,18 @@ async function detectAndScrape(page, label) {
   console.log(`   Sidebar type detected: "${sidebarType}" on ${label} (${elapsed(started)})`);
 
   if (sidebarType === 'angular') {
-    await page.waitForSelector(angular.menuItemsCSS, { state: 'visible', timeout: SIDEBAR_TIMEOUT });
-    const items = await page.$$eval(
-      angular.menuItemsCSS,
+    const menuSelector = await firstVisibleSelector(page, SIDEBAR_SIGNATURES.angular.menuItemSelectors, SIDEBAR_TIMEOUT);
+    const items = await page.locator(menuSelector).evaluateAll(
       (anchors) =>
         anchors
           .map((a) => ({
             title: (a.getAttribute('title') || '').trim(),
-            text: (a.querySelector('.menu-text')?.textContent || '').trim(),
-            iconCode: (a.querySelector('.menu-icon')?.textContent || '').trim(),
+            text: (a.querySelector('.menu-text')?.textContent || a.textContent || '').trim(),
+            iconCode: (
+              a.querySelector('.menu-icon, mat-icon, i, [class*="icon"]')?.textContent
+              || a.querySelector('.menu-icon, mat-icon, i, [class*="icon"]')?.getAttribute('class')
+              || ''
+            ).trim(),
           }))
           .filter((item) => item.title || item.text),
     );
@@ -44,9 +70,8 @@ async function detectAndScrape(page, label) {
     return { items, sidebarType };
   }
 
-  await page.waitForSelector(`xpath=${legacy.menuItemsXPath}`, { state: 'visible', timeout: SIDEBAR_TIMEOUT });
-  const items = await page.$$eval(
-    `xpath=${legacy.menuItemsXPath}`,
+  const menuSelector = await firstVisibleSelector(page, SIDEBAR_SIGNATURES.legacy.menuItemSelectors, SIDEBAR_TIMEOUT);
+  const items = await page.locator(menuSelector).evaluateAll(
     (anchors) =>
       anchors
         .map((a) => {
@@ -60,15 +85,13 @@ async function detectAndScrape(page, label) {
 }
 
 async function detectSidebarType(page, label) {
-  const angular = SIDEBAR_SIGNATURES.angular;
-  const legacy = SIDEBAR_SIGNATURES.legacy;
   const deadline = Date.now() + SIDEBAR_TIMEOUT;
 
   while (Date.now() < deadline) {
     const remaining = Math.max(250, Math.min(SIDEBAR_POLL_INTERVAL, deadline - Date.now()));
     const [angularVisible, legacyVisible] = await Promise.all([
-      isVisible(page.locator(angular.containerCSS), remaining),
-      isVisible(page.locator(`xpath=${legacy.containerXPath}`), remaining),
+      anyVisible(page, SIDEBAR_SIGNATURES.angular.containerSelectors, remaining),
+      anyVisible(page, SIDEBAR_SIGNATURES.legacy.containerSelectors, remaining),
     ]);
 
     if (angularVisible) return 'angular';
@@ -103,6 +126,7 @@ export async function getSidebarItems(browser, env) {
     await fillLoginCredentials(page, { usernameField, passwordField, username: env.username, password: env.password });
     await submitLogin(page, loginButton);
     console.log(`   ${env.label} login submitted (${elapsed(started)})`);
+    await failFastOnLoginFailure(page, env.label);
 
     const { items, sidebarType } = await detectAndScrape(page, env.label);
 
@@ -243,6 +267,33 @@ async function submitLogin(page, loginButton) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
 }
 
+async function failFastOnLoginFailure(page, label) {
+  const text = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  const normalizedText = text.replace(/\s+/g, ' ').trim();
+  const failurePatterns = [
+    /user does not exist in the database or the user status is inactive/i,
+    /invalid login/i,
+    /invalid login name/i,
+    /invalid username/i,
+    /invalid password/i,
+    /login failed/i,
+    /account is inactive/i,
+    /user status is inactive/i,
+    /password is incorrect/i,
+    /credentials.*invalid/i,
+  ];
+  const matchedFailure = failurePatterns.find((pattern) => pattern.test(normalizedText));
+
+  if (!matchedFailure) return;
+
+  const failureText = normalizedText.match(matchedFailure)?.[0] || 'Login was rejected by the application.';
+  const summary = await pageSummary(page);
+  throw new Error(
+    `Login failed on ${label}: ${failureText}. `
+      + `Current URL: ${summary.url}. Visible text: ${summary.text}`,
+  );
+}
+
 async function dismissBlockingOverlays(page) {
   await page.evaluate(() => {
     const selectors = [
@@ -275,6 +326,39 @@ async function dismissBlockingOverlays(page) {
 async function isVisible(locator, timeout) {
   return locator.first().waitFor({ state: 'visible', timeout })
     .then(() => true)
+    .catch(() => false);
+}
+
+async function anyVisible(page, selectors, timeout) {
+  const results = await Promise.all(
+    selectors.map((selector) => isVisible(page.locator(selector), timeout)),
+  );
+
+  return results.some(Boolean);
+}
+
+async function firstVisibleSelector(page, selectors, timeout) {
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    const remaining = Math.max(250, Math.min(SIDEBAR_POLL_INTERVAL, deadline - Date.now()));
+
+    for (const selector of selectors) {
+      const locator = page.locator(selector);
+      if (await hasVisibleItems(locator, remaining)) {
+        return selector;
+      }
+    }
+  }
+
+  throw new Error(`No visible sidebar menu item selector matched. Tried: ${selectors.join(', ')}`);
+}
+
+async function hasVisibleItems(locator, timeout) {
+  return locator
+    .first()
+    .waitFor({ state: 'visible', timeout })
+    .then(async () => (await locator.count()) > 0)
     .catch(() => false);
 }
 

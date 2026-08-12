@@ -10,12 +10,15 @@
 //  attachReport
 //  Builds the annotation text and attaches it to testInfo.
 // ─────────────────────────────────────────────────────────────
-export async function attachReport({ testInfo, labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB, error }) {
+export async function attachReport({ testInfo, productName, labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB, error }) {
 
   const D = '─'.repeat(50);
   const lines = [];
 
   lines.push('SIDEBAR COMPARISON RESULTS');
+  if (productName) {
+    lines.push(`Product  : ${productName}`);
+  }
   lines.push(`Source   : ${labelA}  (${urlA})`);
   lines.push(`Comparing: ${labelB}  (${urlB})`);
   lines.push('');

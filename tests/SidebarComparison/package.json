@@ -1,10 +1,12 @@
 {
   "name": "sidebar-comparision",
   "version": "1.0.0",
-  "description": "Playwright framework for comparing sidebar menu items between two environments.",
+  "description": "Playwright framework for comparing sidebar menu items across multiple URL pairs.",
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "sidebar": "node ./scripts/runSidebar.js",
+    "sidebar:list": "node ./scripts/runSidebar.js --list",
     "test:sidebar": "playwright test CompareSidebar.spec.js",
     "test:chrome": "playwright test --project=chromium",
     "test:headed": "playwright test --headed",

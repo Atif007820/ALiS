@@ -25,7 +25,7 @@ const fills = {
 
 export async function writeExcelReport(payload, { reportDir = defaultReportDir } = {}) {
   await fs.mkdir(reportDir, { recursive: true });
-  await removeOldExcelReports(reportDir);
+  await removeOldExcelReports(reportDir, payload);
 
   const generatedAt = formatReportTimestamp();
   const workbook = new ExcelJS.Workbook();
@@ -40,11 +40,11 @@ export async function writeExcelReport(payload, { reportDir = defaultReportDir }
 
   const excelPath = await writeWorkbookWithFallback(
     workbook,
-    path.join(reportDir, latestExcelFile),
+    path.join(reportDir, reportFileName(payload, 'xlsx')),
   );
 
   await fs.writeFile(
-    path.join(reportDir, latestJsonFile),
+    path.join(reportDir, resultFileName(payload, 'json')),
     JSON.stringify({ generatedAt, ...toJsonPayload(payload), excelPath }, null, 2),
     'utf8',
   );
@@ -53,7 +53,7 @@ export async function writeExcelReport(payload, { reportDir = defaultReportDir }
 }
 
 function addSummarySheet(workbook, payload, generatedAt) {
-  const { labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB, error } = payload;
+  const { productName, labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB, error } = payload;
   const textMatchedCount = matched.length + iconMismatch.length;
   const failedCount = missing.length + iconMismatch.length + extraB.length + (error ? 1 : 0);
 
@@ -65,6 +65,7 @@ function addSummarySheet(workbook, payload, generatedAt) {
 
   sheet.addRows([
     { item: 'Framework', value: 'SidebarComparison' },
+    ...(productName ? [{ item: 'Product', value: productName }] : []),
     { item: 'Label A', value: labelA },
     { item: 'URL A', value: urlA },
     { item: 'Label B', value: labelB },
@@ -117,7 +118,7 @@ function addSummarySheet(workbook, payload, generatedAt) {
   ]);
 
   styleHeaderRow(sheet.getRow(1));
-  const testCaseHeaderRow = error ? 11 : 10;
+  const testCaseHeaderRow = (error ? 11 : 10) + (productName ? 1 : 0);
   styleHeaderRow(sheet.getRow(testCaseHeaderRow));
   applyStatusStyles(sheet, testCaseHeaderRow + 1, sheet.rowCount, 2);
   polishWorksheet(sheet);
@@ -294,11 +295,16 @@ function polishWorksheet(sheet) {
   }
 }
 
-async function removeOldExcelReports(reportDir) {
+async function removeOldExcelReports(reportDir, payload) {
   const entries = await fs.readdir(reportDir, { withFileTypes: true }).catch(() => []);
+  const slug = payload.reportSlug || payload.productKey || '';
+  const pattern = slug
+    ? new RegExp(`^~?\\$?latest-report-${escapeRegExp(slug)}(?:-\\d+)?\\.xlsx$`, 'i')
+    : /^~?\$?latest-report.*\.xlsx$/i;
+
   await Promise.all(
     entries
-      .filter((entry) => entry.isFile() && /^~?\$?latest-report.*\.xlsx$/i.test(entry.name))
+      .filter((entry) => entry.isFile() && pattern.test(entry.name))
       .map((entry) => fs.rm(path.join(reportDir, entry.name), { force: true }).catch(() => {})),
   );
 }
@@ -323,6 +329,8 @@ async function writeWorkbookWithFallback(workbook, preferredExcelPath) {
 
 function toJsonPayload(payload) {
   return {
+    productName: payload.productName || '',
+    productKey: payload.productKey || '',
     labelA: payload.labelA,
     labelB: payload.labelB,
     urlA: payload.urlA,
@@ -335,6 +343,20 @@ function toJsonPayload(payload) {
     extraB: payload.extraB,
     error: payload.error || '',
   };
+}
+
+function reportFileName(payload, extension) {
+  const slug = payload.reportSlug || payload.productKey || '';
+  return slug ? `latest-report-${slug}.${extension}` : latestExcelFile;
+}
+
+function resultFileName(payload, extension) {
+  const slug = payload.reportSlug || payload.productKey || '';
+  return slug ? `latest-results-${slug}.${extension}` : latestJsonFile;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function formatReportTimestamp(date = new Date()) {

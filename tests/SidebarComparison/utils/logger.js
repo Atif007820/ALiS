@@ -10,7 +10,7 @@
 //  printResults
 //  Call after comparison buckets are built.
 // ─────────────────────────────────────────────────────────────
-export function printResults({ labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB }) {
+export function printResults({ productName, labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB }) {
 
   const W = 60;
   const D = '─'.repeat(W);
@@ -18,6 +18,9 @@ export function printResults({ labelA, labelB, urlA, urlB, itemsA, itemsB, match
 
   console.log('\n' + E);
   console.log('  SIDEBAR COMPARISON RESULTS');
+  if (productName) {
+    console.log(`  Product  : ${productName}`);
+  }
   console.log(`  Source   : ${labelA}  (${urlA})`);
   console.log(`  Comparing: ${labelB}  (${urlB})`);
   console.log(E);
