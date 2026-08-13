@@ -3,7 +3,7 @@ export const TEST_DATA = {
   contractorRoleName: 'Conveyance Contractor',
   defaultPassword: 'Password@1',
   businessEmail: 'mohdatif.jamal@ops1.advancedgrc.com',
-  alternateEmail: 'atif.testingengineer@gmail.com',
+  alternateEmail: 'mohdatif.jamal@ops1.advancedgrc.com',
   loginNamePrefix: 'Conv_CC',
   loginNameStartDigits: 2,
   entityNamePrefix: 'CONV',
