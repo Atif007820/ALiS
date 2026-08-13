@@ -6,26 +6,27 @@
 //  Each URL has its own editable username/password/businessUnit.
 //
 //  Example selected run:
-//    npm run sidebar -- --headed --product="Product 1,Product 4" --parallel 3
+//    npm run sidebar -- --headed --product=ALL --parallel 3
+//    npm run sidebar -- --headed --product=1,4 --parallel 3
 // ============================================================
 
 const productComparisons = [
   {
     name: 'Product 1',
-    enabled: false,
+    enabled: true,
     urlA: {
       loginUrl: 'https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx',
       username: 'RPM_Ins_2022',
       password: 'Password@1',
       businessUnit: '',
-      label: 'NVRCP URL B',
+      label: 'NVRCP URL A',
     },
     urlB: {
       loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
       username: 'RPM_Ins_9846',
       password: 'Password@1',
       businessUnit: '',
-      label: 'NVRCP URL A',
+      label: 'NVRCP URL B',
     },
   },
   {
@@ -36,14 +37,14 @@ const productComparisons = [
       username: 'RPM_6926',
       password: 'Password@1',
       businessUnit: '',
-      label: 'NVRCP URL B',
+      label: 'NVRCP URL A',
     },
     urlB: {
       loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
       username: 'RPM_5267',
       password: 'Password@1',
       businessUnit: '',
-      label: 'NVRCP URL A',
+      label: 'NVRCP URL B',
     },
   },
   {
@@ -54,68 +55,68 @@ const productComparisons = [
       username: 'RM_9446',
       password: 'Password@1',
       businessUnit: '',
-      label: 'NVRCP URL B',
+      label: 'NVRCP URL A',
     },
     urlB: {
       loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
       username: 'RM_4654',
       password: 'Password@1',
       businessUnit: '',
-      label: 'NVRCP URL A',
+      label: 'NVRCP URL B',
     },
   },
   {
     name: 'Product 4',
-    enabled: false,
+    enabled: true,
     urlA: {
       loginUrl: 'https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx',
-      username: 'EH_TP_4686',
-      password: 'Password@1',
-      businessUnit: '',
-      label: 'NVRCP URL B',
-    },
-    urlB: {
-      loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
-      username: 'EH_TP_6563',
+      username: 'Mammo_5578',
       password: 'Password@1',
       businessUnit: '',
       label: 'NVRCP URL A',
+    },
+    urlB: {
+      loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
+      username: 'Mammo_6281',
+      password: 'Password@1',
+      businessUnit: '',
+      label: 'NVRCP URL B',
     },
   },
   {
     name: 'Product 5',
-    enabled: false,
+    enabled: true,
     urlA: {
       loginUrl: 'https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx',
-      username: 'EH_TP_4686',
-      password: 'Password@1',
-      businessUnit: '',
-      label: 'NVRCP URL B',
-    },
-    urlB: {
-      loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
-      username: 'EH_TP_6563',
+      username: 'LL_3788',
       password: 'Password@1',
       businessUnit: '',
       label: 'NVRCP URL A',
+    },
+    urlB: {
+      loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
+      username: 'LL_8743',
+      password: 'Password@1',
+      businessUnit: '',
+      label: 'NVRCP URL B',
     },
   },
   {
     name: 'Product 6',
-    enabled: false,
+    enabled: true,
     urlA: {
       loginUrl: 'https://172.16.3.2/ALiSNVRCP2TESTING11.3.24.06/LoginRadiation.aspx',
-      username: 'EH_TP_4686',
-      password: 'Password@1',
-      businessUnit: '',
-      label: 'NVRCP URL B',
-    },
-    urlB: {
-      loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
-      username: 'EH_TP_6563',
+      username: 'Outside_3933',
       password: 'Password@1',
       businessUnit: '',
       label: 'NVRCP URL A',
+    },
+    urlB: {
+      loginUrl: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.40.07/LoginRadiation.aspx',
+      username: 'Outside_403',
+      password: 'Password@1',
+      businessUnit: '',
+      label: 'NVRCP URL B',
     },
   },
 ];
@@ -140,12 +141,13 @@ export function getComparisonPairs() {
     : [{ name: 'Default Product', enabled: true, urlA: CONFIG.urlA, urlB: CONFIG.urlB }];
 
   const selectedProducts = selectedProductKeys();
+  const selectsAllProducts = selectedProducts.has('all');
 
   return configuredProducts
     .map((product, index) => normalizeProductComparison(product, index))
-    .filter((product) => product.enabled || selectedProducts.has(product.key) || selectedProducts.has(String(product.index + 1)))
+    .filter((product) => selectsAllProducts || product.enabled || selectedProducts.has(product.key) || selectedProducts.has(String(product.index + 1)))
     .filter((product) => {
-      if (selectedProducts.size === 0) return true;
+      if (selectedProducts.size === 0 || selectsAllProducts) return true;
       return selectedProducts.has(product.key) || selectedProducts.has(String(product.index + 1));
     });
 }
@@ -177,12 +179,12 @@ function normalizeEnvironment(env, fallbackLabel) {
 }
 
 function selectedProductKeys() {
-  return new Set(
-    String(process.env.PRODUCTS || process.env.npm_config_product || '')
-      .split(',')
-      .map((value) => normalizeKey(value))
-      .filter(Boolean),
-  );
+  const selected = String(process.env.PRODUCTS || process.env.npm_config_product || '')
+    .split(',')
+    .map((value) => normalizeKey(value))
+    .filter(Boolean);
+
+  return new Set(selected);
 }
 
 function normalizeKey(value) {

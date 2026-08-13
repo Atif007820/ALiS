@@ -1,7 +1,7 @@
 export const editableData = {
   defaultPassword: 'Password@1',
   primaryEmail: 'mohdatif.jamal@ops1.advancedgrc.com',
-  alternateEmail: 'atif.testingengineer@gmail.com',
+  alternateEmail: 'mohdatif.jamal@ops1.advancedgrc.com',
   businessContactFirstName: 'Atif',
   businessContactLastName: 'Jamal',
   unitPrefixes: ['Suite', 'Apt', 'Unit'],
