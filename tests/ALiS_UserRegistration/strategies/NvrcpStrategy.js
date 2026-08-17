@@ -34,6 +34,11 @@ export class NvrcpStrategy extends BaseStrategy {
   async fillRegistration(product, user) {
     if (product.formType === 'facility') {
       await this.form.fillFirstText(['Facility Name'], user.facilityName, { hard: true });
+      await this.form.fillFirstText(
+        [/^Registered Name with Secretary of State$/i, /^Registered Name with/i],
+        user.facilityName,
+        { hard: true },
+      );
       await this.form.fillFirstText(['DBA / Business Name'], user.facilityName, { hard: true, timeout: 2000 });
       await this.form.fillFirstText(['NV Business ID'], user.nvBusinessIdShort, { hard: true });
       await this.form.fillFirstText(['Local License #', 'Local License'], user.localLicense, { hard: true });

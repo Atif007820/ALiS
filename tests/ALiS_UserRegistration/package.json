@@ -18,7 +18,7 @@
     "register:sapta": "node ./tools/register.js --site SAPTA",
     "register:txfsc": "node ./tools/register.js --env TEST --site TXFSC",
     "report": "playwright show-report playwright-report",
-    "browsers:install": "playwright install chromium firefox msedge"
+    "browsers:install": "playwright install chromium firefox msedge ffmpeg"
   },
   "dependencies": {
     "@faker-js/faker": "^9.9.0",

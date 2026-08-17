@@ -10,6 +10,7 @@
   "slowMo": 0,
   "maximizeWindow": true,
   "viewport": null,
+  "video": "retain-on-failure",
   "openPlaywrightReport": true,
   "openExcelReport": false,
   "retryLimit": 8,

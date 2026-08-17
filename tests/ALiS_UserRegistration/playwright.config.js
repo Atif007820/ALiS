@@ -11,6 +11,7 @@ const commonExcelReportUrl = pathToFileURL(resolve(configRoot, 'playwright-repor
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: './utils/globalSetup.js',
   fullyParallel: fullyParallelFromSettings(),
   forbidOnly: Boolean(process.env.CI),
   timeout: 1200000,
@@ -34,7 +35,7 @@ export default defineConfig({
     },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: runSettings.video ?? 'retain-on-failure',
   },
   projects: [
     {
