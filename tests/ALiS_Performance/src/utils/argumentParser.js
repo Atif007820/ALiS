@@ -78,6 +78,32 @@ export function scriptSelections(args) {
   return unique;
 }
 
+export function profileSelections(args) {
+  const rawValue = args.profiles ?? args.profile;
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return [null];
+  }
+
+  const selections = String(rawValue)
+    .split(/[;,\r\n]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const unique = [];
+  const seen = new Set();
+
+  for (const selection of selections) {
+    const key = selection.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(selection);
+  }
+
+  if (!unique.length) {
+    throw new Error('No load profiles were provided.');
+  }
+  return unique;
+}
+
 export function resolveParallelWorkers(args, {
   parallelExecution = true,
   parallelWorkers = 1,

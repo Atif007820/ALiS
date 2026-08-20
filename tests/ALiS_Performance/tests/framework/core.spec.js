@@ -10,8 +10,10 @@ import { generatePlaywrightReport } from '../../src/reports/playwrightReportGene
 import { discoverJmxScripts, resolveJmxScript } from '../../src/utils/jmxDiscovery.js';
 import { buildJMeterProperties, resolveLoadSettings } from '../../src/utils/loadProfileResolver.js';
 import { createGuiRuntimeJmx } from '../../src/utils/guiRuntimeJmx.js';
-import { resolveParallelWorkers, scriptSelections } from '../../src/utils/argumentParser.js';
+import { profileSelections, resolveParallelWorkers, scriptSelections } from '../../src/utils/argumentParser.js';
+import { createExecutionJobs, executionJobLabel } from '../../src/utils/executionMatrix.js';
 import { runWithConcurrency } from '../../src/utils/parallelRunner.js';
+import { loadProfiles } from '../../config/loadProfiles.js';
 
 test('parses and de-duplicates multiple script selections', () => {
   expect(scriptSelections({
@@ -35,6 +37,19 @@ test('resolves command-line parallel workers for GUI and non-GUI entry points', 
   expect(() => resolveParallelWorkers({ parallel: '0' }, config)).toThrow('--parallel must be a positive integer');
 });
 
+test('creates one execution job for every script and profile combination', () => {
+  const profiles = profileSelections({ profile: 'spike, stress, SPIKE' });
+  const jobs = createExecutionJobs(['LNI_PREPROD.jmx'], profiles);
+
+  expect(profiles).toEqual(['spike', 'stress']);
+  expect(profileSelections({})).toEqual([null]);
+  expect(jobs).toEqual([
+    { scriptName: 'LNI_PREPROD.jmx', profileName: 'spike' },
+    { scriptName: 'LNI_PREPROD.jmx', profileName: 'stress' }
+  ]);
+  expect(executionJobLabel(jobs[0])).toBe('LNI_PREPROD.jmx [spike]');
+});
+
 test('runs work with the configured concurrency limit and preserves result order', async () => {
   let active = 0;
   let maximumActive = 0;
@@ -48,6 +63,16 @@ test('runs work with the configured concurrency limit and preserves result order
 
   expect(maximumActive).toBe(2);
   expect(results).toEqual([10, 20, 30, 40]);
+});
+
+test('provides the primary performance testing load profiles', () => {
+  expect(loadProfiles.smoke).toEqual({ threads: 1, rampUp: 1, duration: 30, loops: 1 });
+  expect(loadProfiles.load).toEqual({ threads: 50, rampUp: 60, duration: 600, loops: 1 });
+  expect(loadProfiles.stress).toEqual({ threads: 250, rampUp: 120, duration: 900, loops: 1 });
+  expect(loadProfiles.spike).toEqual({ threads: 250, rampUp: 5, duration: 300, loops: 1 });
+  expect(loadProfiles.endurance).toEqual({ threads: 50, rampUp: 300, duration: 14400, loops: 1 });
+  expect(loadProfiles.normal).toBeUndefined();
+  expect(loadProfiles.peak).toBeUndefined();
 });
 
 test('resolves the same load profile properties for GUI and non-GUI runners', () => {

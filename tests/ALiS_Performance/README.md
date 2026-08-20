@@ -38,7 +38,13 @@ npm run perf:gui -- --script=LNI_PREPROD.jmx --profile=smoke
 Parallel GUI mode:
 
 ```powershell
-npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel=2
+npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel=2
+```
+
+Same script with two profiles in parallel:
+
+```powershell
+npm run perf:gui -- --script=LNI_PREPROD.jmx --profile=spike,stress --parallel=2
 ```
 
 Non-GUI mode using script settings:
@@ -56,7 +62,13 @@ npm run perf -- --script=LNI_PREPROD.jmx --profile=smoke
 Parallel non-GUI mode:
 
 ```powershell
-npm run perf:non-gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel=2
+npm run perf:non-gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel=2
+```
+
+Same script with two profiles in parallel:
+
+```powershell
+npm run perf:non-gui -- --script=LNI_PREPROD.jmx --profile=spike,stress --parallel=2
 ```
 
 ```powershell
@@ -89,10 +101,22 @@ Edit these files:
 
 - `config/paths.js`: JMeter home, script root, and result output path.
 - `config/runConfig.js`: report auto-open, Playwright report behavior, GUI auto-start.
-- `config/loadProfiles.js`: smoke, normal, peak, stress load shapes.
+- `config/loadProfiles.js`: smoke, load, stress, spike, and endurance load shapes.
 - `config/reportConfig.js`: Excel report defaults.
 
 You can also copy `.env.example` to `.env` and override common values without changing source files.
+
+## Load Profiles
+
+Profile values use seconds for ramp-up and duration.
+
+| Profile | Threads | Ramp-up | Duration | Purpose |
+| --- | ---: | ---: | ---: | --- |
+| `smoke` | 1 | 1 | 30 | Quick script and environment validation |
+| `load` | 50 | 60 | 600 | Expected production-style load |
+| `stress` | 250 | 120 | 900 | Sustained load beyond expected capacity |
+| `spike` | 250 | 5 | 300 | Sudden high-concurrency increase |
+| `endurance` | 50 | 300 | 14400 | Four-hour stability and resource test |
 
 ## Runtime Outputs
 
@@ -100,6 +124,12 @@ Each run creates a timestamped folder under:
 
 ```text
 results/<script-name>/<timestamp>/
+```
+
+Multi-profile runs use an additional profile folder:
+
+```text
+results/<script-name>/<profile-name>/<timestamp>/
 ```
 
 Artifacts include:
@@ -120,6 +150,8 @@ Artifacts include:
 - If `--profile` is supplied, the selected profile is passed as JMeter `-J` properties.
 - Profiles are also applied to a temporary runtime JMX copy, so hardcoded standard Thread Groups use the selected values without modifying the source script.
 - GUI and non-GUI commands share the same profile resolver and command-line overrides.
+- Comma-separated profiles create one execution per profile in both GUI and non-GUI modes.
+- Multiple scripts and profiles create every script/profile combination, each with isolated outputs.
 - Multiple GUI and non-GUI scripts can run concurrently using semicolon-separated `--script` values.
 - `--parallel=N` overrides `parallelWorkers`; without it, `parallelExecution` and `parallelWorkers` control concurrency.
 - Every parallel script writes to its own timestamped result folder and produces independent reports.

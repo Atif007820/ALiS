@@ -32,8 +32,14 @@ export function scriptResultBase(scriptRelativePath) {
   return withoutExt.split(/[\\/]+/).map(sanitizePathSegment);
 }
 
-export function createRunDirectory({ resultsRoot, scriptRelativePath, timestamp = timestampForFolder() }) {
+export function createRunDirectory({
+  resultsRoot,
+  scriptRelativePath,
+  profileName = '',
+  timestamp = timestampForFolder()
+}) {
   const parts = scriptResultBase(scriptRelativePath);
+  if (profileName) parts.push(sanitizePathSegment(profileName));
   const runDir = path.join(resultsRoot, ...parts, timestamp);
   ensureDir(runDir);
   return runDir;

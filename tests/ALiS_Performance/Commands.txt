@@ -35,21 +35,59 @@ npm run perf -- --script=LNI_PREPROD.jmx --profile=smoke --threads=5 --duration=
 If --profile is not provided, no profile values are passed and JMeter uses the settings saved directly in the .jmx.
 When a profile is provided, the framework applies it to a temporary runtime copy because the source JMX files may contain hardcoded Thread Group values. The source JMX is never changed.
 
+Available Load Profiles
+-----------------------
+All durations and ramp-up values are in seconds.
+
+smoke       1 thread,    1 ramp-up,    30 duration
+load       50 threads,  60 ramp-up,   600 duration
+stress    250 threads, 120 ramp-up,   900 duration
+spike     250 threads,   5 ramp-up,   300 duration
+endurance  50 threads, 300 ramp-up, 14400 duration (4 hours)
+
+Examples:
+
+npm run perf:non-gui -- --script=LNI_PREPROD.jmx --profile=load
+npm run perf:non-gui -- --script=LNI_PREPROD.jmx --profile=stress
+npm run perf:non-gui -- --script=LNI_PREPROD.jmx --profile=spike
+npm run perf:non-gui -- --script=LNI_PREPROD.jmx --profile=endurance
+
+Same Script With Multiple Profiles
+----------------------------------
+Separate profiles with commas. The framework runs the script once per profile.
+
+Non-GUI:
+
+npm run perf:non-gui -- --script=LNI_PREPROD.jmx --profile=spike,stress --parallel=2
+
+GUI:
+
+npm run perf:gui -- --script=LNI_PREPROD.jmx --profile=spike,stress --parallel=2
+
+--parallel=2 allows both profile runs to execute at the same time.
+Each profile has an isolated output folder:
+
+results/LNI_PREPROD/spike/<timestamp>/
+results/LNI_PREPROD/stress/<timestamp>/
+
+Multiple scripts and multiple profiles create every combination. For example,
+2 scripts with 2 profiles create 4 independent runs.
+
 Parallel Execution - GUI and Non-GUI
 ------------------------------------
-Separate script names with semicolons. --parallel controls the maximum scripts running together.
+Separate script names with semicolons. --parallel controls the maximum runs executing together.
 
 Non-GUI parallel run:
 
-npm run perf:non-gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel=2
+npm run perf:non-gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel=2
 
 GUI parallel run:
 
-npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel=2
+npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel=2
 
 The space form is also supported:
 
-npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel 2
+npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel 2
 
 The plural --scripts option remains supported as an alias for --script.
 
@@ -57,12 +95,12 @@ Run every discovered JMX script:
 
 npm run perf:parallel -- --script=ALL --parallel=3
 
-Each GUI and non-GUI script receives its own result folder, JTL, logs, Excel report, and Playwright report.
+Each GUI and non-GUI script/profile run receives its own result folder, JTL, logs, Excel report, and Playwright report.
 
 Control parallel execution in config/runConfig.js:
 
 parallelExecution: true      Enables parallel execution for GUI and non-GUI when multiple scripts are supplied.
-parallelWorkers: 3           Default maximum scripts running together when --parallel is omitted.
+parallelWorkers: 3           Default maximum runs executing together when --parallel is omitted.
 
 Set parallelExecution to false to process the supplied scripts sequentially.
 An explicit --parallel value overrides both runConfig settings for that command.
@@ -102,7 +140,7 @@ npm run perf:gui -- --script=LNI_PREPROD.jmx --profile=smoke --threads=5 --durat
 
 GUI parallel run:
 
-npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel=2
+npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel=2
 
 With no --profile or load overrides, GUI mode uses the settings saved in the JMX.
 After GUI execution and auto-close, the Excel and Playwright reports are generated and opened automatically.
@@ -135,9 +173,9 @@ cd C:\Users\mohd.jamal\Downloads\Playwright
 npm run perf:list
 npm run perf -- --script=LNI_PREPROD.jmx
 npm run perf:non-gui -- --script=LNI_PREPROD.jmx
-npm run perf:parallel -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel=2
+npm run perf:parallel -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel=2
 npm run perf -- --script=LNI_PREPROD.jmx --profile=smoke
 npm run jmeter:gui -- --script=LNI_PREPROD.jmx
 npm run perf:gui -- --script=LNI_PREPROD.jmx
-npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=peak --parallel=2
+npm run perf:gui -- --script="LNI/Inspection_Search.jmx;LNI_Test.jmx" --profile=load --parallel=2
 npm run perf:report -- --jtl=tests/ALiS_Performance/results/LNI_PREPROD/<timestamp>/results.jtl --script=LNI_PREPROD.jmx

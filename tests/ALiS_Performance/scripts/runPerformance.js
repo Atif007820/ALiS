@@ -4,39 +4,55 @@ import {
   jmeterPropertyOverrides,
   parseArgs,
   profileOverrides,
+  profileSelections,
   resolveParallelWorkers,
   scriptSelections
 } from '../src/utils/argumentParser.js';
 import { listJmxScripts, resolveJmxScript } from '../src/utils/jmxDiscovery.js';
 import { createRunDirectory, timestampForFolder } from '../src/utils/fileUtils.js';
+import { createExecutionJobs, executionJobLabel } from '../src/utils/executionMatrix.js';
+import { resolveLoadSettings } from '../src/utils/loadProfileResolver.js';
 import { runWithConcurrency } from '../src/utils/parallelRunner.js';
 import { runPerformanceScenario } from '../src/runners/performanceRunner.js';
+import { paths } from '../config/paths.js';
 import { runConfig } from '../config/runConfig.js';
 
 async function main() {
   const args = parseArgs();
   const requestedScripts = scriptSelections(args);
   const scripts = resolveBatchScripts(requestedScripts);
+  const profiles = profileSelections(args);
+  validateProfiles(profiles);
+  const jobs = createExecutionJobs(scripts, profiles);
   const workers = resolveParallelWorkers(args, {
     parallelExecution: runConfig.parallelExecution,
     parallelWorkers: runConfig.parallelWorkers,
-    scriptCount: scripts.length
+    scriptCount: jobs.length
   });
   const parallel = workers > 1;
+  const isolateProfiles = profiles.length > 1;
   const batchTimestamp = timestampForFolder();
   const commonProperties = jmeterPropertyOverrides(args);
   const overrides = profileOverrides(args);
 
   console.log(`Scripts: ${scripts.length}`);
-  console.log(`Execution: ${parallel ? `parallel (${Math.min(workers, scripts.length)} workers)` : 'sequential'}`);
+  console.log(`Profiles: ${profiles[0] ? profiles.join(', ') : 'JMX script settings'}`);
+  console.log(`Combinations: ${jobs.length}`);
+  console.log(`Execution: ${parallel ? `parallel (${workers} workers)` : 'sequential'}`);
 
-  const results = await runWithConcurrency(scripts, workers, async (scriptName, index) => {
-    const script = resolveJmxScript(scriptName);
+  const results = await runWithConcurrency(jobs, workers, async (job, index) => {
+    const script = resolveJmxScript(job.scriptName);
+    const label = executionJobLabel({
+      scriptName: script.relativePath,
+      profileName: job.profileName
+    });
     const outputDir = outputDirectoryFor({
       requestedOutput: args.output,
       script,
-      scriptCount: scripts.length,
-      batchTimestamp
+      jobCount: jobs.length,
+      batchTimestamp,
+      profileName: job.profileName,
+      isolateProfiles
     });
     const properties = {
       ...commonProperties,
@@ -46,21 +62,31 @@ async function main() {
       } : {})
     };
 
-    console.log(`[${index + 1}/${scripts.length}] Starting: ${script.relativePath}`);
+    console.log(`[${index + 1}/${jobs.length}] Starting: ${label}`);
     try {
       const result = await runPerformanceScenario({
         script: script.relativePath,
-        profile: args.profile,
+        profile: job.profileName,
         outputDir,
         properties,
         ...overrides
       });
-      console.log(`[${index + 1}/${scripts.length}] Completed: ${script.relativePath}`);
-      return { script: script.relativePath, status: 'PASSED', result };
+      console.log(`[${index + 1}/${jobs.length}] Completed: ${label}`);
+      return {
+        script: script.relativePath,
+        profileName: job.profileName,
+        status: 'PASSED',
+        result
+      };
     } catch (error) {
-      console.error(`[${index + 1}/${scripts.length}] Failed: ${script.relativePath}`);
+      console.error(`[${index + 1}/${jobs.length}] Failed: ${label}`);
       console.error(error.message);
-      return { script: script.relativePath, status: 'FAILED', error };
+      return {
+        script: script.relativePath,
+        profileName: job.profileName,
+        status: 'FAILED',
+        error
+      };
     }
   });
 
@@ -76,13 +102,27 @@ function resolveBatchScripts(requestedScripts) {
   return allRequested ? listJmxScripts() : requestedScripts;
 }
 
-function outputDirectoryFor({ requestedOutput, script, scriptCount, batchTimestamp }) {
-  if (!requestedOutput) return undefined;
-  if (scriptCount === 1) return path.resolve(requestedOutput);
+function validateProfiles(profiles) {
+  for (const profileName of profiles) {
+    if (profileName) resolveLoadSettings({ profile: profileName });
+  }
+}
+
+function outputDirectoryFor({
+  requestedOutput,
+  script,
+  jobCount,
+  batchTimestamp,
+  profileName,
+  isolateProfiles
+}) {
+  if (!requestedOutput && !isolateProfiles) return undefined;
+  if (requestedOutput && jobCount === 1) return path.resolve(requestedOutput);
 
   return createRunDirectory({
-    resultsRoot: path.resolve(requestedOutput),
+    resultsRoot: requestedOutput ? path.resolve(requestedOutput) : paths.resultsRoot,
     scriptRelativePath: script.relativePath,
+    profileName: isolateProfiles ? profileName : '',
     timestamp: batchTimestamp
   });
 }
@@ -93,13 +133,17 @@ function printBatchSummary(results) {
   console.log('==========================');
 
   for (const entry of results) {
+    const label = executionJobLabel({
+      scriptName: entry.script,
+      profileName: entry.profileName
+    });
     if (entry.status === 'FAILED') {
-      console.log(`FAILED | ${entry.script} | ${entry.error.message}`);
+      console.log(`FAILED | ${label} | ${entry.error.message}`);
       continue;
     }
 
     const { summary, artifacts } = entry.result;
-    console.log(`${entry.status} | ${entry.script} | Samples: ${summary.overall.total} | Failed: ${summary.overall.failed} | P95: ${Math.round(summary.overall.p95)} ms`);
+    console.log(`${entry.status} | ${label} | Samples: ${summary.overall.total} | Failed: ${summary.overall.failed} | P95: ${Math.round(summary.overall.p95)} ms`);
     console.log(`  Excel: ${artifacts.excelPath}`);
     console.log(`  Playwright: ${artifacts.playwrightReportPath}`);
   }

@@ -5,6 +5,7 @@ import {
   jmeterPropertyOverrides,
   parseArgs,
   profileOverrides,
+  profileSelections,
   resolveParallelWorkers,
   scriptSelections
 } from '../src/utils/argumentParser.js';
@@ -13,6 +14,7 @@ import { generateJMeterHtmlDashboard, openJMeterGUI } from '../src/runners/jmete
 import { createReportFromJtl } from '../src/runners/performanceRunner.js';
 import { buildJMeterProperties, resolveLoadSettings } from '../src/utils/loadProfileResolver.js';
 import { createRunDirectory, timestampForFolder, writeJson } from '../src/utils/fileUtils.js';
+import { createExecutionJobs, executionJobLabel } from '../src/utils/executionMatrix.js';
 import { createGuiRuntimeJmx } from '../src/utils/guiRuntimeJmx.js';
 import { runWithConcurrency } from '../src/utils/parallelRunner.js';
 import { paths } from '../config/paths.js';
@@ -24,45 +26,68 @@ async function main() {
   const args = parseArgs();
   const requestedScripts = scriptSelections(args);
   const scripts = resolveBatchScripts(requestedScripts);
+  const profiles = profileSelections(args);
+  validateProfiles(profiles);
+  const jobs = createExecutionJobs(scripts, profiles);
   const workers = resolveParallelWorkers(args, {
     parallelExecution: runConfig.parallelExecution,
     parallelWorkers: runConfig.parallelWorkers,
-    scriptCount: scripts.length
+    scriptCount: jobs.length
   });
   const parallel = workers > 1;
+  const isolateProfiles = profiles.length > 1;
   const batchTimestamp = timestampForFolder();
   const waitForLaunchSlot = createGuiLaunchGate(parallel ? GUI_LAUNCH_STAGGER_MS : 0);
 
   console.log(`Scripts: ${scripts.length}`);
+  console.log(`Profiles: ${profiles[0] ? profiles.join(', ') : 'JMX script settings'}`);
+  console.log(`Combinations: ${jobs.length}`);
   console.log(`Execution: ${parallel ? `parallel GUI (${workers} workers)` : 'sequential GUI'}`);
 
-  const results = await runWithConcurrency(scripts, workers, async (scriptName, index) => {
+  const results = await runWithConcurrency(jobs, workers, async (job, index) => {
     await waitForLaunchSlot();
-    const script = resolveJmxScript(scriptName);
+    const script = resolveJmxScript(job.scriptName);
+    const label = executionJobLabel({
+      scriptName: script.relativePath,
+      profileName: job.profileName
+    });
     const outputDir = outputDirectoryFor({
       requestedOutput: args.output,
       script,
-      scriptCount: scripts.length,
-      batchTimestamp
+      jobCount: jobs.length,
+      batchTimestamp,
+      profileName: job.profileName,
+      isolateProfiles
     });
 
-    console.log(`[${index + 1}/${scripts.length}] Opening GUI: ${script.relativePath}`);
+    console.log(`[${index + 1}/${jobs.length}] Opening GUI: ${label}`);
     try {
       const result = await runGuiScenario({
         args,
         script,
+        selectedProfile: job.profileName,
         outputDir,
         batchTimestamp,
         index,
         workers
       });
       const status = result ? 'PASSED' : 'LAUNCHED';
-      console.log(`[${index + 1}/${scripts.length}] ${status}: ${script.relativePath}`);
-      return { script: script.relativePath, status, result };
+      console.log(`[${index + 1}/${jobs.length}] ${status}: ${label}`);
+      return {
+        script: script.relativePath,
+        profileName: job.profileName,
+        status,
+        result
+      };
     } catch (error) {
-      console.error(`[${index + 1}/${scripts.length}] Failed: ${script.relativePath}`);
+      console.error(`[${index + 1}/${jobs.length}] Failed: ${label}`);
       console.error(error.message);
-      return { script: script.relativePath, status: 'FAILED', error };
+      return {
+        script: script.relativePath,
+        profileName: job.profileName,
+        status: 'FAILED',
+        error
+      };
     }
   });
 
@@ -70,9 +95,17 @@ async function main() {
   if (results.some((entry) => entry.status === 'FAILED')) process.exitCode = 1;
 }
 
-async function runGuiScenario({ args, script, outputDir, batchTimestamp, index, workers }) {
+async function runGuiScenario({
+  args,
+  script,
+  selectedProfile,
+  outputDir,
+  batchTimestamp,
+  index,
+  workers
+}) {
   const { profileName, profile, profileApplied } = resolveLoadSettings({
-    profile: args.profile,
+    profile: selectedProfile,
     ...profileOverrides(args)
   });
   const runDir = outputDir || createRunDirectory({
@@ -174,13 +207,27 @@ function resolveBatchScripts(requestedScripts) {
   return allRequested ? listJmxScripts() : requestedScripts;
 }
 
-function outputDirectoryFor({ requestedOutput, script, scriptCount, batchTimestamp }) {
-  if (!requestedOutput) return undefined;
-  if (scriptCount === 1) return path.resolve(requestedOutput);
+function validateProfiles(profiles) {
+  for (const profileName of profiles) {
+    if (profileName) resolveLoadSettings({ profile: profileName });
+  }
+}
+
+function outputDirectoryFor({
+  requestedOutput,
+  script,
+  jobCount,
+  batchTimestamp,
+  profileName,
+  isolateProfiles
+}) {
+  if (!requestedOutput && !isolateProfiles) return undefined;
+  if (requestedOutput && jobCount === 1) return path.resolve(requestedOutput);
 
   return createRunDirectory({
-    resultsRoot: path.resolve(requestedOutput),
+    resultsRoot: requestedOutput ? path.resolve(requestedOutput) : paths.resultsRoot,
     scriptRelativePath: script.relativePath,
+    profileName: isolateProfiles ? profileName : '',
     timestamp: batchTimestamp
   });
 }
@@ -204,17 +251,21 @@ function printBatchSummary(results) {
   console.log('==============================');
 
   for (const entry of results) {
+    const label = executionJobLabel({
+      scriptName: entry.script,
+      profileName: entry.profileName
+    });
     if (entry.status === 'FAILED') {
-      console.log(`FAILED | ${entry.script} | ${entry.error.message}`);
+      console.log(`FAILED | ${label} | ${entry.error.message}`);
       continue;
     }
     if (!entry.result) {
-      console.log(`${entry.status} | ${entry.script}`);
+      console.log(`${entry.status} | ${label}`);
       continue;
     }
 
     const { summary, artifacts } = entry.result;
-    console.log(`${entry.status} | ${entry.script} | Samples: ${summary.overall.total} | Failed: ${summary.overall.failed} | P95: ${Math.round(summary.overall.p95)} ms`);
+    console.log(`${entry.status} | ${label} | Samples: ${summary.overall.total} | Failed: ${summary.overall.failed} | P95: ${Math.round(summary.overall.p95)} ms`);
     console.log(`  Excel: ${artifacts.excelPath}`);
     console.log(`  Playwright: ${artifacts.playwrightReportPath}`);
   }
