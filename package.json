@@ -22,7 +22,15 @@
     "hls:validate": "npm --prefix ./tests/ALiS_BusinessEntity_Baseline run validate",
     "conv:e2e": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs",
     "conv:e2e:headed": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs:headed",
-    "conv:e2e:list": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs:list"
+    "conv:e2e:list": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs:list",
+    "perf": "node ./tests/ALiS_Performance/scripts/runPerformance.js",
+    "perf:run": "node ./tests/ALiS_Performance/scripts/runPerformance.js",
+    "perf:non-gui": "node ./tests/ALiS_Performance/scripts/runPerformance.js",
+    "perf:parallel": "node ./tests/ALiS_Performance/scripts/runPerformance.js",
+    "perf:gui": "node ./tests/ALiS_Performance/scripts/openJMeter.js",
+    "perf:list": "node ./tests/ALiS_Performance/scripts/listJMeterScripts.js",
+    "perf:report": "node ./tests/ALiS_Performance/scripts/generatePerformanceReport.js",
+    "jmeter:gui": "node ./tests/ALiS_Performance/scripts/openJMeter.js"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,27 @@
+{
+  "name": "alis-performance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright JavaScript orchestration framework for existing Apache JMeter performance scripts.",
+  "type": "module",
+  "scripts": {
+    "perf": "node ./scripts/runPerformance.js",
+    "perf:run": "node ./scripts/runPerformance.js",
+    "perf:non-gui": "node ./scripts/runPerformance.js",
+    "perf:parallel": "node ./scripts/runPerformance.js",
+    "perf:gui": "node ./scripts/openJMeter.js",
+    "perf:list": "node ./scripts/listJMeterScripts.js",
+    "perf:report": "node ./scripts/generatePerformanceReport.js",
+    "jmeter:gui": "node ./scripts/openJMeter.js",
+    "test": "playwright test",
+    "test:framework": "playwright test ./tests/framework",
+    "report": "playwright show-report playwright-report"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.13",
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}
