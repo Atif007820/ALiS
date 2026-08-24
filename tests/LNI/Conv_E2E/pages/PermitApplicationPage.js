@@ -4,7 +4,10 @@ import { appConfig } from '../config/runConfig.js';
 import { TEST_DATA } from '../config/editableData.js';
 import {
   COMM_CONVEYANCE_TYPES,
+  endorsementCodeForConveyance,
+  endorsementCodesForLicense,
   RESIDENTIAL_CONVEYANCE_TYPES,
+  resolveEndorsementSelection,
 } from '../config/constants.js';
 import {
   checkRandomAvailableRadio,
@@ -74,7 +77,7 @@ export class PermitApplicationPage extends BasePage {
   }
 
   /**
-   * Selects the license type from config and a random conveyance type.
+   * Selects the configured endorsement code, or a random available type when blank.
    * @returns {Promise<{ licenseType: string, conveyanceType: string, typeName: string }>}
    */
   async selectConfiguredLicenseAndConveyance() {
@@ -87,11 +90,13 @@ export class PermitApplicationPage extends BasePage {
       await radio.check();
       logger.info('License Type selected: RESIDENTIAL');
       await this.waitForConveyanceRadios('residential conveyance type');
-      const conveyanceType = await checkRandomAvailableRadio(this.page, RESIDENTIAL_CONVEYANCE_TYPES, {
+      const { conveyanceType, endorsementCode } = await this.selectConfiguredOrRandomConveyance({
+        licenseType,
+        configuredCode: appConfig.resType,
+        pool: RESIDENTIAL_CONVEYANCE_TYPES,
         label: 'residential conveyance type',
-        timeout: 10000,
       });
-      return { licenseType, conveyanceType, typeName: conveyanceType };
+      return { licenseType, conveyanceType, typeName: conveyanceType, endorsementCode };
     }
 
     if (licenseType === 'COMMERCIAL') {
@@ -100,14 +105,49 @@ export class PermitApplicationPage extends BasePage {
       await radio.check();
       logger.info('License Type selected: COMMERCIAL');
       await this.waitForConveyanceRadios('commercial conveyance type');
-      const conveyanceType = await checkRandomAvailableRadio(this.page, COMM_CONVEYANCE_TYPES, {
+      const { conveyanceType, endorsementCode } = await this.selectConfiguredOrRandomConveyance({
+        licenseType,
+        configuredCode: appConfig.commType,
+        pool: COMM_CONVEYANCE_TYPES,
         label: 'commercial conveyance type',
-        timeout: 10000,
       });
-      return { licenseType, conveyanceType, typeName: conveyanceType };
+      return { licenseType, conveyanceType, typeName: conveyanceType, endorsementCode };
     }
 
     throw new Error(`Unsupported LICENSE_TYPE "${licenseType}". Use RESIDENTIAL or COMMERCIAL.`);
+  }
+
+  async selectConfiguredOrRandomConveyance({ licenseType, configuredCode, pool, label }) {
+    if (!configuredCode) {
+      const conveyanceType = await checkRandomAvailableRadio(this.page, pool, {
+        label,
+        timeout: 10000,
+      });
+      logger.info(`No ${licenseType} endorsement override provided; selected randomly.`);
+      return {
+        conveyanceType,
+        endorsementCode: endorsementCodeForConveyance(licenseType, conveyanceType),
+      };
+    }
+
+    const configuredSelection = resolveEndorsementSelection(licenseType, configuredCode);
+    if (!configuredSelection) {
+      throw new Error(
+        `Unsupported ${licenseType} endorsement code "${configuredCode}". ` +
+        `Supported codes: ${endorsementCodesForLicense(licenseType).join(', ')}.`,
+      );
+    }
+
+    const conveyanceType = await checkRandomAvailableRadio(
+      this.page,
+      [configuredSelection.conveyanceType],
+      { label: `${label} (${configuredSelection.code})`, timeout: 10000 },
+    );
+    logger.info(
+      `${licenseType} endorsement override selected: ` +
+      `${configuredSelection.code} -> ${configuredSelection.conveyanceType}`,
+    );
+    return { conveyanceType, endorsementCode: configuredSelection.code };
   }
 
   async continueFromEntityInformation() {

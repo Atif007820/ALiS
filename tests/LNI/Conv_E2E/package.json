@@ -29,6 +29,7 @@
     "test:all-envs":         "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --max-failures=1 --project=chromium",
     "test:all-envs:headed":  "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --max-failures=1 --project=chromium --headed",
     "test:all-envs:list":    "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --project=chromium --list",
+    "test:matrix":           "node scripts/run-env.mjs --env=ALL --licenseType=ALL --parallel=6 --project=chromium",
 
     "test:register":        "node scripts/run-env.mjs -- testScripts/01_RegisterUser.spec.js --workers=1 --project=chromium",
     "test:apply":           "node scripts/run-env.mjs -- testScripts/02_LoginApply.spec.js --workers=1 --project=chromium",

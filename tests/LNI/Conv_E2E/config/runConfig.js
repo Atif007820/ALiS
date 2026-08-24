@@ -92,14 +92,20 @@ export const licenseType = (
   process.env.LICENSE_TYPE || runSettings.licenseType || 'COMMERCIAL'
 ).trim().toUpperCase();
 
+export const resType = String(process.env.RES_TYPE ?? runSettings.resType ?? '').trim().toUpperCase();
+export const commType = String(process.env.COMM_TYPE ?? runSettings.commType ?? '').trim().toUpperCase();
+
 export const appConfig = {
   environment,
   baseUrl: process.env.BASE_URL || '',
   licenseType,
+  resType,
+  commType,
   defaultProject: process.env.DEFAULT_PROJECT || runSettings.defaultProject || 'chromium',
   workers: intFromEnvOrSettings('WORKERS', 'workers', runSettings.workers ?? 3),
   parallelWorkers: intFromEnvOrSettings('PARALLEL_WORKERS', 'parallelWorkers', runSettings.parallelWorkers ?? 3),
   registrationLoginRetryLimit: intFromEnvOrSettings('REGISTRATION_LOGIN_RETRY_LIMIT', 'registrationLoginRetryLimit', 8),
+  documentUploadRetryLimit: intFromEnvOrSettings('DOCUMENT_UPLOAD_RETRY_LIMIT', 'documentUploadRetryLimit', 3),
   fullyParallel: boolFromEnvOrSettings('FULLY_PARALLEL', 'fullyParallel', false),
   headless: boolFromEnvOrSettings('HEADLESS', 'headless', !!process.env.CI),
   slowMo: intFromSettings('slowMo', 0),
@@ -117,6 +123,11 @@ export const appConfig = {
     action: intFromEnvOrSettings('ACTION_TIMEOUT_MS', 'actionTimeoutMs', 30 * 1000),
     navigation: intFromEnvOrSettings('NAVIGATION_TIMEOUT_MS', 'navigationTimeoutMs', 150 * 1000),
     slowField: intFromEnvOrSettings('SLOW_FIELD_TIMEOUT_MS', 'slowFieldTimeoutMs', 30 * 1000),
+    documentUploadResult: intFromEnvOrSettings(
+      'DOCUMENT_UPLOAD_RESULT_TIMEOUT_MS',
+      'documentUploadResultTimeoutMs',
+      90 * 1000,
+    ),
   },
 };
 

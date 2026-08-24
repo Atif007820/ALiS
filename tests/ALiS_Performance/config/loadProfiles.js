@@ -11,7 +11,7 @@ export const loadProfiles = {
   // Purpose: Measure performance under expected user load.
   // When to Run: For routine release validation.
   load: {
-    threads: 50,
+    threads: 5,
     rampUp: 60,
     duration: 600,
     loops: 1

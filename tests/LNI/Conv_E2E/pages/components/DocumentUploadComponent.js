@@ -1,7 +1,7 @@
-import { join } from 'path';
+import { basename, join } from 'path';
 import { BasePage } from '../BasePage.js';
 import { TEST_DATA } from '../../config/editableData.js';
-import { UPLOAD_FILES_DIR } from '../../config/runConfig.js';
+import { appConfig, UPLOAD_FILES_DIR } from '../../config/runConfig.js';
 import { isVisible } from '../../utils/formActions.js';
 import { logger } from '../../utils/logger.js';
 
@@ -22,12 +22,90 @@ export class DocumentUploadComponent extends BasePage {
     await this.waitForVisible(trigger, 150000);
     await trigger.click();
 
-    await this.page.locator('#custom-add1').first().click();
-    await this.dialog.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
-    await this.page.locator('input[type="file"]').setInputFiles(filePath);
-    await this.page.getByRole('textbox', { name: 'comments' }).fill(comments);
-    await this.page.getByRole('button', { name: 'Upload' }).click();
-    await this.dialog.waitFor({ state: 'hidden', timeout: 150000 });
+    const dialog = this.dialog.filter({ hasText: 'Document Upload' }).last();
+    await dialog.waitFor({ state: 'visible', timeout: 30000 });
+
+    let lastFailure = 'Upload dialog did not close.';
+    for (let attempt = 1; attempt <= appConfig.documentUploadRetryLimit; attempt += 1) {
+      const fileInput = await this.ensurePendingUploadRow(dialog);
+      await fileInput.setInputFiles([]).catch(() => {});
+      await fileInput.setInputFiles(filePath);
+      await this.verifySelectedFile(fileInput, filePath);
+
+      await dialog.getByRole('textbox', { name: 'comments' }).last().fill(comments);
+      await this.page.waitForTimeout(750);
+      await dialog.getByRole('button', { name: 'Upload', exact: true }).click();
+
+      const outcome = await this.waitForUploadOutcome(dialog, trigger);
+      if (outcome.success) return;
+
+      lastFailure = outcome.message;
+      logger.warn(
+        `Document upload attempt ${attempt}/${appConfig.documentUploadRetryLimit} failed: ${lastFailure}`,
+      );
+      if (attempt < appConfig.documentUploadRetryLimit) {
+        await this.page.waitForTimeout(1000 * attempt);
+      }
+    }
+
+    throw new Error(
+      `Document upload failed after ${appConfig.documentUploadRetryLimit} attempt(s): ${lastFailure}`,
+    );
+  }
+
+  async ensurePendingUploadRow(dialog) {
+    let fileInput = dialog.locator('input[type="file"]').last();
+    if (await fileInput.count().catch(() => 0)) return fileInput;
+
+    const add = dialog.locator('#custom-add1')
+      .or(dialog.getByRole('link', { name: 'Add', exact: true }))
+      .first();
+    await add.click();
+
+    fileInput = dialog.locator('input[type="file"]').last();
+    await fileInput.waitFor({ state: 'attached', timeout: 15000 });
+    return fileInput;
+  }
+
+  async verifySelectedFile(fileInput, filePath) {
+    const expectedName = basename(filePath).toLowerCase();
+    const selectedName = await fileInput.evaluate((input) => input.files?.[0]?.name ?? '');
+    if (selectedName.toLowerCase() !== expectedName) {
+      throw new Error(
+        `Document input did not retain the selected file. Expected "${basename(filePath)}", ` +
+        `received "${selectedName || 'none'}".`,
+      );
+    }
+  }
+
+  async waitForUploadOutcome(dialog, trigger) {
+    const validation = dialog.getByText(/Please select a valid document/i).first();
+    const deadline = Date.now() + appConfig.timeouts.documentUploadResult;
+
+    await this.page.waitForTimeout(1500);
+    while (Date.now() < deadline) {
+      if (!(await dialog.isVisible().catch(() => false))) {
+        return { success: true, message: '' };
+      }
+
+      const documentCount = await trigger.innerText().catch(() => '');
+      if (/Documents\s*\([1-9]\d*\)/i.test(documentCount)) {
+        await dialog.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
+        await dialog.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+        return { success: true, message: '' };
+      }
+
+      if (await validation.isVisible().catch(() => false)) {
+        return { success: false, message: (await validation.innerText()).trim() };
+      }
+
+      await this.page.waitForTimeout(500);
+    }
+
+    return {
+      success: false,
+      message: `No success or validation response within ${appConfig.timeouts.documentUploadResult}ms.`,
+    };
   }
 
   /**

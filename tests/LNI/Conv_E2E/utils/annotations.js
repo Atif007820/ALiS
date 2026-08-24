@@ -8,7 +8,7 @@
 import { BASE_URL, ENVIRONMENT_LABEL } from '../config/URL.js';
 import { appConfig } from '../config/runConfig.js';
 
-const ENVIRONMENT_ANNOTATION_TYPES = new Set(['Environment', 'Env URL', 'ENV URL']);
+const RUN_ANNOTATION_TYPES = new Set(['Environment', 'Env URL', 'ENV URL', 'License Type']);
 
 function upsertAnnotation(testInfo, type, description) {
   if (!description) return;
@@ -24,7 +24,7 @@ function upsertAnnotation(testInfo, type, description) {
 
 export function addEnvironmentAnnotations(testInfo) {
   const otherAnnotations = testInfo.annotations.filter(
-    (annotation) => !ENVIRONMENT_ANNOTATION_TYPES.has(annotation.type)
+    (annotation) => !RUN_ANNOTATION_TYPES.has(annotation.type)
   );
 
   testInfo.annotations.splice(
@@ -32,6 +32,7 @@ export function addEnvironmentAnnotations(testInfo) {
     testInfo.annotations.length,
     { type: 'Environment', description: ENVIRONMENT_LABEL },
     { type: 'ENV URL', description: BASE_URL },
+    { type: 'License Type', description: appConfig.licenseType },
     ...otherAnnotations
   );
 }
@@ -70,14 +71,20 @@ export function addUserAnnotations(testInfo, userData) {
  * Attach permit-application details to the test report.
  *
  * @param {import('@playwright/test').TestInfo} testInfo
- * @param {{ licenseType?: string, conveyanceType?: string, typeName?: string }} selection
+ * @param {{ licenseType?: string, conveyanceType?: string, typeName?: string, endorsementCode?: string }} selection
  */
-export function addApplyAnnotations(testInfo, { licenseType, conveyanceType, typeName } = {}) {
+export function addApplyAnnotations(testInfo, {
+  licenseType,
+  conveyanceType,
+  typeName,
+  endorsementCode,
+} = {}) {
   addEnvironmentAnnotations(testInfo);
 
   const resolvedLicenseType = licenseType || appConfig.licenseType;
   const resolvedTypeName = typeName || conveyanceType;
 
   upsertAnnotation(testInfo, 'License Type', resolvedLicenseType);
+  upsertAnnotation(testInfo, 'Endorsement Code', endorsementCode);
   upsertAnnotation(testInfo, 'Conveyance Type', resolvedTypeName);
 }

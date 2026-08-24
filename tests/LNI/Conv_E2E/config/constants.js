@@ -20,27 +20,84 @@ export const US_CITIES = [
   'Brooklyn', 'Detroit', 'New Orleans', 'Memphis', 'Nashville',
 ];
 
-export const RESIDENTIAL_CONVEYANCE_TYPES = [
-  'OTHER RESIDENTIAL CONVEYANCE',
-  'RESIDENTIAL DUMBWAITER',
-  'RESIDENTIAL ELEVATOR',
-  'RESIDENTIAL INCLINED CHAIR',
-  'RESIDENTIAL INCLINED ELEVATOR',
-  'RESIDENTIAL INCLINED PLATFORM',
-  'RESIDENTIAL PNEUMATIC VACUUM',
-  'RESIDENTIAL VERTICAL PLATFORM',
-];
+export const RESIDENTIAL_ENDORSEMENT_TYPES = Object.freeze({
+  ORC: 'OTHER RESIDENTIAL CONVEYANCE',
+  RD: 'RESIDENTIAL DUMBWAITER',
+  RE: 'RESIDENTIAL ELEVATOR',
+  RIC: 'RESIDENTIAL INCLINED CHAIR',
+  RIE: 'RESIDENTIAL INCLINED ELEVATOR',
+  RPV: 'RESIDENTIAL PNEUMATIC VACUUM',
+  RVPL: 'RESIDENTIAL VERTICAL PLATFORM LIFT',
+  RIPL: 'RESIDENTIAL INCLINED PLATFORM LIFT',
+});
 
-export const COMM_CONVEYANCE_TYPES = [
-  'FREIGHT CABLE', 'FREIGHT HYDRAULIC', 'FREIGHT ROPED HYDRAULIC ELEVATOR',
-  'INCLINED ELEVATOR', 'LIMITED-USE/LIMITED-APPLICATION (LULA)', 'PASSENGER CABLE',
-  'PASSENGER HYDRAULIC', 'PASSENGER ROPED HYDRAULIC ELEVATOR', 'BELT MAN LIFT',
-  'DUMBWAITER IN OTHER THAN RESIDENCE', 'HAND POWERED FREIGHT ELEVATOR',
-  'HAND POWERED MAN LIFT', 'INCLINED PLATFORM LIFT', 'INCLINED STAIR CHAIR LIFT',
-  'RELOCATABLE LIFT', 'SIDEWALK ELEVATOR', 'SPECIAL PURPOSE', 'TYPE A MATERIAL LIFT',
-  'TYPE B MATERIAL LIFT', 'VERTICAL PLATFORM LIFT', 'WAC MATERIAL LIFT',
-  'ESCALATOR', 'MOVING WALK', 'PASSENGER',
-];
+export const COMMERCIAL_ENDORSEMENT_TYPES = Object.freeze({
+  FC: 'FREIGHT CABLE',
+  FH: 'FREIGHT HYDRAULIC',
+  FRHE: 'FREIGHT ROPED HYDRAULIC ELEVATOR',
+  IE: 'INCLINED ELEVATOR',
+  LULA: 'LIMITED-USE/LIMITED-APPLICATION (LULA)',
+  PC: 'PASSENGER CABLE',
+  PH: 'PASSENGER HYDRAULIC',
+  PRHE: 'PASSENGER ROPED HYDRAULIC ELEVATOR',
+  BML: 'BELT MAN LIFT',
+  DOTR: 'DUMBWAITER IN OTHER THAN RESIDENCE',
+  HPFE: 'HAND POWERED FREIGHT ELEVATOR',
+  HPML: 'HAND POWERED MAN LIFT',
+  IPL: 'INCLINED PLATFORM LIFT',
+  ISCL: 'INCLINED STAIR CHAIR LIFT',
+  RL: 'RELOCATABLE LIFT',
+  SE: 'SIDEWALK ELEVATOR',
+  SP: 'SPECIAL PURPOSE',
+  TYPEAML: 'TYPE A MATERIAL LIFT',
+  TYPEBML: 'TYPE B MATERIAL LIFT',
+  VPL: 'VERTICAL PLATFORM LIFT',
+  WACML: 'WAC MATERIAL LIFT',
+  ESC: 'ESCALATOR',
+  MW: 'MOVING WALK',
+  PASS: 'PASSENGER',
+});
+
+const ENDORSEMENT_CODE_ALIASES = Object.freeze({
+  RESIDENTIAL: Object.freeze({ RC: 'ORC' }),
+  COMMERCIAL: Object.freeze({}),
+});
+
+export const RESIDENTIAL_CONVEYANCE_TYPES = Object.values(RESIDENTIAL_ENDORSEMENT_TYPES);
+export const COMM_CONVEYANCE_TYPES = Object.values(COMMERCIAL_ENDORSEMENT_TYPES);
+
+export function normalizeEndorsementCode(value) {
+  return String(value || '').trim().toUpperCase().replace(/[-_\s]+/g, '');
+}
+
+export function endorsementCodesForLicense(licenseType) {
+  return Object.keys(endorsementTypesForLicense(licenseType));
+}
+
+export function resolveEndorsementSelection(licenseType, value) {
+  const requestedCode = normalizeEndorsementCode(value);
+  if (!requestedCode) return null;
+
+  const normalizedLicenseType = String(licenseType || '').trim().toUpperCase();
+  const types = endorsementTypesForLicense(normalizedLicenseType);
+  const canonicalCode = ENDORSEMENT_CODE_ALIASES[normalizedLicenseType]?.[requestedCode]
+    ?? requestedCode;
+  const conveyanceType = types[canonicalCode];
+
+  return conveyanceType ? { code: canonicalCode, conveyanceType } : null;
+}
+
+export function endorsementCodeForConveyance(licenseType, conveyanceType) {
+  return Object.entries(endorsementTypesForLicense(licenseType))
+    .find(([, configuredType]) => configuredType === conveyanceType)?.[0] ?? '';
+}
+
+function endorsementTypesForLicense(licenseType) {
+  const normalizedLicenseType = String(licenseType || '').trim().toUpperCase();
+  if (normalizedLicenseType === 'RESIDENTIAL') return RESIDENTIAL_ENDORSEMENT_TYPES;
+  if (normalizedLicenseType === 'COMMERCIAL') return COMMERCIAL_ENDORSEMENT_TYPES;
+  throw new Error(`Unsupported license type "${licenseType}" for endorsement lookup.`);
+}
 
 export const MACHINE_TYPES = [
   'Winding Drum', 'Screw Drive', 'Pneumatic', 'GearLess', 'Scissor',

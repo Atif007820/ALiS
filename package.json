@@ -21,6 +21,7 @@
     "hls": "npm --prefix ./tests/ALiS_BusinessEntity_Baseline run baseline --",
     "hls:validate": "npm --prefix ./tests/ALiS_BusinessEntity_Baseline run validate",
     "conv:e2e": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs",
+    "conv:e2e:matrix": "npm --prefix ./tests/LNI/Conv_E2E run test:matrix",
     "conv:e2e:headed": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs:headed",
     "conv:e2e:list": "npm --prefix ./tests/LNI/Conv_E2E run test:all-envs:list",
     "perf": "node ./tests/ALiS_Performance/scripts/runPerformance.js",

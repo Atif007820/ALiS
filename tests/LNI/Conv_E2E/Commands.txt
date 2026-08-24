@@ -22,6 +22,16 @@ npm run test --env PREPROD --headed --licenseType COMMERCIAL
 npm run test --env=PRE PROD --headed --licenseType=COMMERCIAL --parallel 3
 npm run test --env=PRE PROD --headed --licenseType RESIDENTIAL --parallel=3
 
+Run selected environments concurrently with one license type:
+  npm run test --env=PREPROD,TEST,PROD --licenseType=RESIDENTIAL --parallel=3
+
+Run both license types concurrently in TEST:
+  npm run test --env=TEST --licenseType=RESIDENTIAL,COMMERCIAL --parallel=2
+
+Run every environment and both license types (6 combinations):
+  npm run test --env=ALL --licenseType=ALL --parallel=6
+  npm run test:matrix
+
 
 Environment Examples
 ====================
@@ -32,6 +42,7 @@ npm run test --env=PRE PROD
 npm run test --env=PROD
 npm run test --env=ALL
 npm run test --env=TEST,PROD,PREPROD
+npm run test --env=PREPROD,TEST,PROD --parallel=3
 
 
 License Type Examples
@@ -39,8 +50,70 @@ License Type Examples
 
 npm run test --licenseType=COMMERCIAL
 npm run test --licenseType=RESIDENTIAL
+npm run test --licenseType=RESIDENTIAL,COMMERCIAL --parallel=2
+npm run test --licenseType=ALL --parallel=2
 npm run test --env=TEST --licenseType=COMMERCIAL
 npm run test --env=PRE PROD --licenseType RESIDENTIAL
+npm run test --env=TEST,PREPROD --licenseType=RESIDENTIAL,COMMERCIAL --parallel=4
+
+
+Endorsement Type Override Examples
+==================================
+
+Select a specific Residential endorsement:
+  npm run test --env=PRE PROD --licenseType RESIDENTIAL --ResType ORC
+
+Select specific Residential and Commercial endorsements in a mixed matrix:
+  npm run test --env=PRE PROD,TEST --licenseType=RESIDENTIAL,COMMERCIAL --ResType RC --CommType FC --parallel=2
+
+Select a specific Commercial endorsement:
+  npm run test --env=PROD --licenseType=COMMERCIAL --CommType=PASS
+
+Random selection:
+  Omit --ResType/--CommType, or leave resType/commType blank in runSettings.json.
+  ResType applies only to RESIDENTIAL combinations.
+  CommType applies only to COMMERCIAL combinations.
+
+Residential codes:
+  ORC     OTHER RESIDENTIAL CONVEYANCE
+  RD      RESIDENTIAL DUMBWAITER
+  RE      RESIDENTIAL ELEVATOR
+  RIC     RESIDENTIAL INCLINED CHAIR
+  RIE     RESIDENTIAL INCLINED ELEVATOR
+  RPV     RESIDENTIAL PNEUMATIC VACUUM
+  RVPL    RESIDENTIAL VERTICAL PLATFORM LIFT
+  RIPL    RESIDENTIAL INCLINED PLATFORM LIFT
+
+Residential compatibility alias:
+  RC      Same selection as ORC
+
+Commercial codes:
+  FC       FREIGHT CABLE
+  FH       FREIGHT HYDRAULIC
+  FRHE     FREIGHT ROPED HYDRAULIC ELEVATOR
+  IE       INCLINED ELEVATOR
+  LULA     LIMITED-USE/LIMITED-APPLICATION (LULA)
+  PC       PASSENGER CABLE
+  PH       PASSENGER HYDRAULIC
+  PRHE     PASSENGER ROPED HYDRAULIC ELEVATOR
+  BML      BELT MAN LIFT
+  DOTR     DUMBWAITER IN OTHER THAN RESIDENCE
+  HPFE     HAND POWERED FREIGHT ELEVATOR
+  HPML     HAND POWERED MAN LIFT
+  IPL      INCLINED PLATFORM LIFT
+  ISCL     INCLINED STAIR CHAIR LIFT
+  RL       RELOCATABLE LIFT
+  SE       SIDEWALK ELEVATOR
+  SP       SPECIAL PURPOSE
+  TYPEAML  TYPE A MATERIAL LIFT
+  TYPEBML  TYPE B MATERIAL LIFT
+  VPL      VERTICAL PLATFORM LIFT
+  WACML    WAC MATERIAL LIFT
+  ESC      ESCALATOR
+  MW       MOVING WALK
+  PASS     PASSENGER
+
+Invalid codes stop the run before opening a browser and print the supported codes.
 
 
 Browser / Headed Examples
@@ -61,11 +134,13 @@ npm run test --env=TEST --repeat-each=2
 npm run test --env=PROD --project=chromium --repeat-each=2
 npm run test --env=PRE PROD --parallel 3
 npm run test --env=PRE PROD --parallel=3
+npm run test --env=ALL --licenseType=ALL --parallel=6
 
 Note:
-  The full Register -> Apply flow is kept in serial order.
-  --parallel controls Playwright workers, but the default full flow still runs Script 1 and Script 2 together in one Playwright run so the HTML report includes both scripts.
-  The HTML report opens automatically after the selected run finishes.
+  --parallel controls how many environment/license combinations run at the same time.
+  Inside every combination, Script 1 always finishes before Script 2 starts.
+  Each combination has isolated saved credentials and test artifacts.
+  All combination results are merged into one HTML report, which opens once after the complete matrix finishes.
 
 
 Standalone Script Commands
@@ -95,10 +170,14 @@ Main run defaults:
 Important values in runSettings.json:
   environment
   licenseType
+  resType (blank = random Residential endorsement)
+  commType (blank = random Commercial endorsement)
   defaultProject
   workers
   parallelWorkers
   registrationLoginRetryLimit
+  documentUploadRetryLimit
+  documentUploadResultTimeoutMs
   headless
   maximizeWindow
   viewport
@@ -140,6 +219,7 @@ From tests\LNI\Conv_E2E:
   npm run test:test
   npm run test:preprod
   npm run test:prod
+  npm run test:matrix
   npm run test:register
   npm run test:apply
 npm run clean
@@ -148,6 +228,7 @@ npm run clean
 From workspace root:
   npm run test
   npm run conv:e2e
+  npm run conv:e2e:matrix
   npm run conv:e2e:headed
   npm run conv:e2e:list
 
@@ -156,6 +237,11 @@ Notes
 =====
 
 - "test" means run Script 1 then Script 2 in serial order.
+- Environment and license-type lists create every combination. Example: 3 environments and 2 license types create 6 flows.
+- ResType is applied only to Residential combinations; CommType is applied only to Commercial combinations.
+- When the applicable endorsement code is blank, the framework selects randomly from its configured pool.
+- Use PREPROD inside comma-separated lists. For the spaced name, quote the whole value: --env="PRE PROD,TEST,PROD".
+- --parallel controls concurrent combinations; it never changes the Register -> Login/Apply order inside a combination.
 - The HTML report opens automatically after the selected run finishes.
 - Use npm run report only when you want to reopen the latest report manually.
 - Environment names are normalized, so PREPROD and PRE PROD both work.
