@@ -257,7 +257,7 @@ function buildDashboard(workbook, context) {
       const cell = worksheet.getCell(address);
       cell.fill = fill(index % 2 ? COLORS.white : COLORS.rowAlt);
       cell.border = thinBorder;
-      cell.alignment = { vertical: 'middle' };
+      cell.alignment = { vertical: 'middle', horizontal: 'left' };
     }
     worksheet.getCell(`C${rowNumber}`).font = { bold: true, color: { argb: COLORS.blue } };
     worksheet.getCell(`G${rowNumber}`).font = { bold: true, color: { argb: COLORS.tealDark } };
@@ -287,39 +287,38 @@ function buildTestResults(workbook, context) {
   const worksheet = workbook.addWorksheet('Test Results');
   const metrics = reportMetrics(records, slaMs);
   worksheet.columns = [
-    { width: 8 }, { width: 14 }, { width: 25 }, { width: 38 }, { width: 10 },
+    { width: 8 }, { width: 25 }, { width: 38 }, { width: 10 },
     { width: 15 }, { width: 15 }, { width: 15 }, { width: 16 }, { width: 13 },
     { width: 16 }, { width: 11 }, { width: 30 }, { width: 58 }
   ];
-  addTitle(worksheet, 'A1:N1', `LOAD TEST RESULTS - ${scriptLabel(metadata)}`);
-  addSubtitle(worksheet, 'A2:N2', `${metadataText(metadata, summary, slaMs)}  |  Total: ${metrics.total}  |  Within SLA: ${metrics.passed}  |  Failed/Breached: ${metrics.failed}`);
-  addUrlRow(worksheet, 'A3:N3', metadata.applicationUrl);
+  addTitle(worksheet, 'A1:M1', `LOAD TEST RESULTS - ${scriptLabel(metadata)}`);
+  addSubtitle(worksheet, 'A2:M2', `${metadataText(metadata, summary, slaMs)}  |  Total: ${metrics.total}  |  Within SLA: ${metrics.passed}  |  Failed/Breached: ${metrics.failed}`);
+  addUrlRow(worksheet, 'A3:M3', metadata.applicationUrl);
   styleHeaderRow(worksheet.getRow(5), [
-    'Seq #', 'Timestamp', 'Thread Group', 'Request / Test Case', 'HTTP', 'Elapsed (ms)', 'Latency (ms)',
+    'Seq #', 'Thread Group', 'Request / Test Case', 'HTTP', 'Elapsed (ms)', 'Latency (ms)',
     'Connect (ms)', 'Received (KB)', 'Sent (KB)', 'SLA Status', 'Result', 'Failure / Notes', 'URL'
   ]);
   const groupNames = [...groupRecords(records).keys()];
   records.forEach((record, index) => {
     const row = worksheet.getRow(6 + index);
     const passed = isWithinSla(record, slaMs);
-    row.values = [index + 1, requestTime(record.timeStamp), record.threadGroup, record.label, record.responseCode,
+    row.values = [index + 1, record.threadGroup, record.label, record.responseCode,
       record.elapsed, record.latency, record.connect, round(record.bytes / 1024), round(record.sentBytes / 1024),
       slaStatus(record, slaMs), resultText(record, slaMs), failureNotes(record, slaMs), null];
     styleDataRow(row, index);
     row.getCell(1).font = { bold: true, color: { argb: COLORS.white } };
     row.getCell(1).fill = fill(COLORS.blue);
-    row.getCell(2).numFmt = 'hh:mm AM/PM';
     const groupIndex = Math.max(groupNames.indexOf(record.threadGroup), 0);
-    row.getCell(3).fill = fill(GROUP_COLORS[groupIndex % GROUP_COLORS.length]);
-    row.getCell(3).font = { bold: true, color: { argb: COLORS.blue } };
+    row.getCell(2).fill = fill(GROUP_COLORS[groupIndex % GROUP_COLORS.length]);
+    row.getCell(2).font = { bold: true, color: { argb: COLORS.blue } };
     if (!passed) {
-      row.getCell(6).fill = fill(COLORS.redFill);
-      row.getCell(6).font = { bold: true, color: { argb: COLORS.red } };
+      row.getCell(5).fill = fill(COLORS.redFill);
+      row.getCell(5).font = { bold: true, color: { argb: COLORS.red } };
     }
-    styleStatusCells(row, 11, 12, passed);
-    setHyperlink(row.getCell(14), record.url);
+    styleStatusCells(row, 10, 11, passed);
+    setHyperlink(row.getCell(13), record.url);
   });
-  worksheet.autoFilter = { from: 'A5', to: `N${Math.max(records.length + 5, 5)}` };
+  worksheet.autoFilter = { from: 'A5', to: `M${Math.max(records.length + 5, 5)}` };
   setSheetDefaults(worksheet);
 }
 
@@ -327,37 +326,36 @@ function buildByThreadGroup(workbook, context) {
   const { records, summary, metadata, slaMs } = context;
   const worksheet = workbook.addWorksheet('By Thread Group');
   worksheet.columns = [
-    { width: 8 }, { width: 14 }, { width: 38 }, { width: 10 }, { width: 15 },
+    { width: 8 }, { width: 38 }, { width: 10 }, { width: 15 },
     { width: 15 }, { width: 16 }, { width: 11 }, { width: 30 }, { width: 58 }
   ];
-  addTitle(worksheet, 'A1:J1', `TEST RESULTS BY THREAD GROUP - ${scriptLabel(metadata)}`);
-  addUrlRow(worksheet, 'A2:J2', metadata.applicationUrl);
+  addTitle(worksheet, 'A1:I1', `TEST RESULTS BY THREAD GROUP - ${scriptLabel(metadata)}`);
+  addUrlRow(worksheet, 'A2:I2', metadata.applicationUrl);
   let rowNumber = 4;
   let sequence = 1;
   for (const [name, groupRows] of groupRecords(records).entries()) {
     const stats = summary.byThreadGroup.find((item) => item.label === name) || summary.overall;
     const metrics = reportMetrics(groupRows, slaMs);
-    addTitle(worksheet, `A${rowNumber}:J${rowNumber}`,
+    addTitle(worksheet, `A${rowNumber}:I${rowNumber}`,
       `${name}  |  ${metrics.passed}/${metrics.total} within SLA  |  ${metrics.failed} failed/breached  |  P95 ${formatNumber(stats.p95)} ms`, COLORS.tealDark);
     rowNumber += 1;
     styleHeaderRow(worksheet.getRow(rowNumber), [
-      'Seq #', 'Timestamp', 'Request / Test Case', 'HTTP', 'Elapsed (ms)', 'Latency (ms)',
+      'Seq #', 'Request / Test Case', 'HTTP', 'Elapsed (ms)', 'Latency (ms)',
       'SLA Status', 'Result', 'Failure / Notes', 'URL'
     ]);
     rowNumber += 1;
     for (const record of groupRows) {
       const row = worksheet.getRow(rowNumber);
       const passed = isWithinSla(record, slaMs);
-      row.values = [sequence, requestTime(record.timeStamp), record.label, record.responseCode, record.elapsed,
+      row.values = [sequence, record.label, record.responseCode, record.elapsed,
         record.latency, slaStatus(record, slaMs), resultText(record, slaMs), failureNotes(record, slaMs), null];
       styleDataRow(row, sequence);
-      row.getCell(2).numFmt = 'hh:mm AM/PM';
       if (!passed) {
-        row.getCell(5).fill = fill(COLORS.redFill);
-        row.getCell(5).font = { bold: true, color: { argb: COLORS.red } };
+        row.getCell(4).fill = fill(COLORS.redFill);
+        row.getCell(4).font = { bold: true, color: { argb: COLORS.red } };
       }
-      styleStatusCells(row, 7, 8, passed);
-      setHyperlink(row.getCell(10), record.url);
+      styleStatusCells(row, 6, 7, passed);
+      setHyperlink(row.getCell(9), record.url);
       rowNumber += 1;
       sequence += 1;
     }
@@ -418,33 +416,32 @@ function buildBreaches(workbook, context) {
   const breaches = records.filter((record) => !isWithinSla(record, slaMs)).sort((a, b) => b.elapsed - a.elapsed);
   const metrics = reportMetrics(records, slaMs);
   worksheet.columns = [
-    { width: 8 }, { width: 14 }, { width: 25 }, { width: 38 }, { width: 16 },
+    { width: 8 }, { width: 25 }, { width: 38 }, { width: 16 },
     { width: 17 }, { width: 13 }, { width: 10 }, { width: 34 }, { width: 58 }
   ];
-  addTitle(worksheet, 'A1:J1', `SLA BREACH ANALYSIS - ${scriptLabel(metadata)}`, COLORS.redDark);
-  addSubtitle(worksheet, 'A2:J2',
+  addTitle(worksheet, 'A1:I1', `SLA BREACH ANALYSIS - ${scriptLabel(metadata)}`, COLORS.redDark);
+  addSubtitle(worksheet, 'A2:I2',
     `${breaches.length} failed or breached of ${metrics.total} samples (${round(metrics.errorRate, 1)}%)  |  SLA threshold: ${formatNumber(slaMs)} ms`, COLORS.red);
-  addUrlRow(worksheet, 'A3:J3', metadata.applicationUrl);
+  addUrlRow(worksheet, 'A3:I3', metadata.applicationUrl);
   styleHeaderRow(worksheet.getRow(5), [
-    'Rank', 'Timestamp', 'Thread Group', 'Request / Test Case', 'Elapsed (ms)',
+    'Rank', 'Thread Group', 'Request / Test Case', 'Elapsed (ms)',
     'Over SLA (ms)', 'Severity', 'HTTP', 'Failure / Notes', 'URL'
   ], COLORS.redDark);
   breaches.forEach((record, index) => {
     const overBy = Math.max(record.elapsed - slaMs, 0);
     const level = record.success ? severity(overBy) : 'ERROR';
     const row = worksheet.getRow(6 + index);
-    row.values = [index + 1, requestTime(record.timeStamp), record.threadGroup, record.label, record.elapsed,
+    row.values = [index + 1, record.threadGroup, record.label, record.elapsed,
       overBy, level, record.responseCode, failureNotes(record, slaMs), null];
     styleDataRow(row, index);
-    row.getCell(2).numFmt = 'hh:mm AM/PM';
+    row.getCell(4).font = { bold: true, color: { argb: COLORS.red } };
     row.getCell(5).font = { bold: true, color: { argb: COLORS.red } };
-    row.getCell(6).font = { bold: true, color: { argb: COLORS.red } };
-    row.getCell(7).fill = fill(level === 'LOW' ? COLORS.greenFill : level === 'MEDIUM' ? COLORS.amberFill : COLORS.redFill);
-    row.getCell(7).font = { bold: true, color: { argb: level === 'LOW' ? COLORS.green : COLORS.redDark } };
-    setHyperlink(row.getCell(10), record.url);
+    row.getCell(6).fill = fill(level === 'LOW' ? COLORS.greenFill : level === 'MEDIUM' ? COLORS.amberFill : COLORS.redFill);
+    row.getCell(6).font = { bold: true, color: { argb: level === 'LOW' ? COLORS.green : COLORS.redDark } };
+    setHyperlink(row.getCell(9), record.url);
   });
   if (breaches.length === 0) {
-    worksheet.mergeCells('A6:J7');
+    worksheet.mergeCells('A6:I7');
     const cell = worksheet.getCell('A6');
     cell.value = 'No failures or SLA breaches were detected.';
     cell.fill = fill(COLORS.greenFill);
@@ -471,7 +468,6 @@ function buildLegend(workbook, context) {
       ['ERROR', 'JMeter marked the request as unsuccessful.']
     ]],
     ['COLUMN DEFINITIONS', [
-      ['Timestamp', 'Request start time displayed as HH:MM AM/PM.'],
       ['Thread Group', 'Thread group derived dynamically from the JMeter thread name.'],
       ['Request / Test Case', 'JMeter sampler label.'], ['Elapsed', 'Total end-to-end response time in milliseconds.'],
       ['Latency', 'Time from request sent to first response byte.'], ['Connect', 'Time required to establish the connection.'],

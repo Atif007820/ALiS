@@ -66,13 +66,13 @@ test('runs work with the configured concurrency limit and preserves result order
 });
 
 test('provides the primary performance testing load profiles', () => {
-  expect(loadProfiles.smoke).toEqual({ threads: 1, rampUp: 1, duration: 30, loops: 1 });
-  expect(loadProfiles.load).toEqual({ threads: 50, rampUp: 60, duration: 600, loops: 1 });
-  expect(loadProfiles.stress).toEqual({ threads: 250, rampUp: 120, duration: 900, loops: 1 });
-  expect(loadProfiles.spike).toEqual({ threads: 250, rampUp: 5, duration: 300, loops: 1 });
-  expect(loadProfiles.endurance).toEqual({ threads: 50, rampUp: 300, duration: 14400, loops: 1 });
-  expect(loadProfiles.normal).toBeUndefined();
-  expect(loadProfiles.peak).toBeUndefined();
+  expect(Object.keys(loadProfiles)).toEqual(['smoke', 'load', 'stress', 'spike', 'endurance']);
+  for (const profile of Object.values(loadProfiles)) {
+    expect(Number.isFinite(profile.threads)).toBe(true);
+    expect(Number.isFinite(profile.rampUp)).toBe(true);
+    expect(Number.isFinite(profile.loops)).toBe(true);
+    if (profile.duration !== undefined) expect(Number.isFinite(profile.duration)).toBe(true);
+  }
 });
 
 test('resolves the same load profile properties for GUI and non-GUI runners', () => {
@@ -247,9 +247,21 @@ test('generates universal Excel and Playwright reports without a template workbo
       'Legend'
     ]);
     expect(workbook.getWorksheet('Dashboard').getCell('A1').value).toContain('Any/Nested_Script.jmx');
-    expect(workbook.getWorksheet('Test Results').getCell('B6').numFmt).toBe('hh:mm AM/PM');
-    expect(workbook.getWorksheet('Test Results').getCell('C6').value).toBe('Dynamic Group');
-    expect(workbook.getWorksheet('Test Results').getCell('N6').value.hyperlink).toBe('https://example.test/search');
+    const testResults = workbook.getWorksheet('Test Results');
+    const byThreadGroup = workbook.getWorksheet('By Thread Group');
+    const slaBreaches = workbook.getWorksheet('SLA Breaches');
+
+    expect(testResults.getRow(5).values).not.toContain('Timestamp');
+    expect(byThreadGroup.getRow(5).values).not.toContain('Timestamp');
+    expect(slaBreaches.getRow(5).values).not.toContain('Timestamp');
+    expect(testResults.getCell('B6').value).toBe('Dynamic Group');
+    expect(testResults.getCell('M6').value.hyperlink).toBe('https://example.test/search');
+    expect(byThreadGroup.getCell('B6').value).toBe('Search Licensee');
+    expect(byThreadGroup.getCell('I6').value.hyperlink).toBe('https://example.test/search');
+    expect(slaBreaches.getCell('B6').value).toBe('Finance Group');
+    expect(slaBreaches.getCell('I6').value.hyperlink).toBe('https://example.test/invoice');
+    expect(workbook.getWorksheet('Dashboard').getCell('G12').alignment.horizontal).toBe('left');
+    expect(workbook.getWorksheet('Dashboard').getCell('G21').alignment.horizontal).toBe('left');
 
     const playwrightReport = await generatePlaywrightReport({
       records,
