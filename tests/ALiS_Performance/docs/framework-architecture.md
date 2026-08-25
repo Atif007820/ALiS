@@ -8,7 +8,7 @@
 4. Parse the JTL result file.
 5. Calculate overall, label-level, and thread-group-level statistics.
 6. Generate JSON, CSV, JMeter HTML, and Excel report artifacts.
-7. Open generated reports based on `config/runConfig.js`.
+7. Open generated reports based on `config/runsettings.json`.
 8. Attach artifacts when run through Playwright.
 
 ## Folders

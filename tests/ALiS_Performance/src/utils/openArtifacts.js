@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { pathToFileURL } from 'url';
-import { runConfig } from '../../config/runConfig.js';
+import runConfig from '../../config/runsettings.json' with { type: 'json' };
 
 export async function openGeneratedReports({
   excelPath,

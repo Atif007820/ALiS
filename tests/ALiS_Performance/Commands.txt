@@ -97,13 +97,13 @@ npm run perf:parallel -- --script=ALL --parallel=3
 
 Each GUI and non-GUI script/profile run receives its own result folder, JTL, logs, Excel report, and Playwright report.
 
-Control parallel execution in config/runConfig.js:
+Control parallel execution in config/runsettings.json:
 
 parallelExecution: true      Enables parallel execution for GUI and non-GUI when multiple scripts are supplied.
 parallelWorkers: 3           Default maximum runs executing together when --parallel is omitted.
 
 Set parallelExecution to false to process the supplied scripts sequentially.
-An explicit --parallel value overrides both runConfig settings for that command.
+An explicit --parallel value overrides both runsettings.json settings for that command.
 Use --parallel=false to force a single sequential run.
 
 Report Auto Open
@@ -114,7 +114,7 @@ It includes a Download Excel Report link for the current run.
 
 Control it here:
 
-config/runConfig.js
+config/runsettings.json
 openExcelReport
 openPlaywrightReport
 attachReports
@@ -122,7 +122,7 @@ attachReports
 GUI Mode
 --------
 Opens the script in JMeter GUI.
-Auto-start is enabled by default from config/runConfig.js.
+Auto-start is enabled by default from config/runsettings.json.
 
 npm run jmeter:gui -- --script=LNI_PREPROD.jmx
 
@@ -156,7 +156,7 @@ npm run jmeter:gui -- --script=LNI_PREPROD.jmx --auto-close=false
 
 Change the default GUI auto-start setting:
 
-config/runConfig.js
+config/runsettings.json
 guiAutoStart
 guiAutoStartDelayMs
 guiAutoClose

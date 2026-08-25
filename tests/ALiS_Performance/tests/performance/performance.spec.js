@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { runPerformanceScenario } from '../../src/runners/performanceRunner.js';
-import { runConfig } from '../../config/runConfig.js';
+import runConfig from '../../config/runsettings.json' with { type: 'json' };
 
 test.describe('JMeter performance orchestration', () => {
   test('runs selected JMeter script and generates artifacts', async ({}, testInfo) => {

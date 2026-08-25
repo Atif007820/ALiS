@@ -1,0 +1,16 @@
+{
+  "openExcelReport": false,
+  "openPlaywrightReport": true,
+  "attachReports": true,
+  "parallelExecution": true,
+  "parallelWorkers": 3,
+  "guiAutoStart": true,
+  "guiAutoStartDelayMs": 9000,
+  "guiAutoClose": true,
+  "guiWaitForExit": true,
+  "jmeterLookAndFeel": "System",
+  "generateJMeterHtmlReport": false,
+  "failOnEmptyResults": true,
+  "playwrightOutputDir": "test-results",
+  "playwrightReportDir": "playwright-report"
+}

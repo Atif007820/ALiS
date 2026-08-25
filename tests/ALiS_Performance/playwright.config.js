@@ -1,6 +1,6 @@
 // @ts-check
 import { defineConfig } from '@playwright/test';
-import { runConfig } from './config/runConfig.js';
+import runConfig from './config/runsettings.json' with { type: 'json' };
 
 export default defineConfig({
   testDir: './tests',

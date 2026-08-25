@@ -18,7 +18,7 @@ import { createExecutionJobs, executionJobLabel } from '../src/utils/executionMa
 import { createGuiRuntimeJmx } from '../src/utils/guiRuntimeJmx.js';
 import { runWithConcurrency } from '../src/utils/parallelRunner.js';
 import { paths } from '../config/paths.js';
-import { runConfig } from '../config/runConfig.js';
+import runConfig from '../config/runsettings.json' with { type: 'json' };
 
 const GUI_LAUNCH_STAGGER_MS = 1000;
 

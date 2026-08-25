@@ -15,7 +15,7 @@ import { resolveLoadSettings } from '../src/utils/loadProfileResolver.js';
 import { runWithConcurrency } from '../src/utils/parallelRunner.js';
 import { runPerformanceScenario } from '../src/runners/performanceRunner.js';
 import { paths } from '../config/paths.js';
-import { runConfig } from '../config/runConfig.js';
+import runConfig from '../config/runsettings.json' with { type: 'json' };
 
 async function main() {
   const args = parseArgs();

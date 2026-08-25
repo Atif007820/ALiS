@@ -100,7 +100,7 @@ npm run jmeter:gui -- --script=LNI_PREPROD.jmx
 Edit these files:
 
 - `config/paths.js`: JMeter home, script root, and result output path.
-- `config/runConfig.js`: report auto-open, Playwright report behavior, GUI auto-start.
+- `config/runsettings.json`: report auto-open, Playwright report behavior, GUI auto-start.
 - `config/loadProfiles.js`: smoke, load, stress, spike, and endurance load shapes.
 - `config/reportConfig.js`: Excel report defaults.
 
@@ -157,9 +157,9 @@ Artifacts include:
 - Every parallel script writes to its own timestamped result folder and produces independent reports.
 - Use `--J.propertyName=value` to send custom JMeter properties.
 - The Excel report is generated universally from JTL data; no template workbook is required.
-- Excel report auto-open is enabled by default in `config/runConfig.js`.
+- Excel report auto-open is controlled in `config/runsettings.json`.
 - The Node runner generates and opens a Playwright-style report in Chrome with a link to download the Excel report.
-- JMeter GUI auto-start is enabled by default in `config/runConfig.js`.
+- JMeter GUI auto-start is enabled by default in `config/runsettings.json`.
 - JMeter GUI auto-close dismisses the Save dialog with **No** after execution.
 - GUI mode captures `results.jtl` and generates the same Excel and Playwright reports after JMeter closes.
 - The Playwright performance test is guarded by `RUN_JMETER=true` and `PERF_SCRIPT` to avoid accidental load execution.

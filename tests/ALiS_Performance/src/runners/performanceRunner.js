@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import { paths } from '../../config/paths.js';
 import { loadProfiles } from '../../config/loadProfiles.js';
 import { reportConfig } from '../../config/reportConfig.js';
-import { runConfig } from '../../config/runConfig.js';
+import runConfig from '../../config/runsettings.json' with { type: 'json' };
 import { resolveJmxScript } from '../utils/jmxDiscovery.js';
 import { createRunDirectory, writeJson } from '../utils/fileUtils.js';
 import { parseJtl } from '../parsers/jtlParser.js';

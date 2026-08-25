@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { reportConfig } from '../../config/reportConfig.js';
-import { runConfig } from '../../config/runConfig.js';
+import runConfig from '../../config/runsettings.json' with { type: 'json' };
 import { ensureDir } from '../utils/fileUtils.js';
 
 export async function generatePlaywrightReport({
