@@ -30,11 +30,29 @@ export const baselineConfig = {
   workspace: {
     entityInfoTabPattern: '^Entity Information$',
     minProfileTabs: 2,
+    readinessPollMs: 250,
+    recoveryTimeoutMs: 30_000,
     readyTextPatterns: [
       'Return to Search',
     ],
+    workspaceHeadingPatterns: [
+      '\\bModify\\s+Individual(?:\\s+Profile)?\\b',
+      '\\bView\\s+Individual(?:\\s+Profile)?\\b',
+    ],
     profileIdentifierPatterns: [
       '\\b(?:Individual|Licensee)\\s+I[Dd]\\b',
+    ],
+    busyIndicatorSelectors: [
+      '.ngx-spinner-overlay',
+      '.block-ui-wrapper',
+      '.blockUI',
+      '.loading',
+      '.loader',
+      '.spinner',
+      '.k-loading-mask',
+      '.ui-widget-overlay',
+      '[class*="spinner"]',
+      '[id*="spinner"]',
     ],
     nonWorkspacePagePatterns: [
       '\\bNew Individual\\b',

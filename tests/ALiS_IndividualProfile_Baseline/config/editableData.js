@@ -18,9 +18,8 @@ const nvrcpIndividualTableHeaderPreconditions = {
     actions: [
       { type: 'clickLink', name: 'Add' },
       { type: 'clickReceiptSearchIcon', rowName: 'Search Receipt Print Delete' },
-      { type: 'clickButton', name: 'Search' },
-      { type: 'clickRandomReceiptSearchResult' },
-      { type: 'clickButton', name: 'Save' },
+      { type: 'clickButton', name: 'Search', optional: true, timeoutMs: 5_000 },
+      { type: 'selectRandomReceiptSearchResultAndSave', allowNoRecords: true, timeoutMs: 10_000 },
     ],
   },
 };

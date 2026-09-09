@@ -19,6 +19,7 @@ import { resolveTestCases, testCaseRegistry } from '../test-cases/registry.js';
 import { printComparisonAnnotations } from '../utils/annotations.js';
 import { logger } from '../utils/logger.js';
 import { openFile, openReportArtifacts } from '../utils/openArtifacts.js';
+import { ensurePlaywrightBrowsers } from '../utils/browserPreflight.js';
 import { getAvailableFlows, getFlowInfo } from '../utils/flowLabels.js';
 import { isClosedPageError } from '../utils/pageGuards.js';
 
@@ -97,6 +98,7 @@ if (!runJobs.length) {
     `No selected test cases are configured for the requested business units: ${businessUnitIds.join(', ')}.`,
   );
 }
+ensurePlaywrightBrowsers(projectIds, { cwd: frameworkRoot, logger });
 await prepareLatestRunOutputDir();
 const runReports = await runJobsWithWorkers(runJobs, workers, async (job) => {
   const result = await runCombination({

@@ -80,7 +80,10 @@ export async function createProfile(page, { businessUnit }) {
   await waitForAppIdle(page);
 
   const workspaceReady = await waitForProfileWorkspace(page, businessUnit.fullName, {
-    timeout: Math.min(8_000, baselineConfig.timeouts.navigationMs),
+    timeout: Math.min(
+      baselineConfig.timeouts.postCreateProfileReadyMs || 20_000,
+      baselineConfig.timeouts.navigationMs,
+    ),
     required: false,
     settle: false,
   });

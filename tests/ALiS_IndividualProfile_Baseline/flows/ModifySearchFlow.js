@@ -261,8 +261,13 @@ export async function waitForProfileWorkspace(page, profileName, {
   timeout = baselineConfig.timeouts.navigationMs,
   required = true,
   settle = true,
+  recover = true,
 } = {}) {
-  const ready = await waitForWorkspaceSignal(page, timeout);
+  let ready = await waitForWorkspaceSignal(page, timeout);
+
+  if (!ready && required && recover) {
+    ready = await recoverPartialProfileWorkspace(page, profileName, timeout);
+  }
 
   if (!ready) {
     if (!required) {
@@ -284,31 +289,9 @@ export const waitForEntityWorkspace = waitForProfileWorkspace;
 async function waitForWorkspaceSignal(page, timeout) {
   const tabSelectors = baselineConfig.capture.tabSelectors.join(',');
   const workspaceConfig = baselineConfig.workspace || {};
-  const entityInfoTabPattern = new RegExp(workspaceConfig.entityInfoTabPattern || '^Entity Information$', 'i');
-  const readyTextPatterns = workspaceConfig.readyTextPatterns?.length
-    ? workspaceConfig.readyTextPatterns
-    : ['Return to Search'];
-  const entityInfoTab = page.locator(tabSelectors).filter({ hasText: entityInfoTabPattern }).first();
-  const readyTextLocator = readyTextPatterns
-    .map((pattern) => new RegExp(pattern, 'i'))
-    .reduce((locator, pattern) => {
-      const candidate = page.getByRole('link', { name: pattern }).first()
-        .or(page.getByText(pattern).first());
-      return locator ? locator.or(candidate) : candidate;
-    }, null);
+  const pollMs = Number(workspaceConfig.readinessPollMs || 250);
 
-  const readyByLocator = await entityInfoTab
-    .or(readyTextLocator)
-    .first()
-    .waitFor({ state: 'visible', timeout })
-    .then(() => true)
-    .catch(() => false);
-
-  if (!readyByLocator) {
-    return false;
-  }
-
-  return page.evaluate(({ selectors, workspace }) => {
+  return page.waitForFunction(({ selectors, workspace }) => {
     const cleanText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const bodyText = cleanText(document.body?.innerText || '');
     const regexFrom = (pattern) => {
@@ -323,35 +306,96 @@ async function waitForWorkspaceSignal(page, timeout) {
       const rect = element.getBoundingClientRect();
       return style.visibility !== 'hidden'
         && style.display !== 'none'
+        && Number(style.opacity) !== 0
         && rect.width > 0
         && rect.height > 0;
     };
 
-    const tabTexts = Array.from(document.querySelectorAll(selectors))
-      .filter(visible)
+    const visibleElements = (selector) => {
+      try {
+        return Array.from(document.querySelectorAll(selector)).filter(visible);
+      } catch {
+        return [];
+      }
+    };
+
+    const tabTexts = visibleElements(selectors)
       .map((element) => cleanText(element.innerText || element.textContent));
     const entityInfoTabRegex = regexFrom(workspace.entityInfoTabPattern || '^Entity Information$');
     const readyTextRegexes = (workspace.readyTextPatterns || ['Return to Search']).map(regexFrom);
     const profileIdentifierRegexes = (workspace.profileIdentifierPatterns || ['\\b(?:Individual|Licensee)\\s+I[Dd]\\b']).map(regexFrom);
+    const workspaceHeadingRegexes = (workspace.workspaceHeadingPatterns || [
+      '\\bModify\\s+Individual(?:\\s+Profile)?\\b',
+      '\\bView\\s+Individual(?:\\s+Profile)?\\b',
+    ]).map(regexFrom);
     const nonWorkspacePageRegexes = (workspace.nonWorkspacePagePatterns || []).map(regexFrom);
+    const busySelectors = workspace.busyIndicatorSelectors || [];
     const minProfileTabs = Number(workspace.minProfileTabs || 2);
 
     const hasEntityInfoTab = tabTexts.some((text) => entityInfoTabRegex.test(text));
     const hasMultipleProfileTabs = tabTexts.filter(Boolean).length >= minProfileTabs;
     const hasReadyText = readyTextRegexes.some((regex) => regex.test(bodyText));
     const hasProfileIdentifier = profileIdentifierRegexes.some((regex) => regex.test(bodyText));
+    const hasWorkspaceHeading = workspaceHeadingRegexes.some((regex) => regex.test(bodyText));
+    const hasBlockingBusyIndicator = busySelectors.some((selector) => visibleElements(selector).length > 0);
     const isCreateOrSearchPage = nonWorkspacePageRegexes.some((regex) => regex.test(bodyText))
       && !hasReadyText;
 
-    return !isCreateOrSearchPage
+    return !hasBlockingBusyIndicator
+      && !isCreateOrSearchPage
       && (
         (hasEntityInfoTab && hasMultipleProfileTabs)
-        || (hasReadyText && (hasProfileIdentifier || hasMultipleProfileTabs))
+        || (hasReadyText && (hasProfileIdentifier || hasMultipleProfileTabs || hasWorkspaceHeading))
       );
   }, {
     selectors: tabSelectors,
     workspace: workspaceConfig,
-  }).catch(() => false);
+  }, {
+    timeout,
+    polling: pollMs,
+  })
+    .then(() => true)
+    .catch(() => false);
+}
+
+async function recoverPartialProfileWorkspace(page, profileName, originalTimeout) {
+  if (!await hasPartialProfileWorkspace(page)) {
+    return false;
+  }
+
+  const configuredTimeout = Number(baselineConfig.workspace?.recoveryTimeoutMs || 30_000);
+  const recoveryTimeout = Math.max(5_000, Math.min(configuredTimeout, Number(originalTimeout || configuredTimeout)));
+  logger.warn(`Profile workspace for "${profileName}" remained partially loaded; reloading it once before failing.`);
+
+  await page.reload({
+    waitUntil: 'domcontentloaded',
+    timeout: recoveryTimeout,
+  }).catch(() => {});
+
+  return waitForWorkspaceSignal(page, recoveryTimeout);
+}
+
+async function hasPartialProfileWorkspace(page) {
+  const workspaceConfig = baselineConfig.workspace || {};
+
+  return page.evaluate((workspace) => {
+    const bodyText = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+    const regexFrom = (pattern) => {
+      try {
+        return new RegExp(pattern, 'i');
+      } catch {
+        return /$a/;
+      }
+    };
+    const readyTextRegexes = (workspace.readyTextPatterns || ['Return to Search']).map(regexFrom);
+    const workspaceHeadingRegexes = (workspace.workspaceHeadingPatterns || [
+      '\\bModify\\s+Individual(?:\\s+Profile)?\\b',
+      '\\bView\\s+Individual(?:\\s+Profile)?\\b',
+    ]).map(regexFrom);
+
+    return readyTextRegexes.some((regex) => regex.test(bodyText))
+      && workspaceHeadingRegexes.some((regex) => regex.test(bodyText));
+  }, workspaceConfig).catch(() => false);
 }
 
 function normalizeProfileName(profileName) {

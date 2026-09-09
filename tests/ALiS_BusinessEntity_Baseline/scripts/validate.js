@@ -286,14 +286,32 @@ assert.equal(
   true,
   'KPS Activity Log precondition should use Action Code CIC',
 );
-assert.equal(
-  kitchenPoolSpaBusinessUnit.tableHeaderPreconditions['Payment(s)'].actions.some((action) => (
-    action.type === 'selectRandomReceiptSearchResultAndSave'
-    && action.allowNoRecords === true
-  )),
-  true,
-  'KPS Payment precondition should choose a random receipt search result when available and tolerate empty receipt searches',
-);
+for (const dpbhBusinessUnit of [
+  healthFacilitiesBusinessUnit,
+  medicalLaboratoriesBusinessUnit,
+  environmentalHealthSectionBusinessUnit,
+  childCareProgramBusinessUnit,
+  kitchenPoolSpaBusinessUnit,
+]) {
+  const paymentActions = dpbhBusinessUnit.tableHeaderPreconditions['Payment(s)'].actions;
+  assert.equal(
+    paymentActions.some((action) => (
+      action.type === 'clickButton'
+      && action.name === 'Search'
+      && action.optional === true
+    )),
+    true,
+    `${dpbhBusinessUnit.id} Payment precondition should tolerate receipt dialogs that search automatically`,
+  );
+  assert.equal(
+    paymentActions.some((action) => (
+      action.type === 'selectRandomReceiptSearchResultAndSave'
+      && action.allowNoRecords === true
+    )),
+    true,
+    `${dpbhBusinessUnit.id} Payment precondition should choose a receipt when available and tolerate empty results`,
+  );
+}
 for (const nvrcpBusinessUnit of nvrcpCreateBusinessUnits) {
   const physicalAddressActions = nvrcpBusinessUnit.createEntityFields.filter((action) => (
     String(action.selector || '').includes('ucPhysicalAddressAdd')
@@ -375,10 +393,20 @@ for (const nvrcpBusinessUnit of nvrcpCreateBusinessUnits) {
   );
   assert.equal(
     nvrcpBusinessUnit.tableHeaderPreconditions['Payment(s)'].actions.some((action) => (
-      action.type === 'clickRandomReceiptSearchResult'
+      action.type === 'clickButton'
+      && action.name === 'Search'
+      && action.optional === true
     )),
     true,
-    `${nvrcpBusinessUnit.id} Payment precondition should choose a random receipt search result`,
+    `${nvrcpBusinessUnit.id} Payment precondition should tolerate receipt dialogs that search automatically`,
+  );
+  assert.equal(
+    nvrcpBusinessUnit.tableHeaderPreconditions['Payment(s)'].actions.some((action) => (
+      action.type === 'selectRandomReceiptSearchResultAndSave'
+      && action.allowNoRecords === true
+    )),
+    true,
+    `${nvrcpBusinessUnit.id} Payment precondition should tolerate an empty receipt search while selecting a result when available`,
   );
 }
 assert.equal(

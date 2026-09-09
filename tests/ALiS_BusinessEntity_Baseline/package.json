@@ -13,7 +13,7 @@
     "run": "node ./scripts/run.js",
     "validate": "node ./scripts/validate.js",
     "list": "node ./scripts/run.js --list",
-    "browsers:install": "playwright install chromium firefox msedge"
+    "browsers:install": "playwright install chromium firefox msedge ffmpeg"
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",

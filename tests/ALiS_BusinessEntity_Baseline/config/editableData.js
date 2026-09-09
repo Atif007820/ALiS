@@ -34,10 +34,8 @@ const nvrcpTableHeaderPreconditions = {
     actions: [
       { type: 'clickLink', name: 'Add' },
       { type: 'clickImage', name: 'Search Receipt' },
-      { type: 'clickButton', name: 'Search' },
-      { type: 'clickRandomReceiptSearchResult' },
-      { type: 'dismissNextDialog' },
-      { type: 'clickButton', name: 'Save' },
+      { type: 'clickButton', name: 'Search', optional: true, timeoutMs: 5_000 },
+      { type: 'selectRandomReceiptSearchResultAndSave', allowNoRecords: true, timeoutMs: 10_000 },
     ],
   },
 };
@@ -262,8 +260,8 @@ const humanMilkBankTableHeaderPreconditions = {
 const dpbhReceiptPaymentActions = [
   { type: 'clickLink', name: 'Add' },
   { type: 'clickReceiptSearchIcon', rowName: 'Search Receipt Print Delete' },
-  { type: 'clickButton', name: 'Search' },
-  { type: 'selectRandomReceiptSearchResultAndSave', allowNoRecords: true },
+  { type: 'clickButton', name: 'Search', optional: true, timeoutMs: 5_000 },
+  { type: 'selectRandomReceiptSearchResultAndSave', allowNoRecords: true, timeoutMs: 10_000 },
 ];
 
 const healthFacilitiesTableHeaderPreconditions = {

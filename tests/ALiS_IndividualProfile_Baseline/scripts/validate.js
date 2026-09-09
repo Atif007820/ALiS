@@ -26,6 +26,52 @@ assert.equal(Boolean(mammo.flow2ProfileName?.firstName), true, 'Flow 2 profile f
 assert.equal(Boolean(mammo.flow2ProfileName?.lastName), true, 'Flow 2 profile last name should be configured');
 assert.equal(Boolean(mammo.flow4ProfileName?.firstName), true, 'Flow 4 profile first name should be configured');
 assert.equal(Boolean(mammo.flow4ProfileName?.lastName), true, 'Flow 4 profile last name should be configured');
+assert.equal(
+  Number(baselineConfig.timeouts.postCreateProfileReadyMs || 0) >= 15_000,
+  true,
+  'Post-create profile readiness should tolerate delayed ALiS workspace rendering',
+);
+assert.equal(
+  Number(baselineConfig.workspace.readinessPollMs || 0) > 0,
+  true,
+  'Profile workspace readiness should use bounded polling',
+);
+assert.equal(
+  Number(baselineConfig.workspace.recoveryTimeoutMs || 0) >= 15_000,
+  true,
+  'Partially loaded profile workspaces should have a bounded recovery window',
+);
+assert.equal(
+  baselineConfig.workspace.workspaceHeadingPatterns.some((pattern) => (
+    new RegExp(pattern, 'i').test('Modify Individual')
+  )),
+  true,
+  'Profile workspace readiness should recognize the Modify Individual heading',
+);
+assert.equal(
+  baselineConfig.workspace.busyIndicatorSelectors.some((selector) => /spinner|block/i.test(selector)),
+  true,
+  'Profile workspace readiness should wait for blocking loading indicators',
+);
+
+const paymentActions = mammo.tableHeaderPreconditions['Payment(s)'].actions;
+assert.equal(
+  paymentActions.some((action) => (
+    action.type === 'clickButton'
+    && action.name === 'Search'
+    && action.optional === true
+  )),
+  true,
+  'MAMMO Payment precondition should tolerate receipt dialogs that search automatically',
+);
+assert.equal(
+  paymentActions.some((action) => (
+    action.type === 'selectRandomReceiptSearchResultAndSave'
+    && action.allowNoRecords === true
+  )),
+  true,
+  'MAMMO Payment precondition should tolerate an empty receipt search while selecting a result when available',
+);
 
 assert.deepEqual(
   getAvailableFlows().map((flow) => flow.id),

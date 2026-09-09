@@ -247,10 +247,10 @@ export async function runUiAction(page, action, context = {}) {
   }
 
   if (action.type === 'clickButton') {
-    await page.getByRole('button', {
-      name: action.name,
-      exact: action.exact ?? true,
-    }).nth(action.index || 0).click();
+    const clicked = await clickConfiguredButton(page, action);
+    if (!clicked && !action.optional) {
+      throw new Error(`Visible button "${action.name}" was not available within ${Number(action.timeoutMs || 30_000)}ms.`);
+    }
     return;
   }
 
@@ -1131,6 +1131,100 @@ function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function clickConfiguredButton(page, action) {
+  const timeoutMs = Number(action.timeoutMs || 30_000);
+  const deadline = Date.now() + timeoutMs;
+  const index = Number(action.index || 0);
+  const exact = action.exact ?? true;
+
+  while (Date.now() <= deadline) {
+    const remainingMs = Math.max(250, deadline - Date.now());
+    const candidates = [
+      page.getByRole('button', { name: action.name, exact }).nth(index),
+      page.getByRole('link', { name: action.name, exact }).nth(index),
+    ];
+
+    for (const candidate of candidates) {
+      if (await clickButtonCandidate(candidate, Math.min(2_000, remainingMs))) {
+        await waitForPageTimeout(page, Number(action.settleMs || 250), `button click "${action.name}"`).catch(() => {});
+        await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => {});
+        return true;
+      }
+    }
+
+    if (await clickButtonByDomLabel(page, action.name, { exact, index })) {
+      await waitForPageTimeout(page, Number(action.settleMs || 250), `DOM button click "${action.name}"`).catch(() => {});
+      await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => {});
+      return true;
+    }
+
+    await wait(Math.min(250, remainingMs));
+  }
+
+  return false;
+}
+
+async function clickButtonCandidate(locator, timeoutMs) {
+  try {
+    if ((await locator.count()) === 0 || !(await locator.isVisible()) || !(await locator.isEnabled())) {
+      return false;
+    }
+
+    await locator.click({ timeout: timeoutMs });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function clickButtonByDomLabel(page, name, { exact = true, index = 0 } = {}) {
+  return page.evaluate(({ name: expectedName, exact: isExact, index: targetIndex }) => {
+    const wanted = normalize(expectedName);
+    const controls = Array.from(document.querySelectorAll([
+      'button',
+      'input[type="button"]',
+      'input[type="submit"]',
+      'input[type="image"]',
+      '[role="button"]',
+      'a',
+    ].join(',')))
+      .filter((element) => isVisible(element) && !element.disabled)
+      .filter((element) => {
+        const label = normalize([
+          element.textContent,
+          element.value,
+          element.getAttribute('aria-label'),
+          element.getAttribute('title'),
+          element.getAttribute('alt'),
+        ].filter(Boolean).join(' '));
+        return isExact ? label === wanted : label.includes(wanted);
+      });
+
+    const target = controls[targetIndex];
+    if (!target) {
+      return false;
+    }
+
+    target.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+    target.click?.();
+    return true;
+
+    function isVisible(element) {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && Number(style.opacity) !== 0
+        && rect.width > 0
+        && rect.height > 0;
+    }
+
+    function normalize(value) {
+      return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+  }, { name, exact, index }).catch(() => false);
 }
 
 async function clickConfiguredLink(page, action) {
