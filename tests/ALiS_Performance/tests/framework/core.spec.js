@@ -142,6 +142,33 @@ test('creates a GUI runtime JMX result writer without changing the source script
   }
 });
 
+test('uses verified keyboard-based JMeter GUI auto-start without fixed screen coordinates', () => {
+  const helperPath = path.resolve('src/runners/windows/jmeterGuiAutoStart.ps1');
+  const helper = readFileSync(helperPath, 'utf8');
+
+  expect(helper).toContain('SendStartShortcut');
+  expect(helper).toContain('VK_R');
+  expect(helper).toContain('Running the test!');
+  expect(helper).toContain('ALiSPerformanceJMeterGuiStart');
+  expect(helper).not.toMatch(/ClientToScreen|SetCursorPos|mouse_event|ClickStartButton/);
+});
+
+test('dismisses the JMeter save prompt with No and a process-scoped fallback', () => {
+  const helperPath = path.resolve('src/runners/windows/jmeterGuiAutoClose.ps1');
+  const helper = readFileSync(helperPath, 'utf8');
+  const runner = readFileSync(path.resolve('src/runners/jmeterRunner.js'), 'utf8');
+
+  expect(helper).toContain('FindOwnedDialog');
+  expect(helper).toContain('ClickNativeNo');
+  expect(helper).toContain('SendNoSelection');
+  expect(helper).toContain('Thread.Sleep(350)');
+  expect(helper).toContain('Assert-RuntimeScriptWasNotSaved');
+  expect(helper).toContain('ALiSPerformanceJMeterGuiClose');
+  expect(helper).toContain('Stop-Process -Id $targetProcessId -Force');
+  expect(helper).not.toContain("SendKeys('%n')");
+  expect(runner).toContain('await Promise.all([guiExitPromise, autoClosePromise])');
+});
+
 test('discovers JMeter scripts recursively', () => {
   const root = path.join(tmpdir(), `jmx-discovery-${Date.now()}`);
   mkdirSync(path.join(root, 'nested'), { recursive: true });

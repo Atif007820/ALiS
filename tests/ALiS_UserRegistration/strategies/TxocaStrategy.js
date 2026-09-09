@@ -1,8 +1,27 @@
 import { expect } from '@playwright/test';
 import { BaseStrategy } from './BaseStrategy.js';
-import { entityName, phone, simplePerson, ssn, street, timestampParts, unit, city, zip, numberWithDigitLength } from '../utils/randomData.js';
+import {
+  adultDateOfBirth,
+  city,
+  entityName,
+  numberWithDigitLength,
+  phone,
+  simplePerson,
+  ssn,
+  street,
+  unit,
+  zip,
+} from '../utils/randomData.js';
 
 export class TxocaStrategy extends BaseStrategy {
+  buildUser(product) {
+    const user = super.buildUser(product);
+    const dob = adultDateOfBirth();
+    user.date = dob;
+    user.dob = dob;
+    return user;
+  }
+
   async openRegistration(product) {
     await this.page.goto(this.site.loginUrl, { waitUntil: 'domcontentloaded' });
     await this.form.waitForLoginShell();
@@ -190,7 +209,7 @@ export class TxocaStrategy extends BaseStrategy {
     user.fax = phone();
     user.ssn = ssn();
     user.ssnTin = ssn();
-    user.date = timestampParts().dateForField;
+    user.date = adultDateOfBirth();
     user.dob = user.date;
     return user;
   }

@@ -123,6 +123,8 @@ GUI Mode
 --------
 Opens the script in JMeter GUI.
 Auto-start is enabled by default from config/runsettings.json.
+Auto-start targets the matching JMeter window, sends JMeter's Ctrl+R command, and confirms the start in the run log.
+It retries automatically if focus is temporarily taken by another window.
 
 npm run jmeter:gui -- --script=LNI_PREPROD.jmx
 
@@ -161,6 +163,10 @@ guiAutoStart
 guiAutoStartDelayMs
 guiAutoClose
 guiWaitForExit
+
+guiAutoStartDelayMs is an additional loading buffer after the matching JMeter window appears.
+The start action is log-verified, so toolbar position, display scaling, and JMeter theme do not affect it.
+When guiAutoClose is true, the framework selects No on JMeter's Save prompt after execution and verifies that the matching JMeter process exits.
 
 Generate Excel Report From Existing JTL
 ---------------------------------------

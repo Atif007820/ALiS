@@ -50,6 +50,19 @@ export function timestampParts() {
   };
 }
 
+export function adultDateOfBirth(minAge = 21, maxAge = 70) {
+  const minimumAge = Math.max(18, Math.trunc(Number(minAge) || 21));
+  const maximumAge = Math.max(minimumAge, Math.trunc(Number(maxAge) || 70));
+  const birthDate = faker.date.birthdate({
+    min: minimumAge,
+    max: maximumAge,
+    mode: 'age',
+  });
+  const pad = (value) => String(value).padStart(2, '0');
+
+  return `${pad(birthDate.getMonth() + 1)}/${pad(birthDate.getDate())}/${birthDate.getFullYear()}`;
+}
+
 export function entityName(prefix) {
   const { dateForName, timeForName } = timestampParts();
   return `${prefix}_${dateForName}_${timeForName}`;

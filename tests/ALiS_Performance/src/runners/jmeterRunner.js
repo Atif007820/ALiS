@@ -1,9 +1,13 @@
 import { existsSync, statSync } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import { paths } from '../../config/paths.js';
 import { ensureDir } from '../utils/fileUtils.js';
 import { formatJMeterProperties, spawnCommand } from '../utils/commandUtils.js';
+
+const GUI_AUTO_START_SCRIPT = fileURLToPath(new URL('./windows/jmeterGuiAutoStart.ps1', import.meta.url));
+const GUI_AUTO_CLOSE_SCRIPT = fileURLToPath(new URL('./windows/jmeterGuiAutoClose.ps1', import.meta.url));
 
 export function validateJMeterInstall(jmeterHome = paths.jmeterHome) {
   if (!existsSync(jmeterHome)) {
@@ -94,17 +98,11 @@ export async function openJMeterGUI(options) {
   }
 
   if (autoClosePromise) {
-    return Promise.race([
-      guiExitPromise,
-      autoClosePromise.then(() => guiExitPromise)
-    ]);
+    const [guiExitResult] = await Promise.all([guiExitPromise, autoClosePromise]);
+    return guiExitResult;
   }
 
   return guiExitPromise;
-}
-
-function powershellString(value) {
-  return `'${String(value).replaceAll("'", "''")}'`;
 }
 
 function scheduleGuiAutoStart(scriptPath, logPath, delayMs = 8000) {
@@ -113,149 +111,13 @@ function scheduleGuiAutoStart(scriptPath, logPath, delayMs = 8000) {
     return Promise.resolve();
   }
 
-  const initialDelayMs = Number(delayMs) || 8000;
+  const initialDelayMs = Math.max(0, Number(delayMs) || 8000);
+  const timeoutMs = Math.max(120000, initialDelayMs + 60000);
   const expectedTitle = path.basename(scriptPath);
-  const command = `
-$ErrorActionPreference = 'Stop'
-$OutputEncoding = [System.Text.UTF8Encoding]::new()
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$initialDelayMs = ${initialDelayMs}
-$timeoutMs = 60000
-$expectedTitle = ${powershellString(expectedTitle)}
-$logPath = ${powershellString(logPath)}
-$shell = New-Object -ComObject WScript.Shell
-Add-Type -TypeDefinition @'
-using System;
-using System.Threading;
-using System.Runtime.InteropServices;
 
-public static class JMeterGuiInput
-{
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool ClientToScreen(IntPtr hWnd, ref Point point);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetCursorPos(int x, int y);
-
-    [DllImport("user32.dll")]
-    private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Point
-    {
-        public int X;
-        public int Y;
-    }
-
-    public static void RestoreAndFocus(IntPtr windowHandle)
-    {
-        ShowWindow(windowHandle, 9);
-        BringWindowToTop(windowHandle);
-        SetForegroundWindow(windowHandle);
-    }
-
-    public static void ClickStartButton(IntPtr windowHandle)
-    {
-        RestoreAndFocus(windowHandle);
-        Thread.Sleep(500);
-
-        // JMeter 5.6.3 standard toolbar: green Start button in client coordinates.
-        var point = new Point { X = 310, Y = 39 };
-        ClientToScreen(windowHandle, ref point);
-        SetCursorPos(point.X, point.Y);
-        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
-        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
-    }
-}
-'@
-
-function Test-JMeterStarted {
-  if (-not (Test-Path -LiteralPath $logPath)) {
-    return $false
+  if (!existsSync(GUI_AUTO_START_SCRIPT)) {
+    return Promise.reject(new Error(`JMeter GUI auto-start helper does not exist: ${GUI_AUTO_START_SCRIPT}`));
   }
-
-  return [bool](Select-String -LiteralPath $logPath -SimpleMatch 'Running the test!' -Quiet)
-}
-
-$deadline = (Get-Date).AddMilliseconds($timeoutMs)
-
-while ((Get-Date) -lt $deadline) {
-  $candidates = @(Get-Process -Name java, javaw -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -match 'JMeter' })
-
-  $target = $candidates |
-    Where-Object { $_.MainWindowTitle -like "*$expectedTitle*" } |
-    Sort-Object StartTime -Descending |
-    Select-Object -First 1
-
-  if ($target) {
-    [JMeterGuiInput]::RestoreAndFocus($target.MainWindowHandle)
-    Start-Sleep -Milliseconds 1000
-    if (-not $shell.AppActivate([int]$target.Id)) {
-      Start-Sleep -Milliseconds 500
-      continue
-    }
-    Write-Output "JMeter GUI found; waiting $initialDelayMs ms for the test plan to finish loading."
-    Start-Sleep -Milliseconds $initialDelayMs
-    [JMeterGuiInput]::RestoreAndFocus($target.MainWindowHandle)
-    Start-Sleep -Milliseconds 1000
-    if (-not $shell.AppActivate([int]$target.Id)) {
-      Write-Error "JMeter GUI was found but could not be reactivated."
-      exit 1
-    }
-    Start-Sleep -Milliseconds 500
-
-    $startMutex = New-Object System.Threading.Mutex($false, 'ALiSPerformanceJMeterGuiStart')
-    try {
-      for ($attempt = 1; $attempt -le 3; $attempt++) {
-        $mutexAcquired = $false
-        try {
-          $mutexAcquired = $startMutex.WaitOne(30000)
-          if (-not $mutexAcquired) {
-            throw 'Timed out waiting for the JMeter GUI auto-start lock.'
-          }
-          [JMeterGuiInput]::ClickStartButton($target.MainWindowHandle)
-        } finally {
-          if ($mutexAcquired) {
-            $startMutex.ReleaseMutex()
-          }
-        }
-
-        $verificationDeadline = (Get-Date).AddSeconds(5)
-        while ((Get-Date) -lt $verificationDeadline) {
-          if (Test-JMeterStarted) {
-            Write-Output "JMeter GUI test started: $($target.MainWindowTitle)"
-            exit 0
-          }
-          Start-Sleep -Milliseconds 250
-        }
-
-        Write-Output "JMeter start was not confirmed; retrying ($attempt/3)."
-      }
-    } finally {
-      $startMutex.Dispose()
-    }
-
-    Write-Error "JMeter GUI opened, but the test did not start. Log: $logPath"
-    exit 1
-  }
-
-  Start-Sleep -Milliseconds 500
-}
-
-Write-Error "Unable to find and activate the JMeter GUI window for '$expectedTitle'."
-exit 1
-`;
-  const encodedCommand = Buffer.from(command, 'utf16le').toString('base64');
 
   return new Promise((resolve, reject) => {
     const starter = spawn(
@@ -264,10 +126,15 @@ exit 1
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-OutputFormat', 'Text',
-        '-EncodedCommand', encodedCommand
+        '-File', GUI_AUTO_START_SCRIPT,
+        '-ExpectedTitle', expectedTitle,
+        '-LogPath', logPath,
+        '-InitialDelayMs', String(initialDelayMs),
+        '-TimeoutMs', String(timeoutMs)
       ],
       {
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
       }
     );
 
@@ -282,7 +149,7 @@ exit 1
     starter.on('error', reject);
     starter.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || 'JMeter GUI auto-start failed.'));
+        reject(new Error([stderr.trim(), stdout.trim()].filter(Boolean).join('\n') || 'JMeter GUI auto-start failed.'));
         return;
       }
       console.log(stdout.trim());
@@ -298,166 +165,18 @@ function scheduleGuiAutoClose(scriptPath, logPath, detached = false) {
   }
 
   const expectedTitle = path.basename(scriptPath);
-  const command = `
-$ErrorActionPreference = 'Stop'
-$expectedTitle = ${powershellString(expectedTitle)}
-$logPath = ${powershellString(logPath)}
-$targetProcessId = $null
-$shell = New-Object -ComObject WScript.Shell
-
-Add-Type -TypeDefinition @'
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-
-public static class JMeterGuiClose
-{
-    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-    private delegate bool EnumChildWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool EnumChildWindows(IntPtr parent, EnumChildWindowsProc callback, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int maxLength);
-
-    [DllImport("user32.dll")]
-    private static extern bool IsWindowVisible(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr hWnd, int command);
-
-    [DllImport("user32.dll")]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
-
-    public static void Close(IntPtr windowHandle)
-    {
-        PostMessage(windowHandle, 0x0010, IntPtr.Zero, IntPtr.Zero);
-    }
-
-    public static IntPtr FindSaveDialog(uint expectedProcessId)
-    {
-        IntPtr result = IntPtr.Zero;
-        EnumWindows((windowHandle, _) =>
-        {
-            uint processId;
-            GetWindowThreadProcessId(windowHandle, out processId);
-            if (processId != expectedProcessId || !IsWindowVisible(windowHandle)) return true;
-
-            var title = new StringBuilder(256);
-            GetWindowText(windowHandle, title, title.Capacity);
-            if (string.Equals(title.ToString(), "Save?", StringComparison.OrdinalIgnoreCase))
-            {
-                result = windowHandle;
-                return false;
-            }
-            return true;
-        }, IntPtr.Zero);
-        return result;
-    }
-
-    public static bool ClickNo(IntPtr dialogHandle)
-    {
-        IntPtr noButton = IntPtr.Zero;
-        EnumChildWindows(dialogHandle, (windowHandle, _) =>
-        {
-            var text = new StringBuilder(64);
-            GetWindowText(windowHandle, text, text.Capacity);
-            if (string.Equals(text.ToString().Replace("&", ""), "No", StringComparison.OrdinalIgnoreCase))
-            {
-                noButton = windowHandle;
-                return false;
-            }
-            return true;
-        }, IntPtr.Zero);
-
-        if (noButton == IntPtr.Zero) return false;
-        PostMessage(noButton, 0x00F5, IntPtr.Zero, IntPtr.Zero);
-        return true;
-    }
-
-    public static void Activate(IntPtr windowHandle)
-    {
-        ShowWindow(windowHandle, 9);
-        BringWindowToTop(windowHandle);
-        SetForegroundWindow(windowHandle);
-    }
-}
-'@
-
-while ($true) {
-  if (-not $targetProcessId) {
-    $target = Get-Process -Name java, javaw -ErrorAction SilentlyContinue |
-      Where-Object {
-        $_.MainWindowHandle -ne 0 -and
-        $_.MainWindowTitle -match 'JMeter' -and
-        $_.MainWindowTitle -like "*$expectedTitle*"
-      } |
-      Sort-Object StartTime -Descending |
-      Select-Object -First 1
-
-    if ($target) {
-      $targetProcessId = $target.Id
-    }
+  if (!existsSync(GUI_AUTO_CLOSE_SCRIPT)) {
+    return Promise.reject(new Error(`JMeter GUI auto-close helper does not exist: ${GUI_AUTO_CLOSE_SCRIPT}`));
   }
 
-  if ($targetProcessId -and -not (Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue)) {
-    exit 0
-  }
-
-  $testFinished = (Test-Path -LiteralPath $logPath) -and (
-    (Select-String -LiteralPath $logPath -SimpleMatch 'Notifying test listeners of end of test' -Quiet) -or
-    (Select-String -LiteralPath $logPath -SimpleMatch 'setRunning(false, *local*)' -Quiet)
-  )
-
-  if ($testFinished -and $targetProcessId) {
-    $target = Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue
-    if ($target) {
-      [JMeterGuiClose]::Close($target.MainWindowHandle)
-    }
-
-    $closeDeadline = (Get-Date).AddSeconds(20)
-    while ((Get-Date) -lt $closeDeadline) {
-      if (-not (Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue)) {
-        exit 0
-      }
-
-      $saveDialog = [JMeterGuiClose]::FindSaveDialog([uint32]$targetProcessId)
-      if ($saveDialog -ne [IntPtr]::Zero) {
-        if (-not [JMeterGuiClose]::ClickNo($saveDialog)) {
-          [JMeterGuiClose]::Activate($saveDialog)
-          Start-Sleep -Milliseconds 500
-          $shell.SendKeys('%n')
-        }
-      }
-
-      Start-Sleep -Milliseconds 500
-    }
-
-    Write-Error 'JMeter completed, but the GUI or Save dialog did not close within 20 seconds.'
-    exit 1
-  }
-
-  Start-Sleep -Milliseconds 1000
-}
-`;
-  const encodedCommand = Buffer.from(command, 'utf16le').toString('base64');
   const args = [
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
-    '-EncodedCommand', encodedCommand
+    '-OutputFormat', 'Text',
+    '-File', GUI_AUTO_CLOSE_SCRIPT,
+    '-ExpectedTitle', expectedTitle,
+    '-LogPath', logPath,
+    '-LoadedScriptPath', scriptPath
   ];
 
   if (detached) {
@@ -474,18 +193,22 @@ while ($true) {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     });
+    let stdout = '';
     let stderr = '';
 
+    closer.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
     closer.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
     });
     closer.on('error', reject);
     closer.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || 'JMeter GUI auto-close failed.'));
+        reject(new Error([stderr.trim(), stdout.trim()].filter(Boolean).join('\n') || 'JMeter GUI auto-close failed.'));
         return;
       }
-      console.log('JMeter GUI auto-close completed.');
+      console.log(stdout.trim() || 'JMeter GUI auto-close completed.');
       resolve();
     });
   });

@@ -159,7 +159,7 @@ Artifacts include:
 - The Excel report is generated universally from JTL data; no template workbook is required.
 - Excel report auto-open is controlled in `config/runsettings.json`.
 - The Node runner generates and opens a Playwright-style report in Chrome with a link to download the Excel report.
-- JMeter GUI auto-start is enabled by default in `config/runsettings.json`.
-- JMeter GUI auto-close dismisses the Save dialog with **No** after execution.
+- JMeter GUI auto-start uses the `Ctrl+R` command, resilient focus handling, retries, and run-log verification.
+- JMeter GUI auto-close targets the run-specific Java process, selects **No** on its owned Save dialog, verifies exit, and uses a no-save process fallback if a future JMeter dialog is not accessible.
 - GUI mode captures `results.jtl` and generates the same Excel and Playwright reports after JMeter closes.
 - The Playwright performance test is guarded by `RUN_JMETER=true` and `PERF_SCRIPT` to avoid accidental load execution.
