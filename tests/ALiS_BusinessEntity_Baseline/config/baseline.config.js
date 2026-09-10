@@ -6,6 +6,8 @@ export const baselineConfig = {
     appIdleNetworkMs: 2_000,
     appBusyMs: 45_000,
     searchResultsMs: 30_000,
+    searchResultOpenMs: 20_000,
+    searchResultPopupMs: 3_000,
     postCreateProfileReadyMs: 20_000,
     captureStabilizeMs: 700,
     tabClickStabilizeMs: 700,
@@ -30,11 +32,31 @@ export const baselineConfig = {
   workspace: {
     entityInfoTabPattern: '^Entity Information$',
     minProfileTabs: 2,
+    readinessPollMs: 250,
+    recoveryTimeoutMs: 30_000,
     readyTextPatterns: [
       'Return to Search',
     ],
+    workspaceHeadingPatterns: [
+      '\\bModify\\s+Business\\s+Entity\\b',
+      '\\bView\\s+Business\\s+Entity\\b',
+    ],
     profileIdentifierPatterns: [
       '\\b(?:Entity|Licensee)\\s+I[Dd]\\b',
+    ],
+    busyIndicatorSelectors: [
+      '.ngx-spinner-overlay',
+      '.block-ui-wrapper',
+      '.blockUI',
+      '.loading',
+      '.loader',
+      '.spinner',
+      '.ngx-spinner',
+      '.ngx-overlay',
+      '.k-loading-mask',
+      '.ui-widget-overlay',
+      '[class*="spinner"]',
+      '[id*="spinner"]',
     ],
     nonWorkspacePagePatterns: [
       '\\bNew Business Entity\\b',

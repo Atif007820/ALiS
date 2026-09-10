@@ -83,7 +83,10 @@ export async function createEntity(page, { businessUnit, entityName }) {
     page,
     createdReference.entityName || resolvedEntityName,
     {
-      timeout: 8_000,
+      timeout: Math.min(
+        baselineConfig.timeouts.postCreateProfileReadyMs || 20_000,
+        baselineConfig.timeouts.navigationMs,
+      ),
       required: false,
       settle: false,
     },

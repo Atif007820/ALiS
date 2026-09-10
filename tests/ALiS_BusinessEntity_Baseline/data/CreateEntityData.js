@@ -367,7 +367,24 @@ function buildDpbhFacilityRunData(testData, {
           ? [{ type: 'reloadCurrentPage', waitAfterReloadMs: 700 }]
           : []
       ),
-      { type: 'waitForLink', name: 'Credential Type', timeoutMs: 20_000 },
+      {
+        type: 'waitForLink',
+        name: 'Credential Type',
+        timeoutMs: 20_000,
+        attempts: 3,
+        retryDelayMs: 750,
+        recoveryActions: [
+          { type: 'reloadCurrentPage', waitAfterReloadMs: 1_000 },
+          {
+            type: 'selectByLabel',
+            label: 'Application Type',
+            value: applicationType,
+            waitAfterSelectMs: 1_500,
+            waitForAspNetPostback: true,
+            verifyValue: true,
+          },
+        ],
+      },
       {
         type: 'popupFromLink',
         name: 'Credential Type',

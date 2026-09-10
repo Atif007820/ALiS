@@ -4,11 +4,13 @@ import { businessUnits, resolveBusinessUnit } from '../config/BusinessUnit.js';
 import { baselineConfig } from '../config/baseline.config.js';
 import { ExcelManager } from '../core/ExcelManager.js';
 import { CompareEngine } from '../core/CompareEngine.js';
+import { CaptureEngine } from '../core/CaptureEngine.js';
 import { testCaseRegistry } from '../test-cases/registry.js';
 import { availableUrlKeys, normalizeUrlKey } from '../config/urls.js';
 import { flow2EntityNames } from '../config/flow2EntityNames.js';
 import { flow4EntityNames } from '../config/flow4EntityNames.js';
 import { getAvailableFlows, getFlowInfo } from '../utils/flowLabels.js';
+import { buildSearchAttempts } from '../flows/ModifySearchFlow.js';
 
 const businessUnit = resolveBusinessUnit('HLS');
 const bloodBankBusinessUnit = resolveBusinessUnit('BB');
@@ -22,6 +24,45 @@ const nvrcpCreateBusinessUnits = ['RPM', 'RM', 'MAMMO'].map(resolveBusinessUnit)
 const runSettings = JSON.parse(await fs.readFile(new URL('../config/runSettings.json', import.meta.url), 'utf8'));
 const excelManager = new ExcelManager();
 const compareEngine = new CompareEngine();
+const captureEngine = new CaptureEngine();
+
+assert.equal(
+  Number(baselineConfig.timeouts.searchResultOpenMs || 0) >= 15_000,
+  true,
+  'Search-result workspace opening should tolerate delayed ALiS rendering',
+);
+assert.equal(
+  Number(baselineConfig.timeouts.searchResultPopupMs || 0) >= 1_000,
+  true,
+  'View result navigation should allow time to detect a child page',
+);
+assert.equal(
+  Number(baselineConfig.timeouts.postCreateProfileReadyMs || 0) >= 15_000,
+  true,
+  'Post-create workspace readiness should tolerate delayed ALiS rendering',
+);
+assert.equal(
+  Number(baselineConfig.workspace.readinessPollMs || 0) > 0,
+  true,
+  'Entity workspace readiness should use bounded polling',
+);
+assert.equal(
+  Number(baselineConfig.workspace.recoveryTimeoutMs || 0) >= 15_000,
+  true,
+  'Partially loaded entity workspaces should have a bounded recovery window',
+);
+assert.equal(
+  baselineConfig.workspace.workspaceHeadingPatterns.some((pattern) => (
+    new RegExp(pattern, 'i').test('Modify Business Entity')
+  )),
+  true,
+  'Entity workspace readiness should recognize the Modify Business Entity heading',
+);
+assert.equal(
+  baselineConfig.workspace.busyIndicatorSelectors.some((selector) => /spinner|block/i.test(selector)),
+  true,
+  'Entity workspace readiness should wait for blocking loading indicators',
+);
 
 assert.equal(Boolean(testCaseRegistry.TC01), true, 'TC01 should be registered');
 assert.equal(Boolean(testCaseRegistry.TC02), true, 'TC02 should be registered');
@@ -277,6 +318,24 @@ assert.equal(
   true,
   'KPS Credential Type popup should use a tolerant FOOD ESTABLISHMENT - MAIN radio match',
 );
+const kitchenPoolSpaCredentialWait = kitchenPoolSpaBusinessUnit.beforeCreateEntityActions.find((action) => (
+  action.type === 'waitForLink'
+  && action.name === 'Credential Type'
+));
+assert.equal(
+  Number(kitchenPoolSpaCredentialWait?.attempts || 0) >= 2
+    && kitchenPoolSpaCredentialWait.recoveryActions.some((action) => (
+      action.type === 'reloadCurrentPage'
+    ))
+    && kitchenPoolSpaCredentialWait.recoveryActions.some((action) => (
+      action.type === 'selectByLabel'
+      && action.label === 'Application Type'
+      && action.value === 'KIHF'
+      && action.verifyValue === true
+    )),
+  true,
+  'KPS Credential Type wait should recover by reloading and re-triggering verified Application Type KIHF',
+);
 assert.equal(
   kitchenPoolSpaBusinessUnit.tableHeaderPreconditions['Activity Log(s)'].actions.some((action) => (
     action.type === 'selectByLabel'
@@ -313,6 +372,62 @@ for (const dpbhBusinessUnit of [
   );
 }
 for (const nvrcpBusinessUnit of nvrcpCreateBusinessUnits) {
+  assert.equal(
+    Boolean(captureEngine.tableHeaderPreconditionForTab(nvrcpBusinessUnit, 'Activity Log')),
+    true,
+    `${nvrcpBusinessUnit.id} should resolve the live singular Activity Log tab to its configured precondition`,
+  );
+  assert.equal(
+    Boolean(captureEngine.tableHeaderPreconditionForTab(nvrcpBusinessUnit, 'Payment')),
+    true,
+    `${nvrcpBusinessUnit.id} should resolve the live singular Payment tab to its configured precondition`,
+  );
+
+  const viewSearchAttempts = buildSearchAttempts({
+    businessUnit: nvrcpBusinessUnit,
+    entityName: nvrcpBusinessUnit.flow4EntityName,
+    actionName: 'View',
+  });
+  const prefixAttempt = viewSearchAttempts.find((attempt) => attempt.label.startsWith('Entity prefix fallback'));
+  assert.equal(
+    prefixAttempt?.resultMatchValue,
+    nvrcpBusinessUnit.entityPrefix,
+    `${nvrcpBusinessUnit.id} View prefix fallback should match a visible prefix result instead of the stale full name`,
+  );
+  assert.equal(
+    viewSearchAttempts
+      .filter((attempt) => attempt.type === 'name')
+      .every((attempt) => attempt.retries === 1),
+    true,
+    `${nvrcpBusinessUnit.id} View search should reach its configured prefix fallback without repeated stale-name waits`,
+  );
+  assert.equal(
+    viewSearchAttempts.filter((attempt) => attempt.type === 'name').length,
+    1,
+    `${nvrcpBusinessUnit.id} View search should not generate timestamp-format variants before its prefix fallback`,
+  );
+
+  const createdViewAttempts = buildSearchAttempts({
+    businessUnit: nvrcpBusinessUnit,
+    entityName: `${nvrcpBusinessUnit.entityPrefix}_NEW`,
+    entityId: '12345',
+    searchFallbacks: [{ label: 'Generated key', fieldNames: ['Serial No'], value: 'ABC123' }],
+    actionName: 'View',
+  });
+  const createdPrefixIndex = createdViewAttempts.findIndex((attempt) => attempt.isPrefixFallback);
+  const generatedKeyIndex = createdViewAttempts.findIndex((attempt) => attempt.label.startsWith('Generated key'));
+  const createdEntityIdAttempt = createdViewAttempts.find((attempt) => attempt.type === 'entityId');
+  assert.equal(
+    createdEntityIdAttempt?.retries,
+    1,
+    `${nvrcpBusinessUnit.id} View search should not repeat a stale entity ID before its safe prefix fallback`,
+  );
+  assert.equal(
+    createdPrefixIndex > -1 && createdPrefixIndex < generatedKeyIndex,
+    true,
+    `${nvrcpBusinessUnit.id} newly created View flow should use a BU prefix before slow generated-key fallbacks when indexing is delayed`,
+  );
+
   const physicalAddressActions = nvrcpBusinessUnit.createEntityFields.filter((action) => (
     String(action.selector || '').includes('ucPhysicalAddressAdd')
   ));

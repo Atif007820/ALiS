@@ -645,8 +645,9 @@ export class CaptureEngine {
   }
 
   async prepareTabForCapture(page, tabName) {
-    await this.clickTab(page, tabName);
+    const selected = await this.clickTab(page, tabName);
     await this.settleCurrentTabForCapture(page);
+    return selected;
   }
 
   async settleCurrentTabForCapture(page) {
@@ -824,10 +825,10 @@ export class CaptureEngine {
 
   tableHeaderPreconditionForTab(businessUnit, tabName) {
     const preconditions = businessUnit?.tableHeaderPreconditions || {};
-    const normalizedTabName = normalizeText(tabName).toLowerCase();
+    const normalizedTabName = runtimeTabKey(tabName);
 
     return Object.entries(preconditions)
-      .find(([key]) => normalizeText(key).toLowerCase() === normalizedTabName)?.[1] || null;
+      .find(([key]) => runtimeTabKey(key) === normalizedTabName)?.[1] || null;
   }
 
   async runConfiguredTableHeaderPrecondition(page, tabName, businessUnit, precondition) {
@@ -1978,7 +1979,7 @@ export class CaptureEngine {
 
   async clickTab(page, tabName) {
     if (await this.clickAngularRoleTab(page, tabName)) {
-      return;
+      return true;
     }
 
     const selectorCandidate = page
@@ -1986,15 +1987,16 @@ export class CaptureEngine {
       .filter({ hasText: tabName })
       .first();
     if (await this.clickIfVisible(selectorCandidate)) {
-      return;
+      return true;
     }
 
     const exactLink = page.getByRole('link', { name: tabName, exact: true }).first();
     if (await this.clickIfVisible(exactLink)) {
-      return;
+      return true;
     }
 
     this.warnings.push(`Could not click tab "${tabName}". Capturing currently visible section headers.`);
+    return false;
   }
 
   async clickAngularRoleTab(page, tabName) {
@@ -2098,4 +2100,10 @@ export class CaptureEngine {
         .filter(Boolean);
     }).then((texts) => texts.map(normalizeText));
   }
+}
+
+function runtimeTabKey(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/\s*\(s\)\s*$/, '');
 }

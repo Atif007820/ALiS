@@ -26,7 +26,7 @@ export async function executeFlow(page, { flow, environment, businessUnit, crede
       && (created.openedFromSuccessPage || !businessUnit.alwaysSearchAfterCreate)
     ) {
       logger.info('Created facility/entity profile is already open; using the saved profile for New Entity - Modify comparison.');
-      return created;
+      return { ...created, page };
     }
 
     await login(page, { environment, credentials });
@@ -87,20 +87,33 @@ async function prepareCreatedEntityForViewComparison(page, businessUnit) {
   const visibleTabs = await captureEngine.captureTabs(page).catch(() => []);
   const tabsWithPreconditions = visibleTabs
     .filter((tabName) => captureEngine.tableHeaderPreconditionForTab(businessUnit, tabName));
-  const fallbackTabs = preconditions.map(([tabName]) => tabName);
-  const tabsToPrepare = uniqueNormalizedValues(tabsWithPreconditions.length ? tabsWithPreconditions : fallbackTabs);
+  const tabsToPrepare = uniqueNormalizedValues(tabsWithPreconditions);
+
+  if (!tabsToPrepare.length) {
+    logger.warn(`No visible Modify tabs matched configured preconditions for ${businessUnit.id}; skipping optional View preparation.`);
+    return;
+  }
 
   logger.info(`Running ${tabsToPrepare.length} Modify precondition(s) before View comparison.`);
 
   for (const tabName of tabsToPrepare) {
-    await captureEngine.prepareTabForCapture(page, tabName);
+    const tabSelected = await captureEngine.prepareTabForCapture(page, tabName);
+    if (!tabSelected) {
+      logger.warn(`Could not activate Modify tab "${tabName}"; skipping its optional View precondition.`);
+      continue;
+    }
+
     const existingHeaders = await captureEngine.captureTableColumnHeaders(page, tabName).catch(() => []);
     if (existingHeaders.length) {
       logger.info(`Skipping ${tabName} Modify precondition because table headers are already visible.`);
       continue;
     }
 
-    await captureEngine.ensureTableHeaderPreconditions(page, tabName, businessUnit);
+    try {
+      await captureEngine.ensureTableHeaderPreconditions(page, tabName, businessUnit);
+    } catch (error) {
+      logger.warn(`Optional ${tabName} View precondition failed and was skipped: ${error.message}`);
+    }
   }
 
   if (captureEngine.warnings.length) {

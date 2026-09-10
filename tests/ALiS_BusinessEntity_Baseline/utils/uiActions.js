@@ -232,11 +232,37 @@ export async function runUiAction(page, action, context = {}) {
 
   if (action.type === 'waitForLink') {
     const timeoutMs = Number(action.timeoutMs || 15_000);
-    const found = await waitForVisibleActionLink(page, action, timeoutMs);
-    if (!found) {
-      throw new Error(`Visible link "${action.name}" was not available within ${timeoutMs}ms.`);
+    const attempts = Math.max(1, Number(action.attempts || 1));
+    const retryDelayMs = Math.max(0, Number(action.retryDelayMs || 500));
+    let lastRecoveryError = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (await waitForVisibleActionLink(page, action, timeoutMs)) {
+        return;
+      }
+
+      if (attempt >= attempts) {
+        break;
+      }
+
+      try {
+        await runUiActions(page, action.recoveryActions || [], context);
+        lastRecoveryError = null;
+      } catch (error) {
+        lastRecoveryError = error;
+      }
+
+      if (retryDelayMs) {
+        await waitForPageTimeout(page, retryDelayMs, `waiting to retry dependent link "${action.name}"`);
+      }
     }
-    return;
+
+    const recoverySummary = lastRecoveryError
+      ? ` Last recovery error: ${lastRecoveryError.message || lastRecoveryError}`
+      : '';
+    throw new Error(
+      `Visible link "${action.name}" was not available after ${attempts} attempt(s) of ${timeoutMs}ms.${recoverySummary}`,
+    );
   }
 
   if (action.type === 'clickButton') {

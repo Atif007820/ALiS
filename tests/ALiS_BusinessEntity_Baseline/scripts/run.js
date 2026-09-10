@@ -226,6 +226,7 @@ async function runCombinationOnce({
       credentials,
       entityName: parsedArgs.entity,
     });
+    page = flowResult.page || page;
     timings.flowMs = elapsedMs(flowStart);
     logger.info(`Flow setup/open duration: ${formatDuration(timings.flowMs)}`);
 

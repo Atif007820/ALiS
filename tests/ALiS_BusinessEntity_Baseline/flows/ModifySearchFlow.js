@@ -34,19 +34,20 @@ export async function openEntityFromBusinessEntitySearch(page, {
   await selectModifyBusinessUnit(page, businessUnit);
   await ensureModifySearchFieldsReady(page, businessUnit);
 
-  await runModifySearchAttempts(page, {
+  const openedPage = await runModifySearchAttempts(page, {
     businessUnit,
     entityName,
     entityId,
     searchFallbacks,
     actionName: searchAction,
   });
-  await waitForAppIdle(page);
-  await waitForEntityWorkspace(page, entityName);
+  await waitForAppIdle(openedPage);
+  await waitForEntityWorkspace(openedPage, entityName);
 
   return {
     entityName,
     entityId,
+    page: openedPage,
   };
 }
 
@@ -980,17 +981,25 @@ async function runModifySearchAttempts(page, {
 
       await page.getByRole('button', { name: 'Search' }).click();
       if (await waitForWorkspaceOrSearchResults(page, entityName || attempt.value, { actionName })) {
-        return;
+        return page;
       }
 
       if (await waitForDirectWorkspaceAfterSearch(page, entityName || attempt.value, { actionName, timeout: 1_500 })) {
-        return;
+        return page;
       }
 
-      if (await clickEntityResult(page, entityName || attempt.value, {
+      const resultPage = await clickEntityResult(page, attempt.resultMatchValue || entityName || attempt.value, {
         allowFirstResult: attempt.allowFirstResult || attempt.type === 'entityId' || attempt.type === 'field',
-      })) {
-        return;
+        preferFirstResult: attempt.isPrefixFallback,
+        expectPopup: normalizeActionName(actionName) === 'View',
+      });
+      if (resultPage) {
+        if (attempt.isPrefixFallback) {
+          logger.warn(
+            `${actionName} opened a ${businessUnit.id} prefix fallback because the requested entity was not available in View search.`,
+          );
+        }
+        return resultPage;
       }
 
       lastSearchSummary = `${attempt.label}${retry > 1 ? ` retry ${retry}` : ''}`;
@@ -1046,7 +1055,7 @@ async function isEntityWorkspaceReady(page, { timeout = 8_000 } = {}) {
   return waitForWorkspaceSignal(page, timeout);
 }
 
-function buildSearchAttempts({
+export function buildSearchAttempts({
   businessUnit,
   entityName,
   entityId,
@@ -1054,10 +1063,20 @@ function buildSearchAttempts({
   actionName = 'Modify',
 }) {
   const attempts = [];
-  const nameRetries = Number(businessUnit.modifySearchNameRetries || 5);
+  const useViewPrefixFallback = normalizeActionName(actionName) === 'View'
+    && businessUnit.viewExistingEntityFallbackToPrefix
+    && Boolean(businessUnit.entityPrefix);
+  const nameRetries = Math.max(1, Number(
+    businessUnit.viewSearchNameRetries
+      ?? businessUnit.modifySearchNameRetries
+      ?? (useViewPrefixFallback ? 1 : 5),
+  ));
   const initialNameRetries = Math.max(1, Number(businessUnit.modifySearchInitialNameRetries || 1));
   const fallbackRetries = Number(businessUnit.modifySearchFallbackRetries || 2);
-  const nameVariants = uniqueValues(entityNameSearchVariants(entityName));
+  const availableNameVariants = uniqueValues(entityNameSearchVariants(entityName));
+  const nameVariants = useViewPrefixFallback
+    ? availableNameVariants.slice(0, 1)
+    : availableNameVariants;
   const useEarlyEntityId = Boolean(entityId && nameVariants.length);
 
   if (useEarlyEntityId) {
@@ -1069,7 +1088,7 @@ function buildSearchAttempts({
       type: 'entityId',
       value: entityId,
       label: `Entity ID "${entityId}"`,
-      retries: 2,
+      retries: useViewPrefixFallback ? 1 : 2,
     });
   }
 
@@ -1083,6 +1102,26 @@ function buildSearchAttempts({
     }
 
     attempts.push(buildNameSearchAttempt(value, attempts.length === 0 ? nameRetries : 1));
+  }
+
+  if (
+    useViewPrefixFallback
+    && !nameVariants.some((value) => normalizeText(value) === normalizeText(businessUnit.entityPrefix))
+  ) {
+    attempts.push({
+      type: 'field',
+      value: businessUnit.entityPrefix,
+      fieldNames: uniqueValues([
+        ...(businessUnit.modifyEntitySearchFieldNames || []),
+        'Entity Name',
+        'Facility Name',
+      ]),
+      label: `Entity prefix fallback "${businessUnit.entityPrefix}"`,
+      retries: 1,
+      allowFirstResult: true,
+      resultMatchValue: businessUnit.entityPrefix,
+      isPrefixFallback: true,
+    });
   }
 
   for (const fallback of searchFallbacks) {
@@ -1102,27 +1141,6 @@ function buildSearchAttempts({
       fieldNames,
       label: `${fallback.label || fieldNames.join('/')} "${value}"`,
       retries: fallback.retries || fallbackRetries,
-    });
-  }
-
-  if (
-    normalizeActionName(actionName) === 'View'
-    && businessUnit.viewExistingEntityFallbackToPrefix
-    && !entityId
-    && businessUnit.entityPrefix
-    && !nameVariants.some((value) => normalizeText(value) === normalizeText(businessUnit.entityPrefix))
-  ) {
-    attempts.push({
-      type: 'field',
-      value: businessUnit.entityPrefix,
-      fieldNames: uniqueValues([
-        ...(businessUnit.modifyEntitySearchFieldNames || []),
-        'Entity Name',
-        'Facility Name',
-      ]),
-      label: `Entity prefix fallback "${businessUnit.entityPrefix}"`,
-      retries: 1,
-      allowFirstResult: true,
     });
   }
 
@@ -1254,53 +1272,76 @@ async function waitForSearchResults(page) {
   return Promise.any(waits).catch(() => false);
 }
 
-async function clickEntityResult(page, entityName, { allowFirstResult = false } = {}) {
+async function clickEntityResult(page, entityName, {
+  allowFirstResult = false,
+  preferFirstResult = false,
+  expectPopup = false,
+} = {}) {
+  if (allowFirstResult && preferFirstResult) {
+    const preferredResultPage = await clickFirstSearchResult(page, { expectPopup });
+    if (preferredResultPage) {
+      return preferredResultPage;
+    }
+  }
+
   if (entityName) {
     const flexibleEntityNamePattern = flexibleTextPattern(entityName);
 
     const exactLink = page.getByRole('link', { name: entityName, exact: true }).first();
-    if (await clickResultCandidate(page, exactLink)) {
-      return true;
+    const exactResultPage = await clickResultCandidate(page, exactLink, { expectPopup });
+    if (exactResultPage) {
+      return exactResultPage;
     }
 
     const flexibleLink = page.locator('a').filter({ hasText: flexibleEntityNamePattern }).first();
-    if (await clickResultCandidate(page, flexibleLink)) {
-      return true;
+    const flexibleResultPage = await clickResultCandidate(page, flexibleLink, { expectPopup });
+    if (flexibleResultPage) {
+      return flexibleResultPage;
     }
 
     const partialLink = page.locator('a').filter({ hasText: entityName }).first();
-    if (await clickResultCandidate(page, partialLink)) {
-      return true;
+    const partialResultPage = await clickResultCandidate(page, partialLink, { expectPopup });
+    if (partialResultPage) {
+      return partialResultPage;
     }
 
-    if (await clickNormalizedSearchResult(page, entityName)) {
-      return true;
+    const normalizedResultPage = await clickNormalizedSearchResult(page, entityName, { expectPopup });
+    if (normalizedResultPage) {
+      return normalizedResultPage;
     }
 
     const matchingRow = page.locator('tr, div[role="row"]').filter({ hasText: entityName }).first();
-    if (await clickResultCandidate(page, matchingRow)) {
-      return true;
+    const matchingRowPage = await clickResultCandidate(page, matchingRow, { expectPopup });
+    if (matchingRowPage) {
+      return matchingRowPage;
     }
 
     const flexibleMatchingRow = page.locator('tr, div[role="row"]').filter({ hasText: flexibleEntityNamePattern }).first();
-    if (await clickResultCandidate(page, flexibleMatchingRow)) {
-      return true;
+    const flexibleRowPage = await clickResultCandidate(page, flexibleMatchingRow, { expectPopup });
+    if (flexibleRowPage) {
+      return flexibleRowPage;
     }
 
     const rowClickable = matchingRow.locator('a, button, [role="link"], [role="button"], td, span, div').filter({ hasText: entityName }).first();
-    if (await clickResultCandidate(page, rowClickable)) {
-      return true;
+    const rowClickablePage = await clickResultCandidate(page, rowClickable, { expectPopup });
+    if (rowClickablePage) {
+      return rowClickablePage;
     }
   }
 
-  if (allowFirstResult && await clickFirstSearchResult(page)) {
-    return true;
+  if (allowFirstResult) {
+    const firstResultPage = await clickFirstSearchResult(page, { expectPopup });
+    if (firstResultPage) {
+      return firstResultPage;
+    }
   }
 
-  return false;
+  return null;
 }
 
-async function clickNormalizedSearchResult(page, entityName) {
+async function clickNormalizedSearchResult(page, entityName, { expectPopup = false } = {}) {
+  const beforeUrl = page.url();
+  const popupPromise = popupAfterResultClick(page, expectPopup);
   const clicked = await page.evaluate((wantedText) => {
     const wanted = clean(wantedText);
     const wantedCompact = compact(wantedText);
@@ -1386,18 +1427,14 @@ async function clickNormalizedSearchResult(page, entityName) {
   }, entityName).catch(() => false);
 
   if (!clicked) {
-    return false;
+    return null;
   }
 
-  await waitForAppIdle(page);
-  return waitForEntityWorkspace(page, 'search result', {
-    timeout: Math.min(10_000, baselineConfig.timeouts.navigationMs),
-    required: false,
-    settle: false,
-  });
+  const popup = await popupPromise;
+  return confirmOpenedResultPage(page, popup, beforeUrl);
 }
 
-async function clickFirstSearchResult(page) {
+async function clickFirstSearchResult(page, { expectPopup = false } = {}) {
   const candidateLocators = [
     page.locator('.ui-grid-canvas a').filter({ hasText: validResultTextPattern() }).first(),
     page.locator('.ui-grid-row a').filter({ hasText: validResultTextPattern() }).first(),
@@ -1408,19 +1445,21 @@ async function clickFirstSearchResult(page) {
   ];
 
   for (const locator of candidateLocators) {
-    if (await clickResultCandidate(page, locator)) {
-      return true;
+    const resultPage = await clickResultCandidate(page, locator, { expectPopup });
+    if (resultPage) {
+      return resultPage;
     }
   }
 
   const firstRow = page.locator('tbody tr, table tr, div[role="row"]')
     .filter({ hasText: validResultTextPattern() })
     .first();
-  if (await clickResultCandidate(page, firstRow)) {
-    return true;
+  const firstRowPage = await clickResultCandidate(page, firstRow, { expectPopup });
+  if (firstRowPage) {
+    return firstRowPage;
   }
 
-  return false;
+  return null;
 }
 
 function validResultTextPattern() {
@@ -1432,32 +1471,63 @@ function flexibleTextPattern(value) {
   return new RegExp(escaped, 'i');
 }
 
-async function clickResultCandidate(page, locator) {
+async function clickResultCandidate(page, locator, { expectPopup = false } = {}) {
   if (!await isValidSearchResultCandidate(locator)) {
-    return false;
+    return null;
   }
 
   const beforeUrl = page.url();
+  const popupPromise = popupAfterResultClick(page, expectPopup);
 
   if (!await clickIfUsable(locator)) {
-    return false;
+    return null;
   }
 
-  await waitForAppIdle(page);
+  const popup = await popupPromise;
+  return confirmOpenedResultPage(page, popup, beforeUrl);
+}
 
-  if (await waitForEntityWorkspace(page, 'search result', {
-    timeout: Math.min(10_000, baselineConfig.timeouts.navigationMs),
+function popupAfterResultClick(page, expectPopup) {
+  if (!expectPopup) {
+    return Promise.resolve(null);
+  }
+
+  const timeout = baselineConfig.timeouts.searchResultPopupMs || 3_000;
+  return Promise.any([
+    page.waitForEvent('popup', { timeout }),
+    page.context().waitForEvent('page', {
+      predicate: (candidate) => candidate !== page,
+      timeout,
+    }),
+  ]).catch(() => null);
+}
+
+async function confirmOpenedResultPage(sourcePage, popup, beforeUrl) {
+  const openedPage = popup && !popup.isClosed() ? popup : sourcePage;
+
+  await openedPage.waitForLoadState('domcontentloaded', {
+    timeout: baselineConfig.timeouts.navigationMs,
+  }).catch(() => {});
+  await waitForAppIdle(openedPage);
+
+  if (await waitForEntityWorkspace(openedPage, 'search result', {
+    timeout: searchResultOpenTimeout(),
     required: false,
     settle: false,
+    recover: true,
   })) {
-    return true;
+    return openedPage;
   }
 
-  if (page.url() !== beforeUrl && !await isNoMatchingSearchPage(page)) {
-    return true;
+  if (openedPage !== sourcePage && !openedPage.isClosed() && openedPage.url() !== 'about:blank') {
+    return openedPage;
   }
 
-  return false;
+  if (sourcePage.url() !== beforeUrl && !await isNoMatchingSearchPage(sourcePage)) {
+    return sourcePage;
+  }
+
+  return null;
 }
 
 async function isValidSearchResultCandidate(locator) {
@@ -1500,8 +1570,13 @@ export async function waitForEntityWorkspace(page, entityName, {
   timeout = baselineConfig.timeouts.navigationMs,
   required = true,
   settle = true,
+  recover = required,
 } = {}) {
-  const ready = await waitForWorkspaceSignal(page, timeout);
+  let ready = await waitForWorkspaceSignal(page, timeout);
+
+  if (!ready && recover) {
+    ready = await recoverPartialEntityWorkspace(page, entityName, timeout);
+  }
 
   if (!ready) {
     if (!required) {
@@ -1521,34 +1596,9 @@ export async function waitForEntityWorkspace(page, entityName, {
 async function waitForWorkspaceSignal(page, timeout) {
   const tabSelectors = baselineConfig.capture.tabSelectors.join(',');
   const workspaceConfig = baselineConfig.workspace || {};
-  const entityInfoTabPattern = new RegExp(workspaceConfig.entityInfoTabPattern || '^Entity Information$', 'i');
-  const readyTextPatterns = workspaceConfig.readyTextPatterns?.length
-    ? workspaceConfig.readyTextPatterns
-    : ['Return to Search'];
-  const entityInfoTab = page.locator(tabSelectors).filter({ hasText: entityInfoTabPattern }).first();
-  const readyTextLocator = readyTextPatterns
-    .map((pattern) => new RegExp(pattern, 'i'))
-    .reduce((locator, pattern) => {
-      const candidate = page.getByRole('link', { name: pattern }).first()
-        .or(page.getByText(pattern).first());
-      return locator ? locator.or(candidate) : candidate;
-    }, null);
+  const pollMs = Number(workspaceConfig.readinessPollMs || 250);
 
-  const readyByLocator = await entityInfoTab
-    .or(readyTextLocator)
-    .first()
-    .waitFor({
-      state: 'visible',
-      timeout,
-    })
-    .then(() => true)
-    .catch(() => false);
-
-  if (!readyByLocator) {
-    return false;
-  }
-
-  return page.evaluate(({ selectors, workspace }) => {
+  return page.waitForFunction(({ selectors, workspace }) => {
     const cleanText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const bodyText = cleanText(document.body?.innerText || '');
     const regexFrom = (pattern) => {
@@ -1563,35 +1613,104 @@ async function waitForWorkspaceSignal(page, timeout) {
       const rect = element.getBoundingClientRect();
       return style.visibility !== 'hidden'
         && style.display !== 'none'
+        && Number(style.opacity) !== 0
         && rect.width > 0
         && rect.height > 0;
     };
 
-    const tabTexts = Array.from(document.querySelectorAll(selectors))
-      .filter(visible)
+    const visibleElements = (selector) => {
+      try {
+        return Array.from(document.querySelectorAll(selector)).filter(visible);
+      } catch {
+        return [];
+      }
+    };
+
+    const tabTexts = visibleElements(selectors)
       .map((element) => cleanText(element.innerText || element.textContent));
     const entityInfoTabRegex = regexFrom(workspace.entityInfoTabPattern || '^Entity Information$');
     const readyTextRegexes = (workspace.readyTextPatterns || ['Return to Search']).map(regexFrom);
     const profileIdentifierRegexes = (workspace.profileIdentifierPatterns || ['\\b(?:Entity|Licensee)\\s+I[Dd]\\b']).map(regexFrom);
+    const workspaceHeadingRegexes = (workspace.workspaceHeadingPatterns || [
+      '\\bModify\\s+Business\\s+Entity\\b',
+      '\\bView\\s+Business\\s+Entity\\b',
+    ]).map(regexFrom);
     const nonWorkspacePageRegexes = (workspace.nonWorkspacePagePatterns || []).map(regexFrom);
+    const busySelectors = workspace.busyIndicatorSelectors || [];
     const minProfileTabs = Number(workspace.minProfileTabs || 2);
 
     const hasEntityInfoTab = tabTexts.some((text) => entityInfoTabRegex.test(text));
     const hasMultipleProfileTabs = tabTexts.filter(Boolean).length >= minProfileTabs;
     const hasReadyText = readyTextRegexes.some((regex) => regex.test(bodyText));
     const hasProfileIdentifier = profileIdentifierRegexes.some((regex) => regex.test(bodyText));
+    const hasWorkspaceHeading = workspaceHeadingRegexes.some((regex) => regex.test(bodyText));
+    const hasBlockingBusyIndicator = busySelectors.some((selector) => visibleElements(selector).length > 0);
     const isCreateOrSearchPage = nonWorkspacePageRegexes.some((regex) => regex.test(bodyText))
       && !hasReadyText;
 
-    return !isCreateOrSearchPage
+    return !hasBlockingBusyIndicator
+      && !isCreateOrSearchPage
       && (
-        (hasEntityInfoTab && hasMultipleProfileTabs) ||
-        (hasReadyText && hasProfileIdentifier)
+        (hasEntityInfoTab && hasMultipleProfileTabs)
+        || (hasReadyText && (hasProfileIdentifier || hasMultipleProfileTabs || hasWorkspaceHeading))
+        || (hasWorkspaceHeading && hasProfileIdentifier)
       );
   }, {
     selectors: tabSelectors,
     workspace: workspaceConfig,
-  }).catch(() => false);
+  }, {
+    timeout,
+    polling: pollMs,
+  })
+    .then(() => true)
+    .catch(() => false);
+}
+
+async function recoverPartialEntityWorkspace(page, entityName, originalTimeout) {
+  if (!await hasPartialEntityWorkspace(page)) {
+    return false;
+  }
+
+  const configuredTimeout = Number(baselineConfig.workspace?.recoveryTimeoutMs || 30_000);
+  const recoveryTimeout = Math.max(5_000, Math.min(configuredTimeout, Number(originalTimeout || configuredTimeout)));
+  logger.warn(`Entity workspace for "${entityName}" remained partially loaded; reloading it once before failing.`);
+
+  await page.reload({
+    waitUntil: 'domcontentloaded',
+    timeout: recoveryTimeout,
+  }).catch(() => {});
+
+  return waitForWorkspaceSignal(page, recoveryTimeout);
+}
+
+async function hasPartialEntityWorkspace(page) {
+  const workspaceConfig = baselineConfig.workspace || {};
+
+  return page.evaluate((workspace) => {
+    const bodyText = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+    const regexFrom = (pattern) => {
+      try {
+        return new RegExp(pattern, 'i');
+      } catch {
+        return /$a/;
+      }
+    };
+    const readyTextRegexes = (workspace.readyTextPatterns || ['Return to Search']).map(regexFrom);
+    const workspaceHeadingRegexes = (workspace.workspaceHeadingPatterns || [
+      '\\bModify\\s+Business\\s+Entity\\b',
+      '\\bView\\s+Business\\s+Entity\\b',
+    ]).map(regexFrom);
+
+    return readyTextRegexes.some((regex) => regex.test(bodyText))
+      && workspaceHeadingRegexes.some((regex) => regex.test(bodyText));
+  }, workspaceConfig).catch(() => false);
+}
+
+function searchResultOpenTimeout() {
+  return Math.min(
+    baselineConfig.timeouts.searchResultOpenMs || 20_000,
+    baselineConfig.timeouts.navigationMs,
+  );
 }
 
 async function clickIfUsable(locator) {
