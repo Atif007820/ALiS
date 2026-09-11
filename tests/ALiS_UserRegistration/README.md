@@ -109,3 +109,34 @@ ALiS_UserRegistration/
 - Auto-open is controlled from `config/runSettings.json`:
   - `"openPlaywrightReport": true`
   - `"openExcelReport": true`
+
+## TXOCA runtime safeguards
+
+First-time registration links are resolved by their visible row text, with an
+ID fallback that cannot silently select a different workflow. Person registration
+headings and required First Name, Last Name, and DOB values are verified. Identity
+is filled after address postbacks and checked again before submission.
+
+Submission waits for the actual registration POST response. Identity mismatch
+validation fails once with `TXOCA_PROFILE_MISMATCH`; it is not treated as a locator
+timeout or retried with random identities. Genuine duplicate-login/profile retries
+remain supported. Failures attach `txoca-registration-diagnostics` containing
+link/route, HTTP status, and identity-match booleans, never raw identity values or
+credentials. No comparison assertions or expected business outcomes are relaxed.
+
+Run isolated regression tests (local synthetic pages; no ALiS accounts created):
+
+```powershell
+npm --prefix .\tests\ALiS_UserRegistration run validate
+```
+
+For live navigation and fill-only checks without submitting registration:
+
+```powershell
+node .\tests\ALiS_UserRegistration\tools\check-txoca.js
+```
+
+See `TXOCA-runtime-analysis.md` for the September 11 failure analysis. The observed
+server response does not prove that existing/seeded identities are required. If
+the server rejects correctly posted first-time applicant data, obtain application
+logs and the intended registration validation rule before changing the workflow.

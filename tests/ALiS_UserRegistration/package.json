@@ -17,6 +17,7 @@
     "register:dpbh": "node ./tools/register.js --site DPBH",
     "register:sapta": "node ./tools/register.js --site SAPTA",
     "register:txfsc": "node ./tools/register.js --env TEST --site TXFSC",
+    "validate": "node ./tools/validate.js",
     "report": "playwright show-report playwright-report",
     "browsers:install": "playwright install chromium firefox msedge ffmpeg"
   },

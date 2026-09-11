@@ -1,0 +1,388 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\playwright.config.js",
+    "rootDir": "C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\utils\\globalSetup.js",
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 1,
+    "metadata": {
+      "Excel Report": "file:///C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/playwright-report/latest-registration-report.xlsx",
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/debug-runs/txoca-headed-20260911-133126-94fb3cd6/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "Excel Report": "file:///C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/playwright-report/latest-registration-report.xlsx",
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 0
+      },
+      {
+        "outputDir": "C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/debug-runs/txoca-headed-20260911-133126-94fb3cd6/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "Excel Report": "file:///C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/playwright-report/latest-registration-report.xlsx",
+          "actualWorkers": 1
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 0
+      },
+      {
+        "outputDir": "C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/debug-runs/txoca-headed-20260911-133126-94fb3cd6/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "Excel Report": "file:///C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/playwright-report/latest-registration-report.xlsx",
+          "actualWorkers": 1
+        },
+        "id": "msedge",
+        "name": "msedge",
+        "testDir": "C:/Users/mohd.jamal/Downloads/Playwright/tests/ALiS_UserRegistration/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 0
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "html"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.60.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "register.spec.js",
+      "file": "register.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "AllUserRegistration",
+          "file": "register.spec.js",
+          "line": 8,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Testing - TXOCA User Registration - Guardianship @TEST @TXOCA @GRD",
+              "ok": false,
+              "tags": [
+                "TEST",
+                "TXOCA",
+                "GRD"
+              ],
+              "tests": [
+                {
+                  "timeout": 0,
+                  "annotations": [
+                    {
+                      "type": "Environment",
+                      "description": "Testing"
+                    },
+                    {
+                      "type": "Environment Key",
+                      "description": "TEST"
+                    },
+                    {
+                      "type": "Site",
+                      "description": "TXOCA"
+                    },
+                    {
+                      "type": "Site Key",
+                      "description": "TXOCA"
+                    },
+                    {
+                      "type": "Login URL",
+                      "description": "http://172.16.3.2/ALiSTXOCA2TESTING11.4.41.03/DefaultTexas.aspx"
+                    },
+                    {
+                      "type": "Product",
+                      "description": "Guardianship"
+                    },
+                    {
+                      "type": "Product Key",
+                      "description": "GRD"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 103511,
+                      "error": {
+                        "message": "Error: [TXOCA_PROFILE_MISMATCH] TXOCA TEST/GRD rejected the registration identity: Information provided by you does not match with our record, review your personal information and if you believe the information is correct. Please contact the program at Texas Office of Court Administration to update your information. Random-profile retries were stopped. Inspect txoca-registration-diagnostics and application/server logs for the first-time registration rule. This response alone does not establish a locator defect or a requirement for seeded identities.",
+                        "stack": "Error: [TXOCA_PROFILE_MISMATCH] TXOCA TEST/GRD rejected the registration identity: Information provided by you does not match with our record, review your personal information and if you believe the information is correct. Please contact the program at Texas Office of Court Administration to update your information. Random-profile retries were stopped. Inspect txoca-registration-diagnostics and application/server logs for the first-time registration rule. This response alone does not establish a locator defect or a requirement for seeded identities.\n    at txocaError (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\TxocaStrategy.js:415:24)\n    at TxocaStrategy.retryWithFreshProfile (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\TxocaStrategy.js:378:13)\n    at TxocaStrategy.submitWithRetries (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\BaseStrategy.js:168:11)\n    at TxocaStrategy.register (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\BaseStrategy.js:66:28)\n    at C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\tests\\register.spec.js:19:7",
+                        "location": {
+                          "file": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\TxocaStrategy.js",
+                          "column": 24,
+                          "line": 415
+                        },
+                        "snippet": "\u001b[90m   at \u001b[39m..\\strategies\\TxocaStrategy.js:415\n\n  413 |\n  414 | function txocaError(code, message) {\n> 415 |   return Object.assign(new Error(`[${code}] ${message}`), { code });\n      |                        ^\n  416 | }\n  417 |\n  418 | function normalizeRow(value) {"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\TxocaStrategy.js",
+                            "column": 24,
+                            "line": 415
+                          },
+                          "message": "Error: [TXOCA_PROFILE_MISMATCH] TXOCA TEST/GRD rejected the registration identity: Information provided by you does not match with our record, review your personal information and if you believe the information is correct. Please contact the program at Texas Office of Court Administration to update your information. Random-profile retries were stopped. Inspect txoca-registration-diagnostics and application/server logs for the first-time registration rule. This response alone does not establish a locator defect or a requirement for seeded identities.\n\n   at ..\\strategies\\TxocaStrategy.js:415\n\n  413 |\n  414 | function txocaError(code, message) {\n> 415 |   return Object.assign(new Error(`[${code}] ${message}`), { code });\n      |                        ^\n  416 | }\n  417 |\n  418 | function normalizeRow(value) {\n    at txocaError (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\TxocaStrategy.js:415:24)\n    at TxocaStrategy.retryWithFreshProfile (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\TxocaStrategy.js:378:13)\n    at TxocaStrategy.submitWithRetries (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\BaseStrategy.js:168:11)\n    at TxocaStrategy.register (C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\BaseStrategy.js:66:28)\n    at C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\tests\\register.spec.js:19:7"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "\n========================================================================\nTEST-TXOCA-GRD Registration\n========================================================================\n"
+                        },
+                        {
+                          "text": "[2026-09-11T08:01:37.105Z] [INFO] Environment: Testing\n"
+                        },
+                        {
+                          "text": "[2026-09-11T08:01:37.105Z] [INFO] Login URL: http://172.16.3.2/ALiSTXOCA2TESTING11.4.41.03/DefaultTexas.aspx\n"
+                        },
+                        {
+                          "text": "[2026-09-11T08:01:37.105Z] [INFO] Product: Guardianship\n"
+                        },
+                        {
+                          "text": "[2026-09-11T08:01:37.106Z] [INFO] Initial Login Name: guardianship1979\n"
+                        },
+                        {
+                          "text": "[2026-09-11T08:01:48.342Z] [INFO] Registration link resolved: Test_TabGuardianRegister_LinkButton24 | Register a Guardianship: click here.\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-11T08:01:32.073Z",
+                      "annotations": [
+                        {
+                          "type": "Environment",
+                          "description": "Testing"
+                        },
+                        {
+                          "type": "Environment Key",
+                          "description": "TEST"
+                        },
+                        {
+                          "type": "Site",
+                          "description": "TXOCA"
+                        },
+                        {
+                          "type": "Site Key",
+                          "description": "TXOCA"
+                        },
+                        {
+                          "type": "Login URL",
+                          "description": "http://172.16.3.2/ALiSTXOCA2TESTING11.4.41.03/DefaultTexas.aspx"
+                        },
+                        {
+                          "type": "Product",
+                          "description": "Guardianship"
+                        },
+                        {
+                          "type": "Product Key",
+                          "description": "GRD"
+                        }
+                      ],
+                      "attachments": [
+                        {
+                          "name": "txoca-registration-diagnostics",
+                          "contentType": "application/json",
+                          "body": "ewogICJlbnZpcm9ubWVudCI6ICJURVNUIiwKICAicHJvZHVjdCI6ICJHUkQiLAogICJleHBlY3RlZEhlYWRpbmciOiAiSW5pdGlhbCBVc2VyIFJlZ2lzdHJhdGlvbiAtIEd1YXJkaWFuc2hpcCBSZWdpc3RyYXRpb24iLAogICJzZWxlY3RlZExpbmsiOiB7CiAgICAiaWQiOiAiVGVzdF9UYWJHdWFyZGlhblJlZ2lzdGVyX0xpbmtCdXR0b24yNCIsCiAgICAidGV4dCI6ICJjbGljayBoZXJlLiIsCiAgICAicm93VGV4dCI6ICJSZWdpc3RlciBhIEd1YXJkaWFuc2hpcDogY2xpY2sgaGVyZS4iCiAgfSwKICAiaWRlbnRpdHkiOiB7CiAgICAiZmlyc3ROYW1lIjogewogICAgICAibmFtZSI6ICJjdGwwMCRDb250ZW50UGxhY2VIb2xkZXIxJHVjUGVyc29uYWxJbmZvcm1hdGlvbiR0eHRGaXJzdE5hbWUiLAogICAgICAibWF0Y2hlc0V4cGVjdGVkIjogdHJ1ZQogICAgfSwKICAgICJsYXN0TmFtZSI6IHsKICAgICAgIm5hbWUiOiAiY3RsMDAkQ29udGVudFBsYWNlSG9sZGVyMSR1Y1BlcnNvbmFsSW5mb3JtYXRpb24kdHh0TGFzdE5hbWUiLAogICAgICAibWF0Y2hlc0V4cGVjdGVkIjogdHJ1ZQogICAgfSwKICAgICJkb2IiOiB7CiAgICAgICJuYW1lIjogImN0bDAwJENvbnRlbnRQbGFjZUhvbGRlcjEkdWNQZXJzb25hbEluZm9ybWF0aW9uJHR4dERPQiIsCiAgICAgICJtYXRjaGVzRXhwZWN0ZWQiOiB0cnVlCiAgICB9CiAgfSwKICAicGF0aCI6ICIvQUxpU1RYT0NBMlRFU1RJTkcxMS40LjQxLjAzL0luaXRpYWxVc2VyUmVnaXN0cmF0aW9uLmFzcHgiLAogICJzdWJtaXNzaW9uIjogewogICAgIm9ic2VydmVkIjogdHJ1ZSwKICAgICJldmVudFRhcmdldCI6ICJjdGwwMCRDb250ZW50UGxhY2VIb2xkZXIxJGJ0blNhdmVOZXh0IiwKICAgICJpZGVudGl0eSI6IHsKICAgICAgImZpcnN0TmFtZSI6IHsKICAgICAgICAibmFtZSI6ICJjdGwwMCRDb250ZW50UGxhY2VIb2xkZXIxJHVjUGVyc29uYWxJbmZvcm1hdGlvbiR0eHRGaXJzdE5hbWUiLAogICAgICAgICJtYXRjaGVzRXhwZWN0ZWQiOiB0cnVlCiAgICAgIH0sCiAgICAgICJsYXN0TmFtZSI6IHsKICAgICAgICAibmFtZSI6ICJjdGwwMCRDb250ZW50UGxhY2VIb2xkZXIxJHVjUGVyc29uYWxJbmZvcm1hdGlvbiR0eHRMYXN0TmFtZSIsCiAgICAgICAgIm1hdGNoZXNFeHBlY3RlZCI6IHRydWUKICAgICAgfSwKICAgICAgImRvYiI6IHsKICAgICAgICAibmFtZSI6ICJjdGwwMCRDb250ZW50UGxhY2VIb2xkZXIxJHVjUGVyc29uYWxJbmZvcm1hdGlvbiR0eHRET0IiLAogICAgICAgICJtYXRjaGVzRXhwZWN0ZWQiOiB0cnVlCiAgICAgIH0KICAgIH0sCiAgICAic3RhdHVzIjogMjAwCiAgfQp9"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\debug-runs\\txoca-headed-20260911-133126-94fb3cd6\\test-results\\register-AllUserRegistrati-d4571-Guardianship-TEST-TXOCA-GRD-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\debug-runs\\txoca-headed-20260911-133126-94fb3cd6\\test-results\\register-AllUserRegistrati-d4571-Guardianship-TEST-TXOCA-GRD-chromium\\video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\debug-runs\\txoca-headed-20260911-133126-94fb3cd6\\test-results\\register-AllUserRegistrati-d4571-Guardianship-TEST-TXOCA-GRD-chromium\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\debug-runs\\txoca-headed-20260911-133126-94fb3cd6\\test-results\\register-AllUserRegistrati-d4571-Guardianship-TEST-TXOCA-GRD-chromium\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\mohd.jamal\\Downloads\\Playwright\\tests\\ALiS_UserRegistration\\strategies\\TxocaStrategy.js",
+                        "column": 24,
+                        "line": 415
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "c7c115290b02b9676bce-5a45766dee6ebdad899d",
+              "file": "register.spec.js",
+              "line": 14,
+              "column": 5
+            },
+            {
+              "title": "Testing - TXOCA User Registration - Court Reporters @TEST @TXOCA @CR",
+              "ok": true,
+              "tags": [
+                "TEST",
+                "TXOCA",
+                "CR"
+              ],
+              "tests": [
+                {
+                  "timeout": 0,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "c7c115290b02b9676bce-88bdfc693f60a7c8c72b",
+              "file": "register.spec.js",
+              "line": 14,
+              "column": 5
+            },
+            {
+              "title": "Testing - TXOCA User Registration - Process Servers @TEST @TXOCA @PS",
+              "ok": true,
+              "tags": [
+                "TEST",
+                "TXOCA",
+                "PS"
+              ],
+              "tests": [
+                {
+                  "timeout": 0,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "c7c115290b02b9676bce-b4a34808bdc23a7d8318",
+              "file": "register.spec.js",
+              "line": 14,
+              "column": 5
+            },
+            {
+              "title": "Testing - TXOCA User Registration - Court Interpreters @TEST @TXOCA @CI",
+              "ok": true,
+              "tags": [
+                "TEST",
+                "TXOCA",
+                "CI"
+              ],
+              "tests": [
+                {
+                  "timeout": 0,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "c7c115290b02b9676bce-b0241562c86e097e1f99",
+              "file": "register.spec.js",
+              "line": 14,
+              "column": 5
+            },
+            {
+              "title": "Testing - TXOCA User Registration - Professional Certified Guardians @TEST @TXOCA @PROFESSIONAL_CG",
+              "ok": true,
+              "tags": [
+                "TEST",
+                "TXOCA",
+                "PROFESSIONAL_CG"
+              ],
+              "tests": [
+                {
+                  "timeout": 0,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "c7c115290b02b9676bce-792d93a1f0cd2b02d1e5",
+              "file": "register.spec.js",
+              "line": 14,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "message": "\u001b[31mTesting stopped early after 1 maximum allowed failures.\u001b[39m"
+    }
+  ],
+  "stats": {
+    "startTime": "2026-09-11T08:01:28.424Z",
+    "duration": 112404,
+    "expected": 0,
+    "skipped": 4,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

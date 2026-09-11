@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import { BaseStrategy } from './BaseStrategy.js';
+import { logger } from '../utils/logger.js';
 import {
   adultDateOfBirth,
   city,
@@ -33,6 +34,13 @@ export class TxocaStrategy extends BaseStrategy {
       { timeout: 30000 },
     );
     await expect(this.page.getByRole('textbox', { name: /Login Name\s*\*?/i }).first()).toBeVisible({ timeout: 30000 });
+
+    if (product.registrationHeading) {
+      await expect(this.page.getByRole('heading', {
+        name: product.registrationHeading,
+        exact: true,
+      })).toBeVisible({ timeout: 30000 });
+    }
   }
 
   async selectProductTab(product) {
@@ -56,29 +64,62 @@ export class TxocaStrategy extends BaseStrategy {
 
   async registrationLink(product) {
     if (product.registrationRowText) {
-      const byConfiguredRow = this.rowRegistrationLink(product.registrationRowText);
-      if (await byConfiguredRow.isVisible({ timeout: 3000 }).catch(() => false)) return byConfiguredRow;
+      const candidates = this.rowRegistrationLink(product.registrationRowText);
+      const matches = [];
+      for (let index = 0; index < await candidates.count(); index += 1) {
+        const candidate = candidates.nth(index);
+        if (await this.form.firstUsable(candidate)
+          && await this.matchesRegistrationRow(candidate, product.registrationRowText)) matches.push(candidate);
+      }
+      if (matches.length === 1) return matches[0];
+      if (matches.length > 1) {
+        throw txocaError('TXOCA_REGISTRATION_LINK', `Ambiguous visible registration links for ${product.key}: ${product.registrationRowText}`);
+      }
     }
 
-    const byId = this.page.locator(`#${product.registrationLinkId}`).first();
-    if (await byId.isVisible({ timeout: 3000 }).catch(() => false)) return byId;
-
-    const rowText = product.registrationRowText || product.name;
-    const byRowText = this.rowRegistrationLink(rowText);
-
-    if (await byRowText.isVisible({ timeout: 3000 }).catch(() => false)) return byRowText;
-
-    return byId;
+    const byId = product.registrationLinkId
+      ? await this.form.firstUsable(this.page.locator(`[id=${JSON.stringify(product.registrationLinkId)}]`))
+      : null;
+    if (byId) {
+      if (product.registrationRowText && !(await this.matchesRegistrationRow(byId, product.registrationRowText))) {
+        throw txocaError('TXOCA_REGISTRATION_LINK', `Registration ID ${product.registrationLinkId} points to a different row for ${product.key}; expected "${product.registrationRowText}".`);
+      }
+      return byId;
+    }
+    throw txocaError('TXOCA_REGISTRATION_LINK', `No visible registration link for ${product.key}; expected row "${product.registrationRowText || product.name}" (ID fallback: ${product.registrationLinkId || 'none'}).`);
   }
 
   rowRegistrationLink(rowText) {
     return this.page
-      .locator(`xpath=//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'click here') and contains(normalize-space(ancestor::tr[1]), ${xpathLiteral(rowText)})]`)
-      .first();
+      .locator(`xpath=//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'click here') and contains(translate(normalize-space(ancestor::tr[1]), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), ${xpathLiteral(String(rowText).toLowerCase())})]`);
+  }
+
+  async matchesRegistrationRow(link, expected) {
+    const rowText = await link.evaluate((anchor) => {
+      const row = anchor.closest('tr')?.cloneNode(true);
+      if (!row) return '';
+      row.querySelectorAll('a').forEach((element) => element.remove());
+      return row.textContent || '';
+    });
+    return normalizeRow(rowText) === normalizeRow(expected);
   }
 
   async clickRegistrationLink(product) {
     const link = await this.registrationLink(product);
+    const selectedLink = await link.evaluate((anchor) => ({
+      id: anchor.id || '',
+      text: String(anchor.textContent || '').replace(/\s+/g, ' ').trim(),
+      rowText: String(anchor.closest('tr')?.textContent || '').replace(/\s+/g, ' ').trim(),
+    })).catch(() => ({ id: '', text: '', rowText: '' }));
+    logger.info(
+      `Registration link resolved: ${selectedLink.id || '(no id)'} | ${selectedLink.rowText || selectedLink.text || '(no text)'}`,
+    );
+    this.registrationDiagnostics = {
+      environment: this.site.environment.key,
+      product: product.key,
+      expectedHeading: product.registrationHeading || null,
+      selectedLink,
+    };
     const postBackTarget = await link.evaluate((anchor) => {
       const href = anchor.getAttribute('href') || '';
       return href.match(/__doPostBack\('([^']+)'/)?.[1]
@@ -88,7 +129,9 @@ export class TxocaStrategy extends BaseStrategy {
 
     if (postBackTarget) {
       await link.scrollIntoViewIfNeeded().catch(() => {});
-      const registrationUrl = this.page.waitForURL(/(?:InitialUserRegistration|Registration)\.aspx/i, { timeout: 30000 }).catch(() => null);
+      const registrationUrl = this.page.waitForURL(/(?:InitialUserRegistration|Registration)\.aspx/i, { timeout: 30000 });
+      // Observe the navigation failure immediately even if the action itself fails.
+      registrationUrl.catch(() => {});
       await this.page.evaluate((target) => {
         if (typeof window.__doPostBack === 'function') {
           window.__doPostBack(target, '');
@@ -130,14 +173,12 @@ export class TxocaStrategy extends BaseStrategy {
     if (await this.isSuccessful(product, user) && !(await this.form.isRegistrationFormOpen())) return;
 
     const firstNameFields = ['First Name', 'Given Name'];
-    const lastNameFields = ['Last Name', 'Surname'];
     const programFields = ['Program Name', 'Entity Name', 'Business Name', 'Company Name', 'Organization Name', 'Firm Name', 'Legal Name'];
     const hasFirstName = await this.hasTextField(firstNameFields);
     const hasProgramName = await this.hasTextField(programFields);
+    this.requiresIdentity = hasFirstName;
 
     if (hasFirstName) {
-      await this.form.fillFirstText(firstNameFields, user.firstName, { hard: true, required: true });
-      await this.form.fillFirstText(lastNameFields, user.lastName, { hard: true, required: true });
       await this.form.fillFirstText(programFields, user.entityName, { hard: true });
     } else if (hasProgramName) {
       await this.form.fillFirstText(programFields, user.entityName, { hard: true, required: true });
@@ -163,7 +204,124 @@ export class TxocaStrategy extends BaseStrategy {
       throw new Error('Required primary phone field was not available.');
     }
     await this.form.fillFirstText(['Fax'], user.fax);
-    if (hasFirstName) await this.form.fillDateOfBirth(user.date);
+    // State/ZIP can replace the form through postbacks. Fill identity last, and
+    // require DOB to round-trip; the generic popup fallback is not TXOCA's calendar.
+    if (hasFirstName) await this.fillIdentity(user);
+  }
+
+  async identityFields(user) {
+    const fields = [];
+    for (const [key, pattern, value] of [
+      ['firstName', /^(First Name|Given Name)\s*\*?$/i, user.firstName],
+      ['lastName', /^(Last Name|Surname)\s*\*?$/i, user.lastName],
+      ['dob', /^(DOB|Date of Birth|Birth Date)\s*\*?$/i, user.dob || user.date],
+    ]) {
+      const candidates = this.page.getByRole('textbox', { name: pattern }).or(this.page.getByLabel(pattern));
+      const visible = [];
+      for (let index = 0; index < await candidates.count(); index += 1) {
+        if (await candidates.nth(index).isVisible()) visible.push(candidates.nth(index));
+      }
+      if (visible.length !== 1 || !value) {
+        throw txocaError('TXOCA_IDENTITY_FIELD', `Required TXOCA ${key} field/value is missing or ambiguous (${visible.length} visible fields).`);
+      }
+      const locator = visible[0];
+      await expect(locator).toBeEditable({ timeout: 5000 });
+      fields.push({ key, locator, value: String(value), name: await locator.getAttribute('name') });
+    }
+    return fields;
+  }
+
+  async fillIdentity(user) {
+    for (const { locator, value } of await this.identityFields(user)) {
+      await locator.fill(value);
+      await locator.blur();
+    }
+    await this.form.waitForReady();
+    await this.verifyIdentity(user);
+  }
+
+  async verifyIdentity(user) {
+    const fields = await this.identityFields(user);
+    const identity = {};
+    for (const { key, locator, value, name } of fields) {
+      // Never include actual identity values (or credentials) in diagnostics.
+      identity[key] = { name, matchesExpected: await locator.inputValue() === value };
+    }
+    this.registrationDiagnostics = { ...this.registrationDiagnostics, identity };
+    if (Object.values(identity).some((field) => !field.matchesExpected || !field.name)) {
+      await this.attachDiagnostics();
+      throw txocaError('TXOCA_IDENTITY_VALUE', 'TXOCA identity values did not survive form updates; registration was not submitted. See txoca-registration-diagnostics.');
+    }
+    return fields;
+  }
+
+  async submit(product, user) {
+    await this.form.waitForReady();
+    const fields = this.requiresIdentity ? await this.verifyIdentity(user) : [];
+    const destination = new URL(this.page.url());
+    const path = destination.pathname;
+    const register = await this.form.firstUsable(this.page.getByRole('link', { name: /^Register$/i })
+      .or(this.page.getByRole('button', { name: /^Register$/i })));
+    if (!register) throw txocaError('TXOCA_SUBMIT_CONTROL', 'No visible TXOCA Register control.');
+    const control = await register.evaluate((element) => ({
+      target: (element.getAttribute('href') || '').match(/(?:__doPostBack|WebForm_PostBackOptions)\(['"]([^'"]+)/)?.[1],
+      name: element.name || '',
+    }));
+    const isSubmission = (request) => {
+      const requestUrl = new URL(request.url());
+      if (request.method() !== 'POST' || requestUrl.origin !== destination.origin || requestUrl.pathname !== path) return false;
+      const data = new URLSearchParams(request.postData() || '');
+      return control.target ? data.get('__EVENTTARGET') === control.target : Boolean(control.name && data.has(control.name));
+    };
+    if (!control.target && !control.name) {
+      throw txocaError('TXOCA_SUBMIT_CONTROL', 'TXOCA Register control has no identifiable postback target; update the submission contract.');
+    }
+    this.registrationDiagnostics = { ...this.registrationDiagnostics, path, submission: { observed: false } };
+    const recordRequest = (request) => {
+      if (!isSubmission(request)) return;
+      const data = new URLSearchParams(request.postData() || '');
+      this.registrationDiagnostics.submission = {
+        observed: true,
+        eventTarget: data.get('__EVENTTARGET'),
+        identity: Object.fromEntries(fields.map(({ key, name, value }) => [key, { name, matchesExpected: data.get(name) === value }])),
+      };
+    };
+    this.page.on('request', recordRequest);
+    const pendingResponse = this.page.waitForResponse((response) => isSubmission(response.request()), { timeout: 30000 })
+      .then((response) => ({ response }), (error) => ({ error }));
+    try {
+      await this.form.click(register);
+      const { response } = await pendingResponse;
+      if (!response) {
+        // Client-side validators/dialogs may correctly prevent a POST. Let the
+        // existing retry/validation logic handle them, not a random-profile retry.
+        if (this.dialogMessages.length || await this.form.validationText()) return;
+        await this.attachDiagnostics();
+        throw txocaError('TXOCA_SUBMIT_TIMEOUT', 'No TXOCA registration response within 30 seconds. See txoca-registration-diagnostics.');
+      }
+      this.registrationDiagnostics.submission.status = response.status();
+      const networkError = await response.finished();
+      await this.form.waitForReady();
+      if (networkError || response.status() >= 400) {
+        await this.attachDiagnostics();
+        throw txocaError('TXOCA_SUBMIT_RESPONSE', `TXOCA registration response failed (HTTP ${response.status()}). See txoca-registration-diagnostics.`);
+      }
+      if (Object.values(this.registrationDiagnostics.submission.identity || {}).some((field) => !field.matchesExpected)) {
+        await this.attachDiagnostics();
+        throw txocaError('TXOCA_IDENTITY_POST', 'TXOCA submitted identity differed from the verified form. See txoca-registration-diagnostics.');
+      }
+    } finally {
+      this.page.off('request', recordRequest);
+    }
+  }
+
+  async attachDiagnostics() {
+    if (this.testInfo?.attach) {
+      await this.testInfo.attach('txoca-registration-diagnostics', {
+        body: Buffer.from(JSON.stringify(this.registrationDiagnostics || {}, null, 2)),
+        contentType: 'application/json',
+      });
+    }
   }
 
   async hasTextField(names, timeout = 2000) {
@@ -214,12 +372,34 @@ export class TxocaStrategy extends BaseStrategy {
     return user;
   }
 
+  async retryWithFreshProfile(product, user, reason) {
+    if (this.isProfileValidation(reason)) {
+      await this.attachDiagnostics();
+      throw txocaError('TXOCA_PROFILE_MISMATCH',
+        `TXOCA ${this.site.environment.key}/${product.key} rejected the registration identity: ${reason}. `
+        + 'Random-profile retries were stopped. Inspect txoca-registration-diagnostics and application/server logs for the first-time registration rule. '
+        + 'This response alone does not establish a locator defect or a requirement for seeded identities.',
+      );
+    }
+
+    await super.retryWithFreshProfile(product, user, reason);
+  }
+
   async isSuccessful() {
+    if (await this.form.isRegistrationFormOpen()) return false;
     const bodyText = await this.form.bodyText();
     if (/Welcome|Logout|Dashboard|Application for New|Application Preliminary|successfully registered/i.test(bodyText)) {
       return true;
     }
     return /\/Protected\/|\/Dashboard/i.test(this.page.url());
+  }
+
+  async shouldRetryWhenFormStillOpen() {
+    // BaseStrategy calls this only after duplicate/validation/success handling.
+    // An unknown page or an unexplained open form is not evidence of success,
+    // and changing personal data cannot establish what the server did.
+    await this.attachDiagnostics();
+    throw txocaError('TXOCA_UNCONFIRMED_OUTCOME', 'TXOCA returned no recognized registration success or validation outcome. Inspect the page and txoca-registration-diagnostics before retrying.');
   }
 }
 
@@ -229,6 +409,14 @@ function programForProduct(product) {
   if (product.key === 'PS') return 'Process Server Certification';
   if (product.key === 'CI') return 'Licensed Court Interpreter';
   return 'Guardians';
+}
+
+function txocaError(code, message) {
+  return Object.assign(new Error(`[${code}] ${message}`), { code });
+}
+
+function normalizeRow(value) {
+  return String(value).replace(/\s+/g, ' ').trim().replace(/[\s:.,;\-]+$/, '').toLowerCase();
 }
 
 function xpathLiteral(value) {
