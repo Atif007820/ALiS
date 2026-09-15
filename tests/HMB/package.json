@@ -13,6 +13,7 @@
     "hmb:e2e": "playwright test tests/01_Register.spec.js tests/02_LoginApply.spec.js --config=playwright.config.js --workers=1",
     "hmb:headed": "playwright test --config=playwright.config.js --headed",
     "hmb:e2e:headed": "playwright test tests/01_Register.spec.js tests/02_LoginApply.spec.js --config=playwright.config.js --workers=1 --headed",
+    "validate": "node --test tools/hmb-runtime-regression.test.js",
     "report": "playwright show-report playwright-report",
     "browsers:install": "playwright install chromium firefox msedge"
   },

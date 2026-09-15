@@ -81,44 +81,101 @@ export class HmbLoginApplyPage {
   }
 
   async openApplication() {
-    const applyLink = this.page.getByRole('link', { name: HMB_DATA.loginApply.applicationLink });
-    const pendingLink = this.page.getByRole('link', { name: /View Pending Online Application/i }).first();
+    const applyName = HMB_DATA.loginApply.applicationLink;
+    const applyLink = await this.portalAction(applyName, { timeout: runSettings.navigationTimeout });
+    const pendingLink = await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
 
     const applyHref = await applyLink.getAttribute('href').catch(() => '');
-    if (/already started|pending/i.test(decodeURIComponent(applyHref || '')) && await pendingLink.isVisible().catch(() => false)) {
+    if (/already started|pending/i.test(decodeURIComponent(applyHref || '')) && pendingLink) {
       await this.openPendingApplication();
       return;
     }
 
-    if (await applyLink.isVisible().catch(() => false)) {
-      await clickAndWait(this.page, applyLink, { label: HMB_DATA.loginApply.applicationLink, timeout: 60000 });
-      if (await this.page.getByRole('radio', { name: /Initial Registration/i }).isVisible().catch(() => false)) return;
-      if (await pendingLink.isVisible().catch(() => false)) {
-        await this.openPendingApplication();
-        return;
-      }
-      return;
-    }
+    await clickAndWait(this.page, applyLink, { label: applyName, timeout: 60000 });
+    if (await this.isApplicationScreenVisible()) return;
 
-    if (await pendingLink.isVisible().catch(() => false)) {
+    // Legacy pages return an href that tells us to resume; the current Angular
+    // dashboard uses a clickable menu item with no href. In the latter case,
+    // allow the application action to decide whether to open/resume the form.
+    const resumedLink = await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
+    if (resumedLink) {
       await this.openPendingApplication();
-      return;
+      if (await this.isApplicationScreenVisible()) return;
     }
 
-    throw new Error('Could not find Apply for RA-HMB or pending application link after login.');
+    throw new Error('Apply for RA-HMB did not open an application or a resumable pending application.');
   }
 
   async openPendingApplication() {
     logger.info('Pending RA-HMB application found; opening it.');
-    await clickAndWait(this.page, this.page.getByRole('link', { name: /View Pending Online Application/i }).first(), {
+    await clickAndWait(this.page, await this.portalAction('View Pending Online Application(s)', { timeout: runSettings.navigationTimeout }), {
       label: 'View Pending Online Application(s)',
       timeout: 60000,
     });
 
-    const continueLink = this.page.getByRole('link', { name: /Continue Application/i }).first();
-    if (await continueLink.isVisible().catch(() => false)) {
+    const continueLink = await this.portalAction('Continue Application', { timeout: 5000 }).catch(() => null);
+    if (continueLink) {
       await clickAndWait(this.page, continueLink, { label: 'Continue Application', timeout: 60000 });
+      return;
     }
+
+    // ALiS 11.4.41.04 renders in-process applications as Angular grid rows rather
+    // than a "Continue Application" link. Selecting the HMB row resumes its form.
+    const pendingApplication = await firstVisible(this.pendingApplicationCandidates(), {
+      label: 'incomplete RA-HMB application row',
+      timeout: runSettings.navigationTimeout,
+    });
+    await clickAndWait(this.page, pendingApplication, {
+      label: 'incomplete RA-HMB application row',
+      timeout: 60000,
+    });
+  }
+
+  pendingApplicationCandidates() {
+    const hmbApplication = /Initial Registration and Accreditation/i;
+    return [
+      this.page.getByRole('row', { name: hmbApplication }).first(),
+      this.page.locator('[role="row"], .ag-row, .k-master-row').filter({ hasText: hmbApplication }).first(),
+      this.page.getByText(hmbApplication).first(),
+    ];
+  }
+
+  async isApplicationScreenVisible() {
+    const applicationScreen = [
+      this.page.getByRole('radio', { name: /Initial Registration|Deemed Status/i }).first(),
+      this.page.getByLabel('Ownership Type').first(),
+      this.page.locator('#ContactName_PHL, #divOwnershipInfo, cc-ownership-info').first(),
+      this.page.getByRole('heading', { name: /Mandatory Required Document|Attestation/i }).first(),
+      ...this.applicationSectionCandidates('Entity Information'),
+      ...this.applicationSectionCandidates('Address Information'),
+      ...this.applicationSectionCandidates('Owner, Director and Personnel'),
+    ];
+    return Boolean(await firstVisible(applicationScreen, {
+      label: 'HMB application content',
+      timeout: 1500,
+    }).catch(() => null));
+  }
+
+  portalActionCandidates(name) {
+    const pattern = new RegExp(`^\\s*${escapeRegex(name)}\\s*$`, 'i');
+    const exactText = this.page.getByText(pattern);
+
+    return [
+      this.page.getByRole('link', { name: pattern }).first(),
+      this.page.getByRole('button', { name: pattern }).first(),
+      this.page.locator('a, button, [role="link"], [role="button"]').filter({ hasText: pattern }).first(),
+      // ALiS 11.4.41.04 renders dashboard actions as Angular list items instead
+      // of anchors. Click the owning list item because it owns the handler.
+      this.page.locator('li').filter({ has: exactText }).first(),
+      exactText.first(),
+    ];
+  }
+
+  async portalAction(name, { timeout = runSettings.actionTimeout } = {}) {
+    return firstVisible(this.portalActionCandidates(name), {
+      label: `HMB dashboard action "${name}"`,
+      timeout,
+    });
   }
 
   async fillEntityInformation() {
@@ -148,6 +205,20 @@ export class HmbLoginApplyPage {
       label: 'Entity Information Next',
       timeout: 60000,
     });
+    await this.resumePendingApplicationIfReturnedToDashboard('Entity Information');
+  }
+
+  async resumePendingApplicationIfReturnedToDashboard(stage) {
+    if (await this.isApplicationScreenVisible()) return;
+
+    const pendingLink = await this.portalAction('View Pending Online Application(s)', { timeout: 3000 }).catch(() => null);
+    if (!pendingLink) return;
+
+    logger.info(`${stage} returned to the dashboard; resuming the incomplete RA-HMB application.`);
+    await this.openPendingApplication();
+    if (!(await this.isApplicationScreenVisible())) {
+      throw new Error(`Could not resume the incomplete RA-HMB application after ${stage}.`);
+    }
   }
 
   async fillApplicantInformation() {
@@ -173,7 +244,13 @@ export class HmbLoginApplyPage {
   async fillAddressInformation() {
     logger.section('Address Information');
     const address = buildAddressInformation();
-    if (!(await this.page.locator('#ContactName_PHL').isVisible().catch(() => false))) {
+    const addressFields = this.page.locator('#ContactName_PHL');
+    const addressVisible = await addressFields.isVisible().catch(() => false);
+    if (!addressVisible && await this.canOpenApplicationSection('Address Information')) {
+      await this.openApplicationSection('Address Information', addressFields, { timeout: 60000 });
+    }
+
+    if (!(await addressFields.isVisible().catch(() => false))) {
       logger.info('Address Information page is already complete or not visible; skipping.');
       return;
     }
@@ -213,6 +290,12 @@ export class HmbLoginApplyPage {
       logger.info('Owner/Personnel page is already complete; continuing from Mandatory Documents.');
       this.personnelDocumentsUploaded = 0;
       return;
+    }
+
+    const ownerSection = this.page.locator('#divOwnershipInfo, cc-ownership-info').first();
+    if (!(await ownerSection.isVisible().catch(() => false))
+      && await this.canOpenApplicationSection('Owner, Director and Personnel')) {
+      await this.openApplicationSection('Owner, Director and Personnel', ownerSection, { timeout: 60000 });
     }
 
     await this.addOwner();
@@ -261,6 +344,56 @@ export class HmbLoginApplyPage {
       label: 'Owner Alternate Email',
     });
     await this.saveDialog(dialog, 'Owner');
+  }
+
+  applicationSectionCandidates(name) {
+    const pattern = new RegExp(`^\\s*${escapeRegex(name)}\\s*$`, 'i');
+    const exactText = this.page.getByText(pattern);
+
+    return [
+      this.page.getByRole('link', { name: pattern }).first(),
+      this.page.getByRole('button', { name: pattern }).first(),
+      this.page.locator('a, button, [role="link"], [role="button"]').filter({ hasText: pattern }).first(),
+      exactText.first(),
+    ];
+  }
+
+  async canOpenApplicationSection(name) {
+    return Boolean(await firstVisible(this.applicationSectionCandidates(name), {
+      label: `HMB application section "${name}"`,
+      timeout: 1500,
+    }).catch(() => null));
+  }
+
+  async openApplicationSection(name, readyCandidates, { timeout = runSettings.actionTimeout } = {}) {
+    const ready = await firstVisible(readyCandidates, {
+      label: `${name} content`,
+      timeout: 1500,
+    }).catch(() => null);
+    if (ready) return ready;
+
+    const section = await firstVisible(this.applicationSectionCandidates(name), {
+      label: `HMB application section "${name}"`,
+      timeout,
+    });
+    await clickAndWait(this.page, section, { label: `${name} section`, timeout });
+
+    return firstVisible(readyCandidates, { label: `${name} content`, timeout }).catch(async () => {
+      const activeSection = await section.getAttribute('class').catch(() => '');
+      const pageText = await this.page.locator('main, body').first().innerText().catch(() => '');
+      const hasEmptySectionShell = /active/i.test(activeSection || '')
+        && /\bBack\b[\s\S]*\bNext\b/.test(pageText)
+        && !/\bAdd\b|Ownership|Last Name|Contact Person/i.test(pageText);
+
+      if (hasEmptySectionShell) {
+        throw new Error(
+          `ALiS opened the ${name} tab but returned an empty section shell (no form fields or Add control). `
+          + 'This is a portal response/state issue, not a locator failure; reopen or repair the incomplete application before retrying.',
+        );
+      }
+
+      throw new Error(`ALiS did not render ${name} content after selecting its tab.`);
+    });
   }
 
   async ownerAlreadyAdded() {

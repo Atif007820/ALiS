@@ -14,6 +14,23 @@ npm install
 npm run hmb:e2e -- --project=chromium --headed
 ```
 
+Before a multi-browser run, install the browser revisions required by this
+framework's installed Playwright version:
+
+```bash
+npm run browsers:install
+```
+
+Run the local HMB runtime regression checks (no application account is created):
+
+```bash
+npm run validate
+```
+
+To preserve the default report and saved user while running an isolated
+verification, set `HMB_TEST_RESULTS_DIR`, `HMB_REPORT_DIR`, and
+`HMB_USER_DATA_FILE` to paths under `validation-runs`.
+
 The E2E command runs Register first, then Login/apply using the saved user.
 
 Register only:

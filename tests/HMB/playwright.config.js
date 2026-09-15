@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import runSettings from './config/runSettings.json' with { type: 'json' };
 
 const frameworkRoot = path.dirname(fileURLToPath(import.meta.url));
+const testResultsDir = runtimePath('HMB_TEST_RESULTS_DIR', 'test-results');
+const reportDir = runtimePath('HMB_REPORT_DIR', 'playwright-report');
 const headlessFromEnv = process.env.HEADLESS;
 const headless = headlessFromEnv === undefined
   ? runSettings.headless
@@ -15,7 +17,7 @@ export default defineConfig({
   fullyParallel: Boolean(runSettings.fullyParallel),
   timeout: runSettings.testTimeout,
   workers: Number(process.env.HMB_WORKERS || runSettings.workers || 1),
-  outputDir: path.join(frameworkRoot, 'test-results'),
+  outputDir: testResultsDir,
   retries: 0,
   expect: {
     timeout: 30000,
@@ -23,10 +25,10 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['html', {
-      outputFolder: path.join(frameworkRoot, 'playwright-report'),
+      outputFolder: reportDir,
       open: runSettings.openHtmlReport ? 'always' : 'never',
     }],
-    ['json', { outputFile: path.join(frameworkRoot, 'test-results', 'results.json') }],
+    ['json', { outputFile: path.join(testResultsDir, 'results.json') }],
   ],
   use: {
     headless,
@@ -47,3 +49,7 @@ export default defineConfig({
     { name: 'msedge', use: { browserName: 'chromium', channel: 'msedge' } },
   ],
 });
+
+function runtimePath(environmentName, defaultRelativePath) {
+  return path.resolve(frameworkRoot, process.env[environmentName] || defaultRelativePath);
+}

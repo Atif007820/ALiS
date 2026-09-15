@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
 
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const storePath = path.resolve(frameworkRoot, runSettings.userDataFile);
+const storePath = path.resolve(frameworkRoot, process.env.HMB_USER_DATA_FILE || runSettings.userDataFile);
 
 export async function saveRegisteredUser(user) {
   await fs.mkdir(path.dirname(storePath), { recursive: true });
