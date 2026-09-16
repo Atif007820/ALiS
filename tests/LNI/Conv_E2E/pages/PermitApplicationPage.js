@@ -58,7 +58,7 @@ export class PermitApplicationPage extends BasePage {
     await this.machineInformation.fill();
     await this.goToReviewQuestions();
     await this.answerReviewQuestions();
-    await this.attestSubmitAndPay();
+    await this.attestSubmitAndPayLater();
     await this.expectConfirmation();
     return selection;
   }
@@ -297,7 +297,7 @@ export class PermitApplicationPage extends BasePage {
     }
   }
 
-  async attestSubmitAndPay() {
+  async attestSubmitAndPayLater() {
     const attestCheckbox = await this.openAttestationFromQuestions();
     await attestCheckbox.check();
 
@@ -305,9 +305,9 @@ export class PermitApplicationPage extends BasePage {
     await this.waitForVisible(submitBtn, 100000);
     await submitBtn.click();
 
-    const payNowBtn = this.page.getByRole('button', { name: 'Pay Now' });
-    await this.waitForVisible(payNowBtn, 200000);
-    await payNowBtn.click();
+    const submitPayLaterBtn = this.page.getByRole('button', { name: 'Submit and Pay Later' });
+    await this.waitForVisible(submitPayLaterBtn, 200000);
+    await submitPayLaterBtn.click();
   }
 
   async expectConfirmation() {
