@@ -85,3 +85,21 @@ test('HMB resumes the current Angular grid application when no Continue link is 
   await application.openPendingApplication();
   assert.equal(await page.getByRole('radio', { name: /Initial Registration/i }).isVisible(), true);
 });
+
+test('HMB keeps Ownership and Personnel dialogs isolated when both Angular modals are present', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  const application = new HmbLoginApplyPage(page);
+  await page.setContent(`
+    <div role="dialog"><ownership-details><input aria-label="Last Name"><button>Save</button></ownership-details></div>
+    <div role="dialog"><agency-personnel-detail><input aria-label="Last Name"><input type="radio" aria-label="HMB ADMINISTRATOR"><button>Save</button></agency-personnel-detail></div>`);
+
+  const owner = await application.visibleOwnershipDialog();
+  const personnel = await application.visiblePersonnelDialog();
+
+  assert.equal(await owner.evaluate((element) => element.tagName), 'OWNERSHIP-DETAILS');
+  assert.equal(await personnel.evaluate((element) => element.tagName), 'AGENCY-PERSONNEL-DETAIL');
+  assert.equal(await personnel.getByRole('radio', { name: 'HMB ADMINISTRATOR' }).isVisible(), true);
+});

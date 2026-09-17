@@ -322,7 +322,7 @@ export class HmbLoginApplyPage {
       this.page.locator('cc-ownership-info').getByRole('link', { name: /^Add$/i }),
     ], { label: 'Owner Add link', timeout: 60000 });
 
-    const dialog = await visibleDialog(this.page, /Ownership|Last Name|Contact Person/i, 'Ownership dialog');
+    const dialog = await this.visibleOwnershipDialog();
     await fill(this.page, dialog.getByRole('textbox', { name: /^Last Name$/i }), owner.lastName, { label: 'Owner Last Name' });
     await fill(this.page, dialog.getByRole('textbox', { name: /^First Name$/i }), owner.firstName, { label: 'Owner First Name' });
     await fillIfVisible(this.page, dialog.getByRole('textbox', { name: /^Comments$/i }), owner.comments, { label: 'Owner Comments' });
@@ -343,7 +343,7 @@ export class HmbLoginApplyPage {
     await fill(this.page, dialog.getByRole('textbox', { name: /^Alternate E-mail$/i }), HMB_DATA.common.alternateEmail, {
       label: 'Owner Alternate Email',
     });
-    await this.saveDialog(dialog, 'Owner');
+    await this.saveDialog(dialog, 'Owner', { requireClose: true });
   }
 
   applicationSectionCandidates(name) {
@@ -422,7 +422,7 @@ export class HmbLoginApplyPage {
 
       logger.info(`Adding Personnel: ${entry.role}${entry.occurrence > 1 ? ` #${entry.occurrence}` : ''}`);
       await click(this.page, this.personnelAddLink(), { label: 'Personnel Add link', timeout: 60000 });
-      const dialog = await visibleDialog(this.page, /Personnel|Last Name|Primary E-mail/i, 'Personnel dialog');
+      const dialog = await this.visiblePersonnelDialog();
 
       await fill(this.page, dialog.getByRole('textbox', { name: /^Last Name$/i }), entry.lastName, { label: 'Personnel Last Name' });
       await fill(this.page, dialog.getByRole('textbox', { name: /^First Name$/i }), entry.firstName, { label: 'Personnel First Name' });
@@ -445,7 +445,7 @@ export class HmbLoginApplyPage {
       await fill(this.page, dialog.getByRole('textbox', { name: /^Alternate E-mail$/i }), HMB_DATA.common.alternateEmail, {
         label: 'Personnel Alternate Email',
       });
-      await this.saveDialog(dialog, `Personnel ${entry.role}`);
+      await this.saveDialog(dialog, `Personnel ${entry.role}`, { requireClose: true });
       await this.uploadLatestPersonnelDocument(entry.uploadComment || 'Test');
       existingRoleCounts.set(roleKey, existingCount + 1);
       uploaded += 1;
@@ -525,6 +525,32 @@ export class HmbLoginApplyPage {
       .getByRole('link', { name: /^Add$/i })
       .or(this.page.locator('cc-agency-personnel-info a#custom-add0'))
       .or(this.page.locator('cc-agency-personnel-info a[data-action-type="Add"]'));
+  }
+
+  async visibleOwnershipDialog() {
+    return this.visibleComponentDialog([
+      'ownership-details',
+      'cc-ownership-detail',
+      '#divOwnershipDetailPopUp',
+    ], 'Ownership dialog');
+  }
+
+  async visiblePersonnelDialog() {
+    return this.visibleComponentDialog([
+      'agency-personnel-detail',
+      'cc-agency-personnel-detail',
+      '#divAgencyPersonnelDetailPopUp',
+    ], 'Personnel dialog');
+  }
+
+  async visibleComponentDialog(componentSelectors, label) {
+    const candidates = componentSelectors.flatMap((selector) => [
+      this.page.locator(`[role="dialog"] ${selector}`).first(),
+      this.page.locator(`mat-dialog-container ${selector}`).first(),
+      this.page.locator(selector).first(),
+    ]);
+
+    return firstVisible(candidates, { label, timeout: 30000 });
   }
 
   async checkPersonnelRole(dialog, entry) {
@@ -754,10 +780,14 @@ export class HmbLoginApplyPage {
     throw new Error(`Could not persist ${label} selection "${value}".`);
   }
 
-  async saveDialog(dialog, label) {
+  async saveDialog(dialog, label, { requireClose = false } = {}) {
     const isBodyScope = await dialog
       .evaluate((element) => element.tagName?.toLowerCase() === 'body')
       .catch(() => false);
+
+    if (requireClose && isBodyScope) {
+      throw new Error(`Refusing to save ${label} from the page-body scope; a component-scoped modal is required.`);
+    }
 
     await clickAndWait(this.page, dialog.getByRole('button', { name: /^Save$/i }), {
       label: `Save ${label}`,
