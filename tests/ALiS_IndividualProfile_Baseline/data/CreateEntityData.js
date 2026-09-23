@@ -7,6 +7,30 @@ import {
 
 export function buildMammoRunData(testData) {
   const profile = buildIndividualProfileName('MAMMO', 'IND');
+  const licenseCredentialActions = [
+    {
+      type: 'waitForLink',
+      name: 'License/Credential Type',
+      exact: false,
+      timeoutMs: 30_000,
+    },
+    {
+      type: 'popupFromLink',
+      name: 'License/Credential Type',
+      exact: false,
+      popupTimeoutMs: 30_000,
+      samePageFallbackTimeoutMs: 15_000,
+      parentPostbackWaitMs: 1_500,
+      parentPostbackTimeoutMs: 30_000,
+      attempts: 5,
+      retryDelayMs: 1_500,
+      actions: [
+        { type: 'radio', name: 'RADIATION THERAPIST RRT', exact: true },
+        { type: 'wait', ms: 500 },
+        { type: 'clickLink', name: 'OK' },
+      ],
+    },
+  ];
 
   return {
     ...profile,
@@ -21,31 +45,14 @@ export function buildMammoRunData(testData) {
         waitForAspNetPostback: true,
         waitAfterSelectMs: 750,
       },
+    ],
+    // ALiS can drop this popup-backed selection during a later postback. Keep it
+    // immediately before Save, after all ordinary profile values are stable.
+    finalCreateSaveActions: licenseCredentialActions,
+    createValidationRecoveryRules: [
       {
-        type: 'waitForLink',
-        name: 'License/Credential Type',
-        exact: false,
-        timeoutMs: 30_000,
-      },
-      {
-        type: 'popupFromLink',
-        name: 'License/Credential Type',
-        exact: false,
-        popupTimeoutMs: 30_000,
-        samePageFallbackTimeoutMs: 15_000,
-        parentPostbackWaitMs: 1_500,
-        parentPostbackTimeoutMs: 30_000,
-        attempts: 5,
-        retryDelayMs: 1_500,
-        actions: [
-          { type: 'radio', name: 'RADIATION THERAPIST RRT', exact: true },
-          { type: 'wait', ms: 500 },
-          { type: 'clickLink', name: 'OK' },
-        ],
-      },
-      {
-        type: 'reloadCurrentPage',
-        waitAfterReloadMs: 1_000,
+        messagePattern: 'License/Credential information details',
+        actions: licenseCredentialActions,
       },
     ],
     profileFields: [

@@ -21,6 +21,7 @@ import { logger } from '../utils/logger.js';
 import { openFile, openReportArtifacts } from '../utils/openArtifacts.js';
 import { getAvailableFlows, getFlowInfo } from '../utils/flowLabels.js';
 import { isClosedPageError } from '../utils/pageGuards.js';
+import { runJobsWithWorkers } from '../utils/jobScheduler.js';
 
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testResultsDir = path.join(frameworkRoot, 'test-results');
@@ -841,24 +842,6 @@ function baselineRowsForBusinessUnit(testCase, rows, businessUnit) {
   }
 
   return rows.filter((row) => !skippedTabs.has(normalizeId(row['Parent Tab'])));
-}
-
-async function runJobsWithWorkers(jobs, workers, runner) {
-  const results = new Array(jobs.length);
-  let cursor = 0;
-  const workerCount = Math.min(Math.max(workers, 1), jobs.length || 1);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (cursor < jobs.length) {
-        const currentIndex = cursor;
-        cursor += 1;
-        results[currentIndex] = await runner(jobs[currentIndex]);
-      }
-    }),
-  );
-
-  return results;
 }
 
 function resolveBrowserProject(project) {

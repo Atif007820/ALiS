@@ -22,6 +22,27 @@ assert.equal(mammo.urlKey, 'NVRCP', 'MAMMO should use NVRCP URL');
 assert.equal(mammo.baselineFile, 'Mammo.xlsx', 'MAMMO should use Mammo.xlsx baseline workbook');
 assert.equal(mammo.applicationTypeValue, 'MAMLIC', 'MAMMO create flow should select MAMLIC application type');
 assert.equal(mammo.licenseCredentialType, 'RADIATION THERAPIST RRT', 'MAMMO credential popup option should be configured');
+assert.equal(
+  mammo.createProfileActions.some((action) => action.type === 'popupFromLink'),
+  false,
+  'MAMMO should create License/Credential details only after ordinary profile fields are stable',
+);
+assert.equal(
+  mammo.finalCreateSaveActions.some((action) => (
+    action.type === 'popupFromLink'
+    && action.name === 'License/Credential Type'
+  )),
+  true,
+  'MAMMO should create License/Credential details immediately before Save',
+);
+assert.equal(
+  mammo.createValidationRecoveryRules.some((rule) => (
+    String(rule.messagePattern).includes('License/Credential information details')
+    && rule.actions.some((action) => action.type === 'popupFromLink')
+  )),
+  true,
+  'MAMMO should rebuild a lost License/Credential selection after server-side validation',
+);
 assert.equal(Boolean(mammo.flow2ProfileName?.firstName), true, 'Flow 2 profile first name should be configured');
 assert.equal(Boolean(mammo.flow2ProfileName?.lastName), true, 'Flow 2 profile last name should be configured');
 assert.equal(Boolean(mammo.flow4ProfileName?.firstName), true, 'Flow 4 profile first name should be configured');

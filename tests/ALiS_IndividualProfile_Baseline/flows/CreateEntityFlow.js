@@ -67,13 +67,40 @@ export async function createProfile(page, { businessUnit }) {
   await waitForAppIdle(page);
 
   await runUiActions(page, businessUnit.profileFields || [], actionContext);
-  await ensureUiActionValues(page, businessUnit.profileFields || [], actionContext);
+  const stabilizeCreateForm = async () => {
+    await waitForAppIdle(page);
+    await ensureUiActionValues(page, businessUnit.profileFields || [], actionContext);
+  };
+  const prepareCreateFormForSave = async () => {
+    await stabilizeCreateForm();
+    await runUiActions(page, businessUnit.finalCreateSaveActions || [], actionContext);
+
+    // The popup callback can re-render the parent form and clear text values.
+    // Restore any values it changed only after the credential is attached.
+    await stabilizeCreateForm();
+  };
+
+  await prepareCreateFormForSave();
 
   await saveCreatedProfile(page, {
-    repairForm: async () => {
-      await repairLicenseCredentialDetails(page, businessUnit, actionContext);
-      await runUiActions(page, businessUnit.profileFields || [], actionContext);
-      await ensureUiActionValues(page, businessUnit.profileFields || [], actionContext);
+    repairForm: prepareCreateFormForSave,
+    recoverValidation: async (message) => {
+      const recoveryRule = findCreateValidationRecoveryRule(
+        businessUnit.createValidationRecoveryRules,
+        message,
+      );
+
+      if (!recoveryRule) {
+        return false;
+      }
+
+      logger.warn(
+        `Create Save reported "${message}" after a dynamic refresh; rebuilding the required detail and retrying.`,
+      );
+      await stabilizeCreateForm();
+      await runUiActions(page, recoveryRule.actions || [], actionContext);
+      await stabilizeCreateForm();
+      return true;
     },
   });
 
@@ -103,31 +130,7 @@ export async function createProfile(page, { businessUnit }) {
 
 export const createEntity = createProfile;
 
-async function repairLicenseCredentialDetails(page, businessUnit, actionContext) {
-  const actions = licenseCredentialActions(businessUnit);
-  if (!actions.length) {
-    return;
-  }
-
-  logger.warn('Restoring configured License/Credential details before retrying profile Save.');
-  await runUiActions(page, actions, actionContext);
-  await runUiActions(page, [{ type: 'reloadCurrentPage', waitAfterReloadMs: 1_000 }], actionContext);
-  await waitForAppIdle(page);
-}
-
-function licenseCredentialActions(businessUnit) {
-  const configuredActions = businessUnit.licenseCredentialActions;
-  if (Array.isArray(configuredActions) && configuredActions.length) {
-    return configuredActions;
-  }
-
-  return (businessUnit.createProfileActions || []).filter((action) => {
-    const label = `${action.name || ''} ${action.label || ''}`.toLowerCase();
-    return label.includes('license/credential');
-  });
-}
-
-async function saveCreatedProfile(page, { repairForm } = {}) {
+async function saveCreatedProfile(page, { repairForm, recoverValidation } = {}) {
   const attempts = 6;
   let lastState = null;
 
@@ -139,6 +142,14 @@ async function saveCreatedProfile(page, { repairForm } = {}) {
     }
 
     if (lastState.status === 'validation') {
+      const recovered = attempt < attempts && recoverValidation
+        ? await recoverValidation(lastState.message)
+        : false;
+
+      if (recovered) {
+        continue;
+      }
+
       if (attempt < attempts && repairForm && isRecoverableRequiredFieldValidation(lastState.message)) {
         logger.warn(
           `Create Save reported required fields before clicking Save on attempt ${attempt}; restoring the configured profile values and retrying.`,
@@ -164,6 +175,14 @@ async function saveCreatedProfile(page, { repairForm } = {}) {
     }
 
     if (lastState.status === 'validation') {
+      const recovered = attempt < attempts && recoverValidation
+        ? await recoverValidation(lastState.message)
+        : false;
+
+      if (recovered) {
+        continue;
+      }
+
       if (attempt < attempts && repairForm && isRecoverableRequiredFieldValidation(lastState.message)) {
         logger.warn(
           `Create Save reported required fields after a dynamic refresh on attempt ${attempt}; restoring the configured profile values and retrying.`,
@@ -388,6 +407,24 @@ async function readCreateSaveStateWithLocators(page) {
 
 function isRecoverableRequiredFieldValidation(message) {
   return /\bis a required field\b|\bare required\b|License\/Credential information details/i.test(String(message || ''));
+}
+
+export function findCreateValidationRecoveryRule(rules = [], message = '') {
+  const validationMessage = String(message || '');
+
+  return rules.find((rule) => {
+    const pattern = rule?.messagePattern;
+    if (!pattern) {
+      return false;
+    }
+
+    if (pattern instanceof RegExp) {
+      pattern.lastIndex = 0;
+      return pattern.test(validationMessage);
+    }
+
+    return validationMessage.toLowerCase().includes(String(pattern).toLowerCase());
+  });
 }
 
 async function clickIfVisible(locator) {
