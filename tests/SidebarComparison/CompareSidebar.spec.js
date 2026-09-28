@@ -2,114 +2,68 @@
 //  CompareSidebar.spec.js
 //
 //  Main test entry point. It creates one Playwright test for
-//  each enabled product comparison in config/url.js.
+//  each selected site/product comparison in config/sites/.
 // ============================================================
 
-import { test, chromium, expect } from '@playwright/test';
-import { getComparisonPairs } from './config/url.js';
+import { test } from '@playwright/test';
+import { getComparisonPairs } from './config/comparisonConfig.js';
 import { getSidebarItems } from './core/scraper.js';
 import { printResults } from './utils/logger.js';
-import { attachReport } from './utils/annotations.js';
-import { openGeneratedReports } from './utils/openArtifacts.js';
-import { writeExcelReport } from './reporters/excelReporter.js';
-import { writeHtmlReport } from './reporters/htmlReporter.js';
+import { attachReport, COMPARISON_METADATA } from './utils/annotations.js';
 import runSettings from './config/runSettings.json' with { type: 'json' };
 
-const comparisonPairs = getComparisonPairs();
+const comparisonPairs = getComparisonPairs({
+  requireCredentials: !(process.env.SIDEBAR_LIST === 'true' || process.argv.includes('--list')),
+});
 
 test.describe.configure({
-  mode: shouldRunProductTestsInParallel() ? 'parallel' : 'serial',
+  mode: shouldRunProductTestsInParallel() ? 'parallel' : 'default',
 });
 
 test.describe('Sidebar Comparison', () => {
-  if (comparisonPairs.length === 0) {
-    test('configuration has at least one enabled product comparison', async () => {
-      expect(comparisonPairs.length, 'No enabled product comparisons were found in config/url.js.').toBeGreaterThan(0);
-    });
-  }
-
   for (const comparison of comparisonPairs) {
-    test(`${String(comparison.index + 1).padStart(2, '0')} - ${comparison.name} - Sidebar Comparison`, async ({}, testInfo) => {
-      validateComparison(comparison);
-
-      const basePayload = buildBasePayload(comparison);
-      const generatedReports = {};
-      let browser;
-
-      async function writeAndAttachReports(payload) {
-        await attachReport({ testInfo, ...payload });
-        generatedReports.excelPath = await writeExcelReport(payload);
-        generatedReports.htmlPath = await writeHtmlReport(payload);
-
-        if (runSettings.attachReports) {
-          await testInfo.attach(`${comparison.name} Sidebar Comparison Excel Report`, {
-            path: generatedReports.excelPath,
-            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          });
-
-          await testInfo.attach(`${comparison.name} Sidebar Comparison HTML Report`, {
-            path: generatedReports.htmlPath,
-            contentType: 'text/html',
-          });
-        }
-      }
+    const basePayload = buildBasePayload(comparison);
+    test(`${comparison.site} - ${String(comparison.id).padStart(2, '0')} - ${comparison.name} - Sidebar Comparison`, {
+      annotation: [
+        { type: COMPARISON_METADATA, description: JSON.stringify(basePayload) },
+        { type: 'Site', description: comparison.site },
+        { type: 'Product', description: `${comparison.id} - ${comparison.name}` },
+        { type: 'URL A', description: comparison.urlA.loginUrl },
+        { type: 'URL B', description: comparison.urlB.loginUrl },
+      ],
+    }, async ({ browser }, testInfo) => {
+      let payload = {
+        ...basePayload,
+        itemsA: [], itemsB: [], matched: [], missing: [], iconMismatch: [], extraB: [],
+        comparisonComplete: false,
+      };
 
       try {
-        browser = await chromium.launch({
-          headless: runSettings.headless,
-          slowMo: Number(runSettings.slowMo ?? 0),
-          args: [
-            '--ignore-certificate-errors',
-            ...(runSettings.maximizeWindow ? ['--start-maximized'] : []),
-          ],
-        });
-
-        const [itemsA, itemsB] = await Promise.all([
+        // Let both isolated sessions finish cleanup before reporting a side's failure.
+        const results = await Promise.allSettled([
           getSidebarItems(browser, comparison.urlA),
           getSidebarItems(browser, comparison.urlB),
         ]);
-
-        const payload = {
-          ...basePayload,
-          itemsA,
-          itemsB,
-          ...compareSidebarItems(itemsA, itemsB),
+        payload.itemsA = results[0].status === 'fulfilled' ? results[0].value : [];
+        payload.itemsB = results[1].status === 'fulfilled' ? results[1].value : [];
+        payload.capturedA = results[0].status === 'fulfilled';
+        payload.capturedB = results[1].status === 'fulfilled';
+        const failures = results.flatMap((result, index) => result.status === 'rejected'
+          ? [`URL ${index === 0 ? 'A' : 'B'}: ${result.reason?.message || result.reason}`] : []);
+        if (failures.length) throw new Error(failures.join('\n'));
+        payload = {
+          ...payload,
+          ...compareSidebarItems(payload.itemsA, payload.itemsB),
+          comparisonComplete: true,
         };
 
         printResults(payload);
-        await writeAndAttachReports(payload);
       } catch (error) {
-        const errorText = error?.stack || error?.message || String(error);
-
-        if (!generatedReports.excelPath && !generatedReports.htmlPath) {
-          const failurePayload = {
-            ...basePayload,
-            itemsA: [],
-            itemsB: [],
-            matched: [],
-            missing: [],
-            iconMismatch: [],
-            extraB: [],
-            error: errorText,
-          };
-
-          try {
-            await writeAndAttachReports(failurePayload);
-          } catch (reportError) {
-            console.error(`Unable to write SidebarComparison failure reports: ${reportError?.message || reportError}`);
-          }
-        }
-
+        payload.error = error?.stack || error?.message || String(error);
         throw error;
       } finally {
-        await browser?.close();
-
-        const reportOpenOptions = resolveReportOpenOptions(runSettings);
-        if (reportOpenOptions.openHtml || reportOpenOptions.openExcel) {
-          await openGeneratedReports(generatedReports, console, reportOpenOptions);
-        }
-
-        console.log(`\nBrowser closed for ${comparison.name}.`);
+        await attachReport({ testInfo, includeText: runSettings.attachReports, ...payload });
+        console.log(`\nComparison finished for ${comparison.site} / ${comparison.name}.`);
       }
     });
   }
@@ -117,9 +71,11 @@ test.describe('Sidebar Comparison', () => {
 
 function buildBasePayload(comparison) {
   return {
+    site: comparison.site,
+    productId: comparison.id,
     productName: comparison.name,
     productKey: comparison.key,
-    reportSlug: `${String(comparison.index + 1).padStart(2, '0')}-${comparison.key}`,
+    reportSlug: comparison.key,
     labelA: comparison.urlA.label,
     labelB: comparison.urlB.label,
     urlA: comparison.urlA.loginUrl,
@@ -164,36 +120,8 @@ function compareSidebarItems(itemsA, itemsB) {
   return { matched, missing, iconMismatch, extraB };
 }
 
-function validateComparison(comparison) {
-  const missingFields = [];
-
-  for (const side of ['urlA', 'urlB']) {
-    const env = comparison[side];
-    for (const field of ['loginUrl', 'username', 'password']) {
-      if (!env[field]) {
-        missingFields.push(`${comparison.name}.${side}.${field}`);
-      }
-    }
-  }
-
-  if (missingFields.length > 0) {
-    throw new Error(`Missing SidebarComparison config value(s): ${missingFields.join(', ')}`);
-  }
-}
-
 function key(value) {
   return String(value || '').trim().toLowerCase();
-}
-
-function resolveReportOpenOptions(settings) {
-  const legacyFallback = settings.openReports === undefined
-    ? true
-    : asBoolean(settings.openReports, true);
-
-  return {
-    openHtml: asBoolean(settings.openHtmlReport, legacyFallback),
-    openExcel: asBoolean(settings.openExcelReport, legacyFallback),
-  };
 }
 
 function asBoolean(value, fallback) {

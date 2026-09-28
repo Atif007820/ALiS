@@ -1,144 +1,217 @@
 ============================================================
-SidebarComparison Commands
+SidebarComparison - Sites and Products
 ============================================================
 
-Framework folder
-------------------------------------------------------------
+Framework folder:
 cd C:\Users\mohd.jamal\Downloads\Playwright\tests\SidebarComparison
 
+Use "--" after npm run sidebar so npm forwards all options.
 
-Recommended command format
+CONFIGURATION
 ------------------------------------------------------------
-Use "--" after npm run sidebar.
-Do not add a space after --product=.
+config/sites/NVRCP.js  Existing six products and their credentials.
+config/sites/DPBH.js   Products 1-6; URL A/B supplied; credentials blank.
+config/sites/TXOCA.js  Products 1-6; URL A/B supplied; credentials blank.
+config/sites/NJ.js     Products 1-4; URL A/B supplied; credentials blank.
+config/sites/SAPTA.js  Products 1-3; URL A/B supplied; credentials blank.
 
-Run ALL configured products:
-npm run sidebar -- --product=ALL --project=chromium --parallel 3
+Fill username/password for BOTH sides before running a new site.
+--list works with blank credentials and makes no login attempts.
+No credentials are copied between sites or between URL A and URL B.
 
-Run ALL configured products in headed mode:
-npm run sidebar -- --product=ALL --headed --project=chromium --parallel 3
+config/runSettings.json:
+  sites: ["NVRCP"]       Default sites when --site is omitted.
+  products: []           Default: enabled products in selected sites.
+  products: [1, 3]       Alternative: selected product ids in each site.
+  products: ["ALL"]      Alternative: all enabled products.
+  parallelWorkers: 3    Workers used by --parallel without a number.
+  workers: 3            Default Playwright workers.
+  fullyParallel: true  Allow independent comparisons to run together.
+  headless: true        Default browser visibility.
 
-List ALL configured products without running:
-npm run sidebar -- --product=ALL --project=chromium --parallel 3 --list
+Precedence: command options > environment variables > runSettings.json.
+Environment variables: SITES, PRODUCTS, WORKERS, SIDEBAR_HEADED.
+SIDEBAR_HEADED=true shows browsers; false runs headless.
 
-
-Supported options
+OPTIONS
 ------------------------------------------------------------
---product=ALL        Run all configured products from config\url.js
---product=1          Run Product 1
---product=1,2,3      Run selected product numbers
---headed             Run browser in headed mode
---project=chromium   Run a specific Playwright project
---parallel 3         Run selected product comparisons with 3 workers
---parallel           Use config\runSettings.json parallelWorkers
---list               List tests without running them
+--site=NVRCP            One site (case-insensitive).
+--site=NVRCP,DPBH       Multiple sites.
+--site=ALL              All discovered sites.
+--product=1             Product id 1 in EACH selected site.
+--product=1,3,6         Selected ids in EACH selected site.
+--product=ALL           All enabled products in the selected sites.
+--headed                Show browsers.
+--headless              Hide browsers, overriding runSettings.
+--project=chromium      Current configured browser project.
+--parallel 3            Up to 3 comparison tests at once.
+--parallel=3            Same as above.
+--parallel              Use runSettings.parallelWorkers.
+--list                  Preview selected tests without opening browsers.
 
+Each comparison opens two isolated sessions: URL A and URL B.
+Workers limit comparison tests, not the number of browser pages.
+Product ids remain stable when names or array order change.
+enabled:false products are skipped, even with ALL or explicit product ids.
+Set enabled:true to include a product; omitted enabled defaults to true.
+Disabled products do not require URLs or credentials to be filled.
+Sites with no enabled selections are skipped while other sites continue.
+If no enabled products remain in the entire selection, the run stops clearly.
+Enabled products must still have valid URLs and both sides' credentials.
+Without --product, runSettings.products applies; [] uses enabled products.
+A requested id must exist in EVERY selected site; invalid selections fail.
+ALL must be used alone, not combined with individual ids or site names.
 
-Product number mapping
+PREVIEW CONFIGURATION (NO CREDENTIALS REQUIRED)
 ------------------------------------------------------------
-1 = Product 1
-2 = Product 2
-3 = Product 3
-4 = Product 4
-5 = Product 5
-6 = Product 6
+npm run sidebar -- --site=ALL --product=ALL --list
+npm run sidebar -- --site=NVRCP --product=ALL --list
+npm run sidebar -- --site=DPBH --product=ALL --list
+npm run sidebar -- --site=TXOCA --product=ALL --list
+npm run sidebar -- --site=NJ --product=ALL --list
+npm run sidebar -- --site=SAPTA --product=ALL --list
+npm run sidebar -- --site=NVRCP,DPBH --product=1 --parallel 3 --list
+npm run sidebar:list
+npm run sidebar:list -- --site=ALL --product=ALL
 
-Product names, URLs, credentials, labels, and enabled flags can be edited here:
-C:\Users\mohd.jamal\Downloads\Playwright\tests\SidebarComparison\config\url.js
-
-
-Basic commands
+DEFAULT / BACKWARD-COMPATIBLE RUNS
 ------------------------------------------------------------
 npm run sidebar
-npm run sidebar -- --list
-npm run sidebar -- --headed
-npm run sidebar -- --project=chromium
-npm run sidebar -- --parallel
-npm run sidebar -- --parallel 3
-npm run sidebar -- --headed --parallel 3
-npm run report
-
-
-Run all products
-------------------------------------------------------------
-npm run sidebar -- --product=ALL
-npm run sidebar -- --product=ALL --project=chromium
-npm run sidebar -- --product=ALL --parallel 3
 npm run sidebar -- --product=ALL --project=chromium --parallel 3
-npm run sidebar -- --product=ALL --headed --project=chromium --parallel 3
+npm run sidebar -- --product=1,3 --headed --parallel 2
+Without --site these use runSettings.sites, currently NVRCP.
 
-
-List all products
+RUN NVRCP
 ------------------------------------------------------------
-npm run sidebar -- --product=ALL --list
-npm run sidebar -- --product=ALL --project=chromium --list
-npm run sidebar -- --product=ALL --project=chromium --parallel 3 --list
+npm run sidebar -- --site=NVRCP --product=ALL --parallel 3
+npm run sidebar -- --site=NVRCP --product=ALL --headed --project=chromium --parallel 3
+npm run sidebar -- --site=NVRCP --product=1
+npm run sidebar -- --site=NVRCP --product=2
+npm run sidebar -- --site=NVRCP --product=3
+npm run sidebar -- --site=NVRCP --product=4
+npm run sidebar -- --site=NVRCP --product=5
+npm run sidebar -- --site=NVRCP --product=6
+npm run sidebar -- --site=NVRCP --product=1,2 --headed --parallel 2
+npm run sidebar -- --site=NVRCP --product=1,3,5 --parallel 3
+npm run sidebar -- --site=NVRCP --product=2,4,6 --parallel 3
+npm run sidebar -- --site=NVRCP --product=1,2,3,4 --parallel 3
+npm run sidebar -- --site=NVRCP --product=1,2,3,4,5 --parallel 3
+npm run sidebar -- --site=NVRCP --product=1,2,3,4,5,6 --parallel 3
 
-
-Run individual products
+RUN OTHER SITES (FILL THEIR CREDENTIALS FIRST)
 ------------------------------------------------------------
-npm run sidebar -- --product=1
-npm run sidebar -- --product=2
-npm run sidebar -- --product=3
-npm run sidebar -- --product=4
-npm run sidebar -- --product=5
-npm run sidebar -- --product=6
+npm run sidebar -- --site=DPBH --product=ALL --headed --parallel 3
+npm run sidebar -- --site=TXOCA --product=ALL --headed --parallel 3
+npm run sidebar -- --site=NJ --product=ALL --headed --parallel 3
+npm run sidebar -- --site=SAPTA --product=ALL --headed --parallel 3
 
-
-Run individual products in headed mode
+SELECTED PRODUCTS IN OTHER SITES (FILL CREDENTIALS FIRST)
 ------------------------------------------------------------
-npm run sidebar -- --product=1 --headed --project=chromium
-npm run sidebar -- --product=2 --headed --project=chromium
-npm run sidebar -- --product=3 --headed --project=chromium
-npm run sidebar -- --product=4 --headed --project=chromium
-npm run sidebar -- --product=5 --headed --project=chromium
-npm run sidebar -- --product=6 --headed --project=chromium
+npm run sidebar -- --site=DPBH --product=1,3,6 --parallel 3
+npm run sidebar -- --site=TXOCA --product=2,4,6 --parallel 3
+npm run sidebar -- --site=NJ --product=1,4 --parallel 2
+npm run sidebar -- --site=SAPTA --product=1,2,3 --parallel 3
 
-
-Run selected two-product combinations
+RUN MULTIPLE SITES (FILL SELECTED CREDENTIALS FIRST)
 ------------------------------------------------------------
-npm run sidebar -- --product=1,2 --project=chromium --parallel 2
-npm run sidebar -- --product=1,3 --project=chromium --parallel 2
-npm run sidebar -- --product=1,4 --project=chromium --parallel 2
-npm run sidebar -- --product=2,3 --project=chromium --parallel 2
-npm run sidebar -- --product=2,5 --project=chromium --parallel 2
-npm run sidebar -- --product=4,6 --project=chromium --parallel 2
+npm run sidebar -- --site=NVRCP,DPBH --product=1 --headed --parallel 2
+npm run sidebar -- --site=NJ,SAPTA --product=1 --parallel 2
+npm run sidebar -- --site=TXOCA,DPBH --product=1,2,3,4,5,6 --parallel 3
+npm run sidebar -- --site=ALL --product=1,2,3 --parallel 3
+npm run sidebar -- --site=NVRCP,DPBH,TXOCA --product=ALL --parallel 3
+npm run sidebar -- --site=DPBH,TXOCA,NJ,SAPTA --product=ALL --parallel 3
+npm run sidebar -- --site=ALL --product=ALL --headed --project=chromium --parallel 3
+npm run sidebar -- --site=ALL --product=ALL --headless --parallel 6
+npm run sidebar -- --site=ALL --product=ALL --parallel 1
+--parallel 1 runs comparisons one at a time and continues after failures.
 
-
-Run selected three-product combinations
+ALTERNATIVE OPTION FORMATS
 ------------------------------------------------------------
-npm run sidebar -- --product=1,2,3 --project=chromium --parallel 3
-npm run sidebar -- --product=1,3,5 --project=chromium --parallel 3
-npm run sidebar -- --product=2,4,6 --project=chromium --parallel 3
-npm run sidebar -- --product=3,4,5 --project=chromium --parallel 3
-npm run sidebar -- --product=4,5,6 --project=chromium --parallel 3
+npm run sidebar -- --site NVRCP --product 1,3 --parallel 2
+npm run sidebar -- --site= NVRCP, DPBH --product= 1 --parallel=2 --list
+npm run sidebar -- --sites=NVRCP,NJ --products=1 --list
+npm run sidebar -- --site=NVRCP --product="Product 1,Product 3" --list
 
-
-Run larger combinations
+ADDING MORE PRODUCTS
 ------------------------------------------------------------
-npm run sidebar -- --product=1,2,3,4 --project=chromium --parallel 3
-npm run sidebar -- --product=1,3,5,6 --project=chromium --parallel 3
-npm run sidebar -- --product=2,3,4,5,6 --project=chromium --parallel 3
-npm run sidebar -- --product=1,2,3,4,5,6 --project=chromium --parallel 3
+1. Open the appropriate config/sites/<SITE>.js file.
+2. Copy one product object inside productComparisons.
+3. Assign a new, unique positive integer id (for example 7).
+4. Edit its name and both sides' URLs, credentials and labels.
+5. Preview with --site=<SITE> --product=ALL --list.
+6. Run by id. Renaming or reordering existing products does not change ids.
+There is no fixed six-product limit.
 
-
-Headed and parallel examples
+ADDING MORE SITES
 ------------------------------------------------------------
-npm run sidebar -- --product=1,4 --headed --project=chromium --parallel 2
-npm run sidebar -- --product=2,3,6 --headed --project=chromium --parallel 3
-npm run sidebar -- --product=1,2,4,5 --headed --project=chromium --parallel 3
-npm run sidebar -- --product=ALL --headed --project=chromium --parallel 3
+1. Copy config/sites/DPBH.js to config/sites/NEW_SITE.js.
+2. Set CONFIG.site to 'NEW_SITE' (matching the filename).
+3. Edit all products and both sides' URLs and credentials.
+4. Run: npm run sidebar -- --site=NEW_SITE --product=ALL --list
+5. Fill credentials, then remove --list to execute.
+Discovery is automatic; no registry or runner code change is needed.
+Use letters, digits, underscores or hyphens, starting with a letter.
+Names beginning with "_" are ignored, suitable for inactive templates.
+config/comparisonConfig.js handles discovery, selection and validation.
+The config/sites/ folder contains only editable site configurations.
+Do not leave backup .js files in this folder: every site file is loaded.
 
-
-Direct Playwright report
+OPTIONAL BUSINESS UNIT SELECTION
 ------------------------------------------------------------
+Business unit settings are in config/runSettings.json, not the site files.
+Use the uppercase site code, stable product id and URL side:
+
+"businessUnits": {
+  "NVRCP": {
+    "1": { "urlA": "", "urlB": "" }
+  },
+  "DPBH": {
+    "1": { "urlA": "", "urlB": "" }
+  }
+}
+
+Replace a blank with the dropdown option value as a string, not its label.
+Add other product ids or sites only when a specific selection is needed.
+URL A and URL B can have different business unit values.
+Blank, omitted or null values use the existing automatic selection:
+if the popup appears, select its first option with a nonempty value.
+If no business unit popup appears, no selection is performed.
+Product names or array order can change without changing these id-based settings.
+
+LOGIN AND REPORTS
+------------------------------------------------------------
+CONFIG.login defines each site's login field/button names.
+For different login labels on URL B, add a login object inside urlB.
+Partial per-URL overrides inherit the remaining site's login settings.
+Both URLs independently detect Angular or ASP.NET sidebars.
+
+One consolidated HTML report and one Excel workbook are written after
+ALL selected comparisons finish, for both single-site and multiple-site runs.
+No individual product HTML reports or workbooks are generated.
+
+HTML:  playwright-report/index.html
+Excel: playwright-report/sidebar-comparison.xlsx
+Data:  playwright-report/summary.json (current-run consolidated results)
+
+The HTML report groups products by site, with site/status filters and search.
+Expand a product to see both URLs, item counts, comparison categories and errors.
+The Excel workbook has Run Summary, Comparisons, Differences, Matched Text,
+and Execution Errors tabs, with site/product columns and filters throughout.
+MATCHED means both text and icons match; DIFFERENCES means comparison found
+menu changes; ERROR means a runtime failure; SKIPPED/NOT RUN remain explicit.
+Runtime failures before login and retries are included. Only the final attempt
+counts toward totals; earlier attempts remain available in error/history detail.
+Repeats and browser projects have separate rows within the same report.
+Reports only contain tests selected for the current run; older files are not scanned.
+--list does not generate or replace reports.
+
+runSettings.json:
+  openHtmlReport: true   Open the consolidated report once through Playwright.
+  openExcelReport: false Open the workbook once when changed to true.
+  attachReports: true   Keep optional per-test text attachments for diagnostics.
+Structured result attachments are always collected for consolidation.
+PLAYWRIGHT_HTML_OPEN=never disables automatic HTML opening for unattended runs.
+If the previous workbook is locked in Excel, the new workbook gets a timestamp
+suffix and the HTML download link points to that current-run workbook.
+
 npm run report
-npx playwright show-report
-
-
-Notes
-------------------------------------------------------------
-- --product=ALL now runs every configured product in config\url.js.
-- Product numbers like --product=1,2,3 continue to work even if product names are changed.
-- A selected product number runs even if that product has enabled: false.
-- If --product is not provided, the framework also runs all enabled products by default.

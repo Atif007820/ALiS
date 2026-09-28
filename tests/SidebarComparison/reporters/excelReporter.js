@@ -1,372 +1,176 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
-import runSettings from '../config/runSettings.json' with { type: 'json' };
+import { menuRows } from './reportData.js';
 
-const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const defaultReportDir = path.join(frameworkRoot, runSettings.outputDir || 'test-results');
-const latestExcelFile = 'latest-report.xlsx';
-const latestJsonFile = 'latest-results.json';
-const defaultFont = { name: 'Arial', size: 11 };
-const allBorders = {
-  top: { style: 'thin', color: { argb: 'FF000000' } },
-  left: { style: 'thin', color: { argb: 'FF000000' } },
-  bottom: { style: 'thin', color: { argb: 'FF000000' } },
-  right: { style: 'thin', color: { argb: 'FF000000' } },
-};
+const identityColumns = [
+  ['Site', 'site', 12], ['Product ID', 'productId', 12], ['Product', 'productName', 26],
+  ['Browser project', 'project', 18], ['Repeat', 'repeat', 10],
+];
+const detailColumns = [
+  ...identityColumns, ['Category', 'category', 22], ['Menu item', 'title', 40],
+  ['URL A text', 'expectedText', 48], ['URL B text', 'actualText', 48],
+  ['URL A icon', 'expectedIcon', 22], ['URL B icon', 'actualIcon', 22],
+];
 
-const fills = {
-  PASS: 'FFC6EFCE',
-  FAIL: 'FFFFC7CE',
-  WARN: 'FFFFEB9C',
-  HEADER: 'FF1F4E78',
-};
-
-export async function writeExcelReport(payload, { reportDir = defaultReportDir } = {}) {
+export async function writeExcelReport(report, { reportDir }) {
   await fs.mkdir(reportDir, { recursive: true });
-  await removeOldExcelReports(reportDir, payload);
-
-  const generatedAt = formatReportTimestamp();
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SidebarComparison';
-  workbook.created = new Date();
+  workbook.created = new Date(report.generatedAt);
+  workbook.calcProperties.fullCalcOnLoad = true;
+  const overview = workbook.addWorksheet('Run Summary', { views: [{ showGridLines: false }] });
+  overview.properties.tabColor = { argb: 'FF34495E' };
 
-  addSummarySheet(workbook, payload, generatedAt);
-  addTextMatchedSheet(workbook, payload);
-  addMissingOrTextMismatchSheet(workbook, payload);
-  addIconMismatchSheet(workbook, payload);
-  addExtraSheet(workbook, payload);
+  const comparisons = report.comparisons.map((record) => ({
+    ...record,
+    expected: record.capturedA ? record.itemsA.length : null,
+    actual: record.capturedB ? record.itemsB.length : null,
+    textMatched: record.comparisonComplete ? record.matched.length + record.iconMismatch.length : null,
+    missingCount: record.comparisonComplete ? record.missing.length : null,
+    iconCount: record.comparisonComplete ? record.iconMismatch.length : null,
+    extraCount: record.comparisonComplete ? record.extraB.length : null,
+    attemptCount: record.attempts.length,
+    seconds: record.durationMs / 1000,
+  }));
+  tableSheet(workbook, 'Comparisons', [
+    ...identityColumns, ['Comparison result', 'status', 22], ['Execution', 'executionStatus', 16],
+    ['URL A count', 'expected', 13], ['URL B count', 'actual', 13], ['Text matched', 'textMatched', 15],
+    ['Missing / text mismatch', 'missingCount', 23], ['Icon mismatch', 'iconCount', 17], ['Extra', 'extraCount', 12],
+    ['Attempts', 'attemptCount', 12], ['Duration (s)', 'seconds', 15],
+    ['URL A', 'urlA', 65], ['URL B', 'urlB', 65],
+  ], comparisons, 'One final comparison per site, product, browser and repeat. Blank counts mean capture/comparison was unavailable.');
 
-  const excelPath = await writeWorkbookWithFallback(
-    workbook,
-    path.join(reportDir, reportFileName(payload, 'xlsx')),
-  );
+  const details = report.comparisons.flatMap(menuRows);
+  tableSheet(workbook, 'Differences', detailColumns, details.filter((row) => row.category !== 'MATCHED'),
+    'Filter by site, product or category: MISSING, TEXT MISMATCH, ICON MISMATCH, EXTRA.');
+  tableSheet(workbook, 'Matched Text', detailColumns, details.filter((row) => ['MATCHED', 'ICON MISMATCH'].includes(row.category)),
+    'Text matches include ICON MISMATCH rows; their icon differences are also listed on Differences.');
+  const errors = report.comparisons.flatMap((record) => [
+    ...(record.error || ['SKIPPED', 'NOT RUN'].includes(record.status)
+      ? [{ ...record, stage: 'Final result', attempt: record.attempts.length || null, detail: record.error || record.status }] : []),
+    ...record.attempts.slice(0, -1).filter((attempt) => attempt.error).map((attempt) => ({
+      ...record, stage: 'Earlier attempt', attempt: attempt.retry + 1, detail: attempt.error,
+    })),
+  ]);
+  errors.push(...report.globalErrors.map((detail) => ({ site: '(Run)', stage: 'Global error', detail })));
+  tableSheet(workbook, 'Execution Errors', [
+    ...identityColumns, ['Stage', 'stage', 22], ['Attempt', 'attempt', 12], ['Details', 'detail', 110],
+  ], errors, 'Runtime failures, skipped/unstarted comparisons, and earlier retry errors.');
+  addOverview(overview, report, comparisons.length);
 
-  await fs.writeFile(
-    path.join(reportDir, resultFileName(payload, 'json')),
-    JSON.stringify({ generatedAt, ...toJsonPayload(payload), excelPath }, null, 2),
-    'utf8',
-  );
-
+  let excelPath = path.join(reportDir, 'sidebar-comparison.xlsx');
+  try {
+    await workbook.xlsx.writeFile(excelPath);
+  } catch (error) {
+    if (!['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
+    // Keep the current run available when the previous workbook is open in Excel.
+    excelPath = path.join(reportDir, `sidebar-comparison-${Date.now()}.xlsx`);
+    await workbook.xlsx.writeFile(excelPath);
+  }
   return excelPath;
 }
 
-function addSummarySheet(workbook, payload, generatedAt) {
-  const { productName, labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB, error } = payload;
-  const textMatchedCount = matched.length + iconMismatch.length;
-  const failedCount = missing.length + iconMismatch.length + extraB.length + (error ? 1 : 0);
-
-  const sheet = workbook.addWorksheet('Summary');
-  sheet.columns = [
-    { header: 'Item', key: 'item', width: 28 },
-    { header: 'Value', key: 'value', width: 86 },
-  ];
-
-  sheet.addRows([
-    { item: 'Framework', value: 'SidebarComparison' },
-    ...(productName ? [{ item: 'Product', value: productName }] : []),
-    { item: 'Label A', value: labelA },
-    { item: 'URL A', value: urlA },
-    { item: 'Label B', value: labelB },
-    { item: 'URL B', value: urlB },
-    { item: 'Generated At', value: generatedAt },
-    { item: 'Overall Status', value: failedCount ? 'FAILED' : 'PASSED' },
-  ]);
-
-  if (error) {
-    sheet.addRow({ item: 'Execution Error', value: error });
-  }
-
-  sheet.addRow([]);
-  sheet.addRow(['Test Case', 'Status', 'Expected Count', 'Actual Count', 'Matched', 'Mismatch/Missing', 'Extra']);
-  sheet.addRow([
-    'Text Matched',
-    textMatchedCount ? 'PASS' : 'WARN',
-    itemsA.length,
-    itemsB.length,
-    textMatchedCount,
-    0,
-    0,
-  ]);
-  sheet.addRow([
-    'Missing Or Text Mismatch',
-    missing.length ? 'FAIL' : 'PASS',
-    itemsA.length,
-    itemsB.length,
-    0,
-    missing.length,
-    0,
-  ]);
-  sheet.addRow([
-    'Icon Mismatch',
-    iconMismatch.length ? 'FAIL' : 'PASS',
-    itemsA.length,
-    itemsB.length,
-    0,
-    iconMismatch.length,
-    0,
-  ]);
-  sheet.addRow([
-    'Extra',
-    extraB.length ? 'FAIL' : 'PASS',
-    itemsA.length,
-    itemsB.length,
-    0,
-    0,
-    extraB.length,
-  ]);
-
-  styleHeaderRow(sheet.getRow(1));
-  const testCaseHeaderRow = (error ? 11 : 10) + (productName ? 1 : 0);
-  styleHeaderRow(sheet.getRow(testCaseHeaderRow));
-  applyStatusStyles(sheet, testCaseHeaderRow + 1, sheet.rowCount, 2);
-  polishWorksheet(sheet);
-  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+function tableSheet(workbook, name, columns, rows, note) {
+  const sheet = workbook.addWorksheet(name);
+  sheet.columns = columns.map(([, key, width]) => ({ key, width }));
+  sheet.getCell('A2').value = name;
+  sheet.getCell('A2').font = { name: 'Arial', size: 16, bold: true };
+  sheet.getCell('A3').value = note;
+  sheet.getCell('A3').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF596273' } };
+  sheet.getRow(5).values = columns.map(([label]) => label);
+  for (const data of rows) sheet.addRow(data);
+  styleTable(sheet, 5, Math.max(5, sheet.rowCount), columns.length);
+  sheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 5, showGridLines: false }];
+  sheet.autoFilter = { from: { row: 5, column: 1 }, to: { row: Math.max(5, sheet.rowCount), column: columns.length } };
+  const statusIndex = columns.findIndex(([, key]) => key === 'status' || key === 'category');
+  if (statusIndex >= 0 && rows.length) addStatusRules(sheet, statusIndex + 1, 6, sheet.rowCount);
+  const secondsIndex = columns.findIndex(([, key]) => key === 'seconds');
+  if (secondsIndex >= 0) sheet.getColumn(secondsIndex + 1).numFmt = '0.0';
+  sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:5' };
+  return sheet;
 }
 
-function addTextMatchedSheet(workbook, payload) {
-  const sheet = workbook.addWorksheet('Text Matched');
-  applyTextColumns(sheet);
-  const mapA = itemMap(payload.itemsA);
-  const mapB = itemMap(payload.itemsB);
-  const textMatchedTitles = [
-    ...payload.matched,
-    ...payload.iconMismatch.map((item) => item.title),
-  ];
-
-  for (const title of textMatchedTitles) {
-    const expected = mapA.get(key(title));
-    const actual = mapB.get(key(title));
-    sheet.addRow(toSidebarRow({
-      status: 'PASS',
-      expected,
-      actual,
-      details: `Title: ${expected?.title || actual?.title || title}. Title and text matched in Expected and Actual.`,
-    }));
-  }
-
-  finalizeSheet(sheet);
-}
-
-function addMissingOrTextMismatchSheet(workbook, payload) {
-  const sheet = workbook.addWorksheet('Missing Or Text Mismatch');
-  applyTextColumns(sheet);
-  const mapA = itemMap(payload.itemsA);
-  const mapB = itemMap(payload.itemsB);
-
-  for (const title of payload.missing) {
-    const expected = mapA.get(key(title));
-    const actual = mapB.get(key(title));
-    const details = actual
-      ? 'Title exists in Actual, but menu text does not match Expected.'
-      : 'Expected menu item is missing in Actual.';
-    sheet.addRow(toSidebarRow({
-      status: actual ? 'MISMATCH' : 'MISSING',
-      expected,
-      actual,
-      details: `Title: ${expected?.title || actual?.title || title}. ${details}`,
-    }));
-  }
-
-  finalizeSheet(sheet);
-}
-
-function addIconMismatchSheet(workbook, payload) {
-  const sheet = workbook.addWorksheet('Icon Mismatch');
-  sheet.columns = [
-    { header: 'Status', key: 'status', width: 14 },
-    { header: 'Expected Icon', key: 'expectedIcon', width: 24 },
-    { header: 'Actual Icon', key: 'actualIcon', width: 24 },
-    { header: 'Details', key: 'details', width: 76 },
-  ];
-
-  for (const item of payload.iconMismatch) {
-    sheet.addRow({
-      status: 'MISMATCH',
-      expectedIcon: item.iconA || '',
-      actualIcon: item.iconB || '',
-      details: `Title: ${item.title}. Menu title and text matched, but icon code is different.`,
-    });
-  }
-
-  finalizeSheet(sheet);
-}
-
-function addExtraSheet(workbook, payload) {
-  const sheet = workbook.addWorksheet('Extra');
-  applyTextColumns(sheet);
-  const mapB = itemMap(payload.itemsB);
-
-  for (const title of payload.extraB) {
-    const actual = mapB.get(key(title));
-    sheet.addRow(toSidebarRow({
-      status: 'EXTRA',
-      expected: null,
-      actual,
-      details: `Title: ${actual?.title || title}. Actual has this menu item, but Expected does not.`,
-    }));
-  }
-
-  finalizeSheet(sheet);
-}
-
-function applyTextColumns(sheet) {
-  sheet.columns = [
-    { header: 'Status', key: 'status', width: 14 },
-    { header: 'Expected Text', key: 'expectedText', width: 52 },
-    { header: 'Actual Text', key: 'actualText', width: 52 },
-    { header: 'Details', key: 'details', width: 76 },
-  ];
-}
-
-function toSidebarRow({ status, expected, actual, details }) {
-  return {
-    status,
-    expectedText: displayText(expected),
-    actualText: displayText(actual),
-    details,
-  };
-}
-
-function displayText(item) {
-  return item?.text || item?.title || '';
-}
-
-function finalizeSheet(sheet) {
-  styleHeaderRow(sheet.getRow(1));
-  applyStatusStyles(sheet, 2, sheet.rowCount, 1);
-  polishWorksheet(sheet);
-  sheet.views = [{ state: 'frozen', ySplit: 1 }];
-  sheet.autoFilter = {
-    from: 'A1',
-    to: sheet.getCell(1, sheet.columnCount).address,
-  };
-}
-
-function itemMap(items) {
-  return new Map(items.map((item) => [key(item.title), item]));
-}
-
-function key(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-function styleHeaderRow(row) {
-  row.font = { ...defaultFont, bold: true, color: { argb: 'FFFFFFFF' } };
-  row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.HEADER } };
-}
-
-function applyStatusStyles(sheet, startRow, endRow, statusColumn) {
-  for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
-    const cell = sheet.getRow(rowNumber).getCell(statusColumn);
-    const value = String(cell.value || '').toUpperCase();
-
-    if (value.includes('PASS')) {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.PASS } };
-    } else if (value.includes('MISSING') || value.includes('FAIL')) {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.FAIL } };
-    } else if (value.includes('EXTRA') || value.includes('MISMATCH') || value.includes('WARN')) {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fills.WARN } };
+function addOverview(sheet, report, comparisonCount) {
+  sheet.columns = [16, 14, 14, 16, 14, 14, 14, 23, 18, 14].map((width) => ({ width }));
+  sheet.getCell('A2').value = 'Sidebar Comparison';
+  sheet.getCell('A2').font = { name: 'Arial', size: 16, bold: true };
+  sheet.getCell('A3').value = `Generated: ${new Date(report.generatedAt).toLocaleString('en-GB')}`;
+  sheet.getCell('A5').value = 'Result'; sheet.getCell('B5').value = report.status;
+  sheet.getCell('D5').value = 'Execution'; sheet.getCell('E5').value = report.executionStatus;
+  sheet.getCell('G5').value = 'Duration (s)'; sheet.getCell('H5').value = report.durationMs / 1000;
+  sheet.getCell('H5').numFmt = '0.0';
+  sheet.getCell('A6').value = 'Sites'; sheet.getCell('B6').value = report.sites.length;
+  sheet.getCell('D6').value = 'Comparisons'; sheet.getCell('E6').value = report.summary.total;
+  sheet.getCell('G6').value = 'Global errors'; sheet.getCell('H6').value = report.globalErrors.length;
+  sheet.getRow(9).values = ['Site', 'Comparisons', 'Matched', 'Differences', 'Errors', 'Skipped', 'Not run', 'Missing / text mismatch', 'Icon mismatch', 'Extra'];
+  const end = Math.max(6, comparisonCount + 5);
+  const siteRange = `'Comparisons'!$A$6:$A$${end}`;
+  const statusRange = `'Comparisons'!$F$6:$F$${end}`;
+  for (const [index, site] of report.sites.entries()) {
+    const row = index + 10;
+    sheet.getCell(row, 1).value = site.site;
+    sheet.getCell(row, 2).value = { formula: `COUNTIFS(${siteRange},$A${row})`, result: site.total };
+    for (const [offset, [status, count]] of [
+      ['MATCHED', site.matched], ['DIFFERENCES', site.differences], ['ERROR', site.errors],
+      ['SKIPPED', site.skipped], ['NOT RUN', site.notRun],
+    ].entries()) {
+      sheet.getCell(row, offset + 3).value = { formula: `COUNTIFS(${siteRange},$A${row},${statusRange},"${status}")`, result: count };
+    }
+    for (const [offset, [column, count]] of [['K', site.missing], ['L', site.iconMismatch], ['M', site.extra]].entries()) {
+      sheet.getCell(row, offset + 8).value = { formula: `SUMIFS('Comparisons'!$${column}$6:$${column}$${end},${siteRange},$A${row})`, result: count };
     }
   }
+  const totalRow = report.sites.length + 10;
+  sheet.getCell(totalRow, 1).value = 'Total';
+  const totals = ['total', 'matched', 'differences', 'errors', 'skipped', 'notRun', 'missing', 'iconMismatch', 'extra'];
+  totals.forEach((key, index) => {
+    const letter = sheet.getColumn(index + 2).letter;
+    sheet.getCell(totalRow, index + 2).value = report.sites.length
+      ? { formula: `SUM(${letter}10:${letter}${totalRow - 1})`, result: report.summary[key] } : 0;
+  });
+  styleTable(sheet, 9, totalRow, 10);
+  sheet.getRow(totalRow).font = { name: 'Arial', size: 10, bold: true };
+  for (const row of [3, 5, 6]) sheet.getRow(row).font = { name: 'Arial', size: 10 };
+  sheet.getCell(totalRow + 2, 1).value = 'DIFFERENCES means menu content differs. ERROR means comparison could not complete. See Comparisons for URLs and Execution Errors for failures.';
+  sheet.getCell(totalRow + 2, 1).font = { name: 'Arial', size: 10, italic: true };
+  sheet.views = [{ showGridLines: false }];
 }
 
-function polishWorksheet(sheet) {
-  for (let rowNumber = 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
-    const row = sheet.getRow(rowNumber);
-
-    for (let colNumber = 1; colNumber <= sheet.columnCount; colNumber += 1) {
-      const cell = row.getCell(colNumber);
-
-      cell.font = {
-        ...defaultFont,
-        ...(cell.font || {}),
-        name: defaultFont.name,
-        size: defaultFont.size,
-      };
-      cell.alignment = {
-        ...(cell.alignment || {}),
-        vertical: cell.alignment?.vertical || 'top',
-        wrapText: true,
-      };
-      cell.border = allBorders;
+function styleTable(sheet, header, last, columnCount) {
+  for (let rowIndex = header; rowIndex <= last; rowIndex++) {
+    const row = sheet.getRow(rowIndex);
+    let lines = 1;
+    for (let column = 1; column <= columnCount; column++) {
+      const cell = row.getCell(column);
+      cell.font = { name: 'Arial', size: 10, ...(rowIndex === header ? { bold: true, color: { argb: 'FFFFFFFF' } } : {}) };
+      cell.alignment = { vertical: 'top', wrapText: true, horizontal: rowIndex === header ? 'center' : typeof cell.value === 'number' || cell.value?.formula ? 'right' : 'left' };
+      if (rowIndex === header) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FFCED4DC' } } };
+      } else if (rowIndex % 2 === 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F6F8' } };
+      }
+      const width = sheet.getColumn(column).width || 12;
+      lines = Math.max(lines, ...String(cell.value?.formula ? cell.value.result : cell.value ?? '').split('\n').map((text) => Math.ceil(text.length / Math.max(8, width - 3))));
     }
+    row.height = Math.min(400, Math.max(rowIndex === header ? 32 : 24, lines * 14 + 8));
   }
 }
 
-async function removeOldExcelReports(reportDir, payload) {
-  const entries = await fs.readdir(reportDir, { withFileTypes: true }).catch(() => []);
-  const slug = payload.reportSlug || payload.productKey || '';
-  const pattern = slug
-    ? new RegExp(`^~?\\$?latest-report-${escapeRegExp(slug)}(?:-\\d+)?\\.xlsx$`, 'i')
-    : /^~?\$?latest-report.*\.xlsx$/i;
-
-  await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && pattern.test(entry.name))
-      .map((entry) => fs.rm(path.join(reportDir, entry.name), { force: true }).catch(() => {})),
-  );
-}
-
-async function writeWorkbookWithFallback(workbook, preferredExcelPath) {
-  try {
-    await workbook.xlsx.writeFile(preferredExcelPath);
-    return preferredExcelPath;
-  } catch (error) {
-    if (!['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) {
-      throw error;
-    }
-
-    const fallbackPath = path.join(
-      path.dirname(preferredExcelPath),
-      `latest-report-${Date.now()}.xlsx`,
-    );
-    await workbook.xlsx.writeFile(fallbackPath);
-    return fallbackPath;
-  }
-}
-
-function toJsonPayload(payload) {
-  return {
-    productName: payload.productName || '',
-    productKey: payload.productKey || '',
-    labelA: payload.labelA,
-    labelB: payload.labelB,
-    urlA: payload.urlA,
-    urlB: payload.urlB,
-    itemsA: payload.itemsA,
-    itemsB: payload.itemsB,
-    matched: payload.matched,
-    missing: payload.missing,
-    iconMismatch: payload.iconMismatch,
-    extraB: payload.extraB,
-    error: payload.error || '',
+function addStatusRules(sheet, column, first, last) {
+  const letter = sheet.getColumn(column).letter;
+  const colors = {
+    MATCHED: ['FFE6F2EA', 'FF24633D'], DIFFERENCES: ['FFFFF1D4', 'FF805A14'],
+    ERROR: ['FFFBE4E4', 'FF9B2525'], MISSING: ['FFFBE4E4', 'FF9B2525'],
+    'TEXT MISMATCH': ['FFFBE4E4', 'FF9B2525'], 'ICON MISMATCH': ['FFFFF1D4', 'FF805A14'],
+    EXTRA: ['FFE5EEF9', 'FF315C8C'], SKIPPED: ['FFECEEF1', 'FF535E6A'], 'NOT RUN': ['FFECEEF1', 'FF535E6A'],
   };
-}
-
-function reportFileName(payload, extension) {
-  const slug = payload.reportSlug || payload.productKey || '';
-  return slug ? `latest-report-${slug}.${extension}` : latestExcelFile;
-}
-
-function resultFileName(payload, extension) {
-  const slug = payload.reportSlug || payload.productKey || '';
-  return slug ? `latest-results-${slug}.${extension}` : latestJsonFile;
-}
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function formatReportTimestamp(date = new Date()) {
-  const pad = (value) => String(value).padStart(2, '0');
-  const hours24 = date.getHours();
-  const hours12 = hours24 % 12 || 12;
-  const ampm = hours24 >= 12 ? 'PM' : 'AM';
-
-  return [
-    `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`,
-    `${pad(hours12)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${ampm}`,
-  ].join(' ');
+  sheet.addConditionalFormatting({
+    ref: `${letter}${first}:${letter}${last}`,
+    rules: Object.entries(colors).map(([status, [bg, fg]]) => ({
+      type: 'expression', formulae: [`${letter}${first}="${status}"`],
+      style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, font: { bold: true, color: { argb: fg } } },
+    })),
+  });
 }

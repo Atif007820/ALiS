@@ -21,19 +21,26 @@ export default defineConfig({
   timeout: 10 * 60 * 1000,
   retries: 0,
   workers,
+  outputDir,
 
   reporter: [
     ['list'],
-    ['html', {
-      open: 'always',
-      outputFolder: 'playwright-report',
-    }],
+    ['./reporters/consolidatedReporter.js'],
     ['json', { outputFile: `${outputDir}/results.json` }],
   ],
 
   use: {
     browserName: 'chromium',
-    headless: process.env.CI ? true : runSettings.headless,
+    headless: process.env.SIDEBAR_HEADED !== undefined
+      ? process.env.SIDEBAR_HEADED !== 'true'
+      : process.env.CI ? true : runSettings.headless,
+    launchOptions: {
+      slowMo: Number(runSettings.slowMo ?? 0),
+      args: [
+        '--ignore-certificate-errors',
+        ...(runSettings.maximizeWindow ? ['--start-maximized'] : []),
+      ],
+    },
     ignoreHTTPSErrors: true,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

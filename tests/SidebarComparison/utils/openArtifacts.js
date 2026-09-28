@@ -1,6 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 export async function openGeneratedReports({ excelPath, htmlPath }, logger = console, {
   openHtml = true,
@@ -9,24 +12,21 @@ export async function openGeneratedReports({ excelPath, htmlPath }, logger = con
   const targets = [];
 
   if (openHtml && htmlPath && await fileExists(htmlPath)) {
-    targets.push(htmlPath);
+    // Playwright serves the one consolidated index.html and opens it once.
+    const child = spawn(process.execPath, [
+      require.resolve('@playwright/test/cli'), 'show-report', path.dirname(htmlPath), '--host', '127.0.0.1',
+    ], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', (error) => logger.warn?.(`Unable to open report: ${error.message}`));
+    child.unref();
   }
 
   if (openExcel && excelPath && await fileExists(excelPath)) {
-    targets.push(await copyExcelForViewing(excelPath));
+    targets.push(excelPath);
   }
 
   for (const target of targets) {
     openFile(target, logger);
   }
-}
-
-async function copyExcelForViewing(excelPath) {
-  const parsed = path.parse(excelPath);
-  const viewPath = path.join(parsed.dir, `${parsed.name}-view-${Date.now()}${parsed.ext}`);
-
-  await fs.copyFile(excelPath, viewPath);
-  return viewPath;
 }
 
 async function fileExists(filePath) {

@@ -1,4 +1,23 @@
 {
+  "sites": ["NVRCP"],
+  "products": [],
+  "businessUnits": {
+    "NVRCP": {
+      "1": { "urlA": "", "urlB": "" }
+    },
+    "DPBH": {
+      "1": { "urlA": "", "urlB": "" }
+    },
+    "TXOCA": {
+      "1": { "urlA": "", "urlB": "" }
+    },
+    "NJ": {
+      "1": { "urlA": "", "urlB": "" }
+    },
+    "SAPTA": {
+      "1": { "urlA": "", "urlB": "" }
+    }
+  },
   "fullyParallel": true,
   "workers": 3,
   "parallelWorkers": 3,
@@ -10,7 +29,7 @@
   "loginTimeout": 45000,
   "sidebarTimeout": 45000,
   "sidebarPollInterval": 500,
-  "openHtmlReport": false,
+  "openHtmlReport": true,
   "openExcelReport": false,
   "attachReports": true,
   "outputDir": "test-results",

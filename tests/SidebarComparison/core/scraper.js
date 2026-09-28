@@ -1,4 +1,3 @@
-import { CONFIG } from '../config/url.js';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
 
 const SIDEBAR_SIGNATURES = {
@@ -107,7 +106,7 @@ async function detectSidebarType(page, label) {
 
 export async function getSidebarItems(browser, env) {
   const started = Date.now();
-  const { usernameField, passwordField, loginButton } = CONFIG.login;
+  const { usernameField, passwordField, loginButton } = env.login;
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
     viewport: runSettings.viewport ?? null,
