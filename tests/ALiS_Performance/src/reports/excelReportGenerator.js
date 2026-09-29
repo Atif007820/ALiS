@@ -115,6 +115,7 @@ function addTitle(worksheet, range, text, color = COLORS.navy) {
   cell.font = { name: 'Aptos Display', size: 17, bold: true, color: { argb: COLORS.white } };
   cell.alignment = { vertical: 'middle', horizontal: 'left' };
   worksheet.getRow(cell.row).height = 36;
+  outlineRange(worksheet, range);
 }
 
 function addSubtitle(worksheet, range, text, color = COLORS.blue) {
@@ -125,6 +126,7 @@ function addSubtitle(worksheet, range, text, color = COLORS.blue) {
   cell.font = { name: 'Aptos', size: 10, color: { argb: COLORS.white } };
   cell.alignment = { vertical: 'middle', horizontal: 'left' };
   worksheet.getRow(cell.row).height = 24;
+  outlineRange(worksheet, range);
 }
 
 function addUrlRow(worksheet, range, url) {
@@ -135,6 +137,7 @@ function addUrlRow(worksheet, range, url) {
   cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF0066CC' }, underline: Boolean(url) };
   cell.alignment = { vertical: 'middle', horizontal: 'left' };
   worksheet.getRow(cell.row).height = 22;
+  outlineRange(worksheet, range);
 }
 
 function styleHeaderRow(row, headings, color = COLORS.blue) {
@@ -153,10 +156,42 @@ function styleDataRow(row, rowIndex) {
   row.eachCell({ includeEmpty: true }, (cell) => {
     cell.fill = fill(rowIndex % 2 === 0 ? COLORS.white : COLORS.rowAlt);
     cell.font = { name: 'Aptos', size: 9, color: { argb: COLORS.text } };
-    cell.border = { bottom: { style: 'hair', color: { argb: COLORS.border } } };
+    cell.border = thinBorder;
     cell.alignment = { vertical: 'middle', wrapText: false };
   });
   row.height = 21;
+}
+
+function outlineRange(worksheet, range, color = COLORS.border, style = 'thin') {
+  const [startAddress, endAddress = startAddress] = range.split(':');
+  const start = worksheet.getCell(startAddress);
+  const end = worksheet.getCell(endAddress);
+  for (let row = start.row; row <= end.row; row += 1) {
+    for (let column = start.col; column <= end.col; column += 1) {
+      const cell = worksheet.getCell(row, column);
+      const border = { ...cell.border };
+      if (row === start.row) border.top = { style, color: { argb: color } };
+      if (row === end.row) border.bottom = { style, color: { argb: color } };
+      if (column === start.col) border.left = { style, color: { argb: color } };
+      if (column === end.col) border.right = { style, color: { argb: color } };
+      cell.border = border;
+    }
+  }
+}
+
+function setRangeEdge(worksheet, range, edge, color = COLORS.border, style = 'thin') {
+  const [startAddress, endAddress = startAddress] = range.split(':');
+  const start = worksheet.getCell(startAddress);
+  const end = worksheet.getCell(endAddress);
+  const horizontal = edge === 'top' || edge === 'bottom';
+  const fixed = edge === 'top' ? start.row : edge === 'bottom' ? end.row
+    : edge === 'left' ? start.col : end.col;
+  const first = horizontal ? start.col : start.row;
+  const last = horizontal ? end.col : end.row;
+  for (let index = first; index <= last; index += 1) {
+    const cell = horizontal ? worksheet.getCell(fixed, index) : worksheet.getCell(index, fixed);
+    cell.border = { ...cell.border, [edge]: { style, color: { argb: color } } };
+  }
 }
 
 function styleStatusCells(row, statusColumn, resultColumn, passed) {
@@ -219,6 +254,10 @@ function buildDashboard(workbook, context) {
     value.font = { name: 'Aptos Display', size: 24, bold: true, color: { argb: color } };
     label.alignment = { horizontal: 'center', vertical: 'middle' };
     value.alignment = { horizontal: 'center', vertical: 'middle' };
+    const start = worksheet.getCell(labelRange.split(':')[0]);
+    const end = worksheet.getCell(valueRange.split(':')[1]);
+    outlineRange(worksheet, `${start.address}:${end.address}`);
+    setRangeEdge(worksheet, labelRange, 'bottom');
   }
   worksheet.getRow(6).height = 23;
   worksheet.getRow(7).height = 23;
@@ -258,6 +297,9 @@ function buildDashboard(workbook, context) {
       cell.fill = fill(index % 2 ? COLORS.white : COLORS.rowAlt);
       cell.border = thinBorder;
       cell.alignment = { vertical: 'middle', horizontal: 'left' };
+    }
+    for (const range of [`A${rowNumber}:B${rowNumber}`, `C${rowNumber}:D${rowNumber}`, `E${rowNumber}:F${rowNumber}`, `G${rowNumber}:H${rowNumber}`]) {
+      outlineRange(worksheet, range);
     }
     worksheet.getCell(`C${rowNumber}`).font = { bold: true, color: { argb: COLORS.blue } };
     worksheet.getCell(`G${rowNumber}`).font = { bold: true, color: { argb: COLORS.tealDark } };
@@ -447,6 +489,7 @@ function buildBreaches(workbook, context) {
     cell.fill = fill(COLORS.greenFill);
     cell.font = { bold: true, color: { argb: COLORS.green } };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    outlineRange(worksheet, 'A6:I7');
   }
   setSheetDefaults(worksheet);
 }
@@ -481,6 +524,7 @@ function buildLegend(workbook, context) {
     section.value = title;
     section.fill = fill(COLORS.blue);
     section.font = { bold: true, color: { argb: COLORS.white } };
+    outlineRange(worksheet, `A${rowNumber}:B${rowNumber}`);
     rowNumber += 1;
     styleHeaderRow(worksheet.getRow(rowNumber), ['Value', 'Meaning']);
     rowNumber += 1;

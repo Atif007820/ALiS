@@ -62,7 +62,7 @@ test.describe('Sidebar Comparison', () => {
         payload.error = error?.stack || error?.message || String(error);
         throw error;
       } finally {
-        await attachReport({ testInfo, includeText: runSettings.attachReports, ...payload });
+        await attachReport({ testInfo, includeReports: runSettings.attachReports, ...payload });
         console.log(`\nComparison finished for ${comparison.site} / ${comparison.name}.`);
       }
     });

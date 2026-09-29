@@ -189,29 +189,74 @@ One consolidated HTML report and one Excel workbook are written after
 ALL selected comparisons finish, for both single-site and multiple-site runs.
 No individual product HTML reports or workbooks are generated.
 
-HTML:  playwright-report/index.html
-Excel: playwright-report/sidebar-comparison.xlsx
-Data:  playwright-report/summary.json (current-run consolidated results)
+Playwright test report: playwright-report/index.html (built-in HTML reporter)
+Comparison HTML: comparison-report/index.html
+Excel: comparison-report/sidebar-comparison.xlsx
+Data: comparison-report/summary.json (current-run consolidated results)
 
-The HTML report groups products by site, with site/status filters and search.
+The native Playwright test report and comparison HTML report each open once
+after all reporters finish, for passed and failed runs. Their auto-open settings
+are independent. Open a test in Playwright and expand Attachments for the clickable
+HTML Comparison Report and Excel Comparison Report links. Both contain the
+complete run, including all selected sites/products. The HTML attachment's
+Download Excel Report link also works when served by Playwright. Share the
+whole playwright-report folder, including data/, to keep attachments available.
+Playwright test steps, errors, screenshots and other attachments use the normal
+Playwright report interface. No custom recreation of that interface is used.
+
+The comparison HTML title is "Sidebar Comparison Report". Results are grouped by site,
+with site/status filters and search. Overall/product DIFFERENCES badges are
+not displayed; summary counts and comparison categories remain unchanged.
 Expand a product to see both URLs, item counts, comparison categories and errors.
-The Excel workbook has Run Summary, Comparisons, Differences, Matched Text,
-and Execution Errors tabs, with site/product columns and filters throughout.
+The Excel workbook keeps Run Summary, Comparisons and Execution Errors, with
+four separate detail sheets: Missing-Text Mismatch, Icon Mismatch,
+Extra in URL B and Matched Text. Excel does not allow '/' in worksheet names.
+The Missing-Text Mismatch sheet heading is "Missing/Text Mismatch".
+Comparisons does not include a Comparison Result column. The Run Summary
+retains the recorded outcome counts without adding a hidden status column.
+Each detail sheet groups results by site/product, using the same five columns
+as HTML: Menu item / category, URL A text, URL B text, URL A icon, URL B icon.
+Populated detail tables have their own column filters. Empty categories and
+unavailable comparisons are shown explicitly. Matched Text includes items with
+matching text, even when their icons differ. Every row is labeled TEXT MATCHED;
+icon differences remain listed in Icon Mismatch. The HTML download link is
+labeled "Download Excel Report".
 MATCHED means both text and icons match; DIFFERENCES means comparison found
 menu changes; ERROR means a runtime failure; SKIPPED/NOT RUN remain explicit.
 Runtime failures before login and retries are included. Only the final attempt
 counts toward totals; earlier attempts remain available in error/history detail.
-Repeats and browser projects have separate rows within the same report.
+Browser project and repeat labels/columns are omitted from comparison HTML and Excel.
+The native Playwright report keeps its standard project and retry information.
+Their internal identifiers still keep separate executions from overwriting
+each other. Repeated comparisons are retained, not silently deduplicated.
 Reports only contain tests selected for the current run; older files are not scanned.
 --list does not generate or replace reports.
 
 runSettings.json:
-  openHtmlReport: true   Open the consolidated report once through Playwright.
+  openHtmlReport: true   Open the comparison HTML report once at run end.
+  openPlaywrightReport: true Open the native Playwright test report once at run end.
   openExcelReport: false Open the workbook once when changed to true.
-  attachReports: true   Keep optional per-test text attachments for diagnostics.
-Structured result attachments are always collected for consolidation.
+  attachReports: true   Attach HTML, Excel, JSON and text comparison reports.
+  attachReports: false Do not attach comparison reports to the Playwright report.
+HTML and Excel reports are still generated with either setting; auto-open is
+controlled separately. Comparison data remains internal for aggregation.
+Screenshots, videos, traces and stdout/stderr are Playwright diagnostics and
+are not controlled by attachReports. Changes apply to newly generated reports,
+not reports from earlier runs. Set true again to restore the report links.
 PLAYWRIGHT_HTML_OPEN=never disables automatic HTML opening for unattended runs.
+CI runs generate all reports without opening a browser. --list opens nothing.
+Automatic opening and npm run report both use Playwright show-report with an
+available port. An older report using port 9323 will not block the next run.
+The terminal prints the report URL after the server is ready. Startup errors
+are shown as warnings instead of being hidden. Each enabled report opens once.
 If the previous workbook is locked in Excel, the new workbook gets a timestamp
 suffix and the HTML download link points to that current-run workbook.
 
 npm run report
+
+REPORTING VERIFICATION (NO SITE LOGIN)
+------------------------------------------------------------
+npm run test:reports
+Checks native report generation, HTML/Excel attachment links, retries, failures,
+skipped tests, auto-open preferences and preservation of reports during --list.
+Uses temporary files and does not replace the latest framework reports.

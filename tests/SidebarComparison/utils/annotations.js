@@ -1,7 +1,6 @@
 // ============================================================
 //  annotations.js
-//  Publishes structured results to the consolidated reporter,
-//  with an optional plain-text attachment for diagnostics.
+//  Publishes comparison data independently of visible report attachments.
 // ============================================================
 
 
@@ -11,14 +10,20 @@
 // ─────────────────────────────────────────────────────────────
 export const COMPARISON_METADATA = 'sidebar-comparison';
 export const COMPARISON_RESULT = 'sidebar-comparison-result';
+export const INTERNAL_COMPARISON_RESULT = '_sidebar-comparison-result';
 
-export async function attachReport({ testInfo, includeText = true, ...payload }) {
-  // This attachment is the per-test input to the single run-level reporter.
+export async function attachReport({ testInfo, includeReports = true, ...payload }) {
+  const data = JSON.stringify(payload);
+  if (!includeReports) {
+    // Playwright hides underscore-prefixed annotations. Keep aggregation data
+    // without creating visible attachments or attachment steps.
+    testInfo.annotations.push({ type: INTERNAL_COMPARISON_RESULT, description: data });
+    return;
+  }
   await testInfo.attach(COMPARISON_RESULT, {
-    body: Buffer.from(JSON.stringify(payload)),
+    body: Buffer.from(data),
     contentType: 'application/json',
   });
-  if (!includeText) return;
   const { site, productId, productName, labelA, labelB, urlA, urlB, itemsA, itemsB, matched, missing, iconMismatch, extraB, error } = payload;
 
   const D = '─'.repeat(50);

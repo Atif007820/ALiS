@@ -2,7 +2,7 @@
 const productComparisons = [
   {
     id: 1,
-    name: 'Product 1',
+    name: 'Health Facilities',
     enabled: true,
     urlA: {
       loginUrl: 'https://172.16.3.2/ALiSDPBH2TESTING11.3.25.03/Login.aspx',

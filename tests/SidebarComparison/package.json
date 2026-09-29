@@ -12,7 +12,8 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "list": "playwright test --list",
-    "report": "playwright show-report"
+    "test:reports": "node --test reporters/tests/nativeReports.test.js",
+    "report": "playwright show-report --host 127.0.0.1 --port 0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

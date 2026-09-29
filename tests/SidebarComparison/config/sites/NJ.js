@@ -2,7 +2,7 @@
 const productComparisons = [
   {
     id: 1,
-    name: 'Product 1',
+    name: 'Blood Bank',
     enabled: true,
     urlA: {
       loginUrl: 'https://172.16.3.2/ALiSNJDOH2TESTING11.3.25.03/LoginNJ.aspx',
@@ -19,7 +19,7 @@ const productComparisons = [
   },
   {
     id: 2,
-    name: 'Product 2',
+    name: 'Clinical Laboratory',
     enabled: true,
     urlA: {
       loginUrl: 'https://172.16.3.2/ALiSNJDOH2TESTING11.3.25.03/LoginNJ.aspx',

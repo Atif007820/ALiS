@@ -1,19 +1,20 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
-import { COMPARISON_METADATA, COMPARISON_RESULT } from '../utils/annotations.js';
+import { COMPARISON_METADATA, COMPARISON_RESULT, INTERNAL_COMPARISON_RESULT } from '../utils/annotations.js';
 import { openGeneratedReports } from '../utils/openArtifacts.js';
 import { writeExcelReport } from './excelReporter.js';
 import { writeHtmlReport } from './htmlReporter.js';
+import { comparisonReportDir, playwrightReportDir } from '../config/reportPaths.js';
 
-const frameworkRoot = fileURLToPath(new URL('../', import.meta.url));
 const collectionNames = ['itemsA', 'itemsB', 'matched', 'missing', 'iconMismatch', 'extraB'];
 
 export default class ConsolidatedReporter {
   constructor(options = {}) {
-    this.reportDir = options.reportDir || path.join(frameworkRoot, 'playwright-report');
+    this.reportDir = options.reportDir || comparisonReportDir;
+    this.nativeReportDir = options.nativeReportDir || playwrightReportDir;
+    this.htmlOpen = options.htmlOpen;
     this.settings = options.settings || runSettings;
     this.tests = [];
     this.latest = new Map();
@@ -36,6 +37,7 @@ export default class ConsolidatedReporter {
 
   async onEnd(result) {
     if (this.listOnly) return;
+    this.runStatus = result.status;
     try {
       const records = [];
       for (const test of this.tests) {
@@ -47,18 +49,58 @@ export default class ConsolidatedReporter {
       const excelPath = await writeExcelReport(report, { reportDir: this.reportDir });
       const htmlPath = await writeHtmlReport(report, { reportDir: this.reportDir, excelFile: path.basename(excelPath) });
       await fs.writeFile(path.join(this.reportDir, 'summary.json'), JSON.stringify(report, null, 2));
+      this.artifacts = { htmlPath, excelPath };
+      // The next reporter (Playwright HTML) serializes these completed files.
+      // Attach to every attempt so failed/retried tests expose the same run report.
+      if (this.settings.attachReports !== false) {
+        for (const test of this.tests) {
+          for (const attempt of test.results) {
+            attempt.attachments.push(
+              { name: 'HTML Comparison Report', path: htmlPath, contentType: 'text/html' },
+              { name: 'Excel Comparison Report', path: excelPath, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+            );
+          }
+        }
+      }
       console.log(`\nConsolidated comparison result: ${report.status}`);
       console.log(`Sites: ${report.sites.length} | Comparisons: ${report.summary.total} | Differences: ${report.summary.differences} | Errors: ${report.summary.errors}`);
       console.log(`HTML report: ${htmlPath}`);
       console.log(`Excel report: ${excelPath}`);
       console.log('Open report: npm run report');
-      await openGeneratedReports({ htmlPath, excelPath }, console, {
-        openHtml: shouldOpenHtml(this.settings, report.status),
-        openExcel: Boolean(this.settings.openExcelReport),
-      });
     } catch (error) {
       console.error(`Consolidated report generation failed: ${errorText(error)}`);
       return { status: 'failed' };
+    }
+  }
+
+  async onExit() {
+    if (this.listOnly || !this.runStatus) return;
+    const htmlPath = path.join(this.nativeReportDir, 'index.html');
+    try {
+      await fs.access(htmlPath);
+      if (this.artifacts && this.settings.attachReports !== false) {
+        // Playwright renames attachments by content hash. Keep the workbook's
+        // original name alongside them for the custom HTML's relative download.
+        const dataDir = path.join(this.nativeReportDir, 'data');
+        await fs.mkdir(dataDir, { recursive: true });
+        await fs.copyFile(this.artifacts.excelPath, path.join(dataDir, path.basename(this.artifacts.excelPath)));
+      }
+      console.log(`Playwright test report: ${htmlPath}`);
+      const opening = reportOpenOptions(this.settings, this.runStatus, this.htmlOpen);
+      await openGeneratedReports({ htmlPath }, console, {
+        openHtml: opening.playwright,
+        openExcel: false,
+      });
+      if (this.artifacts) {
+        await openGeneratedReports(this.artifacts, console, {
+          openHtml: opening.comparison,
+          openExcel: opening.excel,
+          label: 'Comparison HTML report',
+        });
+      }
+    } catch (error) {
+      console.error(`Playwright report finalization failed: ${errorText(error)}`);
+      process.exitCode = 1;
     }
   }
 
@@ -75,9 +117,10 @@ export async function buildComparisonRecord(test, result) {
   }
   let payload;
   const attachment = result?.attachments?.find((item) => item.name === COMPARISON_RESULT);
-  if (attachment) {
+  const internalData = (result?.annotations || test.annotations).find((item) => item.type === INTERNAL_COMPARISON_RESULT)?.description;
+  if (attachment || internalData) {
     try {
-      const data = attachment.body || await fs.readFile(attachment.path);
+      const data = attachment ? attachment.body || await fs.readFile(attachment.path) : internalData;
       payload = JSON.parse(data.toString('utf8'));
       if (!collectionNames.every((key) => Array.isArray(payload[key]))) {
         throw new Error('Comparison result attachment has missing result collections.');
@@ -157,11 +200,18 @@ function errorText(error) {
   return stripVTControlCharacters(String(error?.stack || error?.message || error || ''));
 }
 
-function shouldOpenHtml(settings, status) {
+export function shouldOpenHtml(settings, status, override) {
   if (process.env.CI) return false;
-  const override = process.env.PLAYWRIGHT_HTML_OPEN;
   if (override === 'never') return false;
   if (override === 'always') return true;
-  if (override === 'on-failure') return status !== 'MATCHED';
+  if (override === 'on-failure') return status !== 'passed';
   return Boolean(settings.openHtmlReport);
+}
+
+export function reportOpenOptions(settings, status, override) {
+  return {
+    playwright: shouldOpenHtml({ openHtmlReport: settings.openPlaywrightReport ?? true }, status, override),
+    comparison: Boolean(settings.openHtmlReport) && shouldOpenHtml(settings, status, override),
+    excel: Boolean(settings.openExcelReport) && !process.env.CI,
+  };
 }

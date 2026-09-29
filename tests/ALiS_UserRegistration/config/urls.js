@@ -8,7 +8,7 @@ export const environments = {
       NVRCP: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.41.08/LoginRadiation.aspx',
       NJ: 'http://172.16.3.2/ALiSNJDOH2TESTING11.4.41.08/LoginNJ.aspx',
       CONV: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.41.08/LoginCMS.aspx',
-      CRANES: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.41.08/LoginCMS.aspx',
+      CRANES: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.41.07/LoginCMS.aspx',
       SAPTA: 'http://172.16.3.2/ALiSNVSAPTA2TESTING11.4.41.08/LoginBHCEN.aspx',
       TXFSC: 'http://172.16.3.2/ALiSTXFSC2TESTING11.4.41.08/LoginTXFSC.aspx',
     },

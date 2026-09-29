@@ -1,6 +1,13 @@
 // @ts-check
 import { defineConfig } from '@playwright/test';
 import runSettings from './config/runSettings.json' with { type: 'json' };
+import { comparisonReportDir, playwrightReportDir } from './config/reportPaths.js';
+
+// The consolidated reporter opens the native report after all reporters finish.
+// Preserve the user's preference while preventing the built-in second opener.
+const htmlOpen = process.env.PLAYWRIGHT_HTML_OPEN || process.env.PW_TEST_HTML_REPORT_OPEN;
+process.env.PLAYWRIGHT_HTML_OPEN = 'never';
+const listOnly = process.env.SIDEBAR_LIST === 'true' || process.argv.includes('--list');
 
 const outputDir = runSettings.outputDir || 'test-results';
 const workers = positiveInteger(process.env.WORKERS)
@@ -13,6 +20,7 @@ export default defineConfig({
   testMatch: ['**/*.spec.js'],
   testIgnore: [
     '**/playwright-report/**',
+    '**/comparison-report/**',
     '**/test-results/**',
   ],
 
@@ -23,9 +31,12 @@ export default defineConfig({
   workers,
   outputDir,
 
-  reporter: [
+  reporter: listOnly ? [['list']] : [
     ['list'],
-    ['./reporters/consolidatedReporter.js'],
+    ['./reporters/consolidatedReporter.js', {
+      reportDir: comparisonReportDir, nativeReportDir: playwrightReportDir, htmlOpen,
+    }],
+    ['html', { outputFolder: playwrightReportDir, open: 'never', title: 'Sidebar Comparison - Playwright Test Report' }],
     ['json', { outputFile: `${outputDir}/results.json` }],
   ],
 

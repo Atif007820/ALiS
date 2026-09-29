@@ -30,6 +30,7 @@
   "sidebarTimeout": 45000,
   "sidebarPollInterval": 500,
   "openHtmlReport": true,
+  "openPlaywrightReport": true,
   "openExcelReport": false,
   "attachReports": true,
   "outputDir": "test-results",
