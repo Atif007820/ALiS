@@ -214,12 +214,13 @@ Extra in URL B and Matched Text. Excel does not allow '/' in worksheet names.
 The Missing-Text Mismatch sheet heading is "Missing/Text Mismatch".
 Comparisons does not include a Comparison Result column. The Run Summary
 retains the recorded outcome counts without adding a hidden status column.
-Each detail sheet groups results by site/product, using the same five columns
-as HTML: Menu item / category, URL A text, URL B text, URL A icon, URL B icon.
+Each detail sheet groups results by site/product, using the same four columns
+as HTML: URL A item, URL B item, URL A icon, URL B icon.
 Populated detail tables have their own column filters. Empty categories and
 unavailable comparisons are shown explicitly. Matched Text includes items with
-matching text, even when their icons differ. Every row is labeled TEXT MATCHED;
-icon differences remain listed in Icon Mismatch. The HTML download link is
+matching text, even when their icons differ. Each URL's menu item and icon are
+shown in separate side-by-side columns. Category labels appear in the relevant
+report section. Icon differences remain listed in Icon Mismatch. The HTML download link is
 labeled "Download Excel Report".
 MATCHED means both text and icons match; DIFFERENCES means comparison found
 menu changes; ERROR means a runtime failure; SKIPPED/NOT RUN remain explicit.

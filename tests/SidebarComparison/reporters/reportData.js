@@ -1,7 +1,6 @@
 export const DETAIL_COLUMNS = [
-  { label: 'Menu item / category', key: 'menuCategory', width: 38 },
-  { label: 'URL A text', key: 'expectedText', width: 44 },
-  { label: 'URL B text', key: 'actualText', width: 44 },
+  { label: 'URL A item', key: 'expectedText', width: 44 },
+  { label: 'URL B item', key: 'actualText', width: 44 },
   { label: 'URL A icon', key: 'expectedIcon', width: 20 },
   { label: 'URL B icon', key: 'actualIcon', width: 20 },
 ];
@@ -17,7 +16,7 @@ export const REPORT_CATEGORIES = [
   { title: 'Missing / Text Mismatch', sheetName: 'Missing-Text Mismatch', sheetTitle: 'Missing/Text Mismatch', categories: ['MISSING', 'TEXT MISMATCH'], color: 'A53D46' },
   { title: 'Icon Mismatch', sheetName: 'Icon Mismatch', categories: ['ICON MISMATCH'], color: '996C20' },
   { title: 'Extra in URL B', sheetName: 'Extra in URL B', categories: ['EXTRA'], color: '316A96' },
-  { title: 'Matched Text', sheetName: 'Matched Text', categories: ['MATCHED', 'ICON MISMATCH'], rowLabel: 'TEXT MATCHED', highlightCategories: ['TEXT MATCHED'], color: '347157', collapsible: true },
+  { title: 'Matched Text', sheetName: 'Matched Text', categories: ['MATCHED', 'ICON MISMATCH'], color: '347157', collapsible: true },
 ];
 
 export function formatReportDateTime(value) {

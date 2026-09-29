@@ -113,12 +113,10 @@ function addCategorySheet(workbook, category, categoryIndex, comparisons) {
         ref: `A${headerRow}`, headerRow: true, totalsRow: false,
         style: { theme: null, showRowStripes: false },
         columns: DETAIL_COLUMNS.map((column) => ({ name: column.label, filterButton: true })),
-        rows: rows.map((row) => DETAIL_COLUMNS.map((column) => column.key === 'menuCategory'
-          ? `${row.title}\n${category.rowLabel || row.category}`
-          : row[column.key] || (column.key.endsWith('Icon') ? '(none)' : null))),
+        rows: rows.map((row) => DETAIL_COLUMNS.map((column) =>
+          row[column.key] || (column.key.endsWith('Icon') ? '(none)' : null))),
       });
       styleTable(sheet, headerRow, headerRow + rows.length, DETAIL_COLUMNS.length);
-      addStatusRules(sheet, 1, headerRow + 1, headerRow + rows.length, true, category.highlightCategories);
       nextRow = headerRow + rows.length + 2;
     } else {
       styleTable(sheet, headerRow, headerRow, DETAIL_COLUMNS.length);
@@ -287,7 +285,7 @@ function styleTable(sheet, header, last, columnCount) {
   }
 }
 
-function addStatusRules(sheet, column, first, last, categoryInLastLine = false, highlightCategories) {
+function addStatusRules(sheet, column, first, last) {
   const letter = sheet.getColumn(column).letter;
   const colors = {
     MATCHED: ['FFE6F2EA', 'FF24633D'], 'TEXT MATCHED': ['FFE6F2EA', 'FF24633D'],
@@ -297,10 +295,8 @@ function addStatusRules(sheet, column, first, last, categoryInLastLine = false, 
   };
   sheet.addConditionalFormatting({
     ref: `${letter}${first}:${letter}${last}`,
-    rules: Object.entries(colors).filter(([status]) => !highlightCategories || highlightCategories.includes(status)).map(([status, [bg, fg]]) => ({
-      type: 'expression', formulae: [categoryInLastLine
-        ? `RIGHT(${letter}${first},${status.length + 1})=CHAR(10)&"${status}"`
-        : `${letter}${first}="${status}"`],
+    rules: Object.entries(colors).map(([status, [bg, fg]]) => ({
+      type: 'expression', formulae: [`${letter}${first}="${status}"`],
       style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, font: { bold: true, color: { argb: fg } } },
     })),
   });
