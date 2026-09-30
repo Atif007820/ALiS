@@ -6,6 +6,7 @@ import { chromium } from '@playwright/test';
 import { RegistrationPage } from '../pages/RegistrationPage.js';
 import { TxocaStrategy } from '../strategies/TxocaStrategy.js';
 import { sites } from '../config/sites.js';
+import { siteRegistry } from '../registry/siteRegistry.js';
 
 // Mocks, about:blank HTML and a loopback HTTP fixture only; no live registrations.
 const identity = { firstName: 'Test', lastName: 'Person', dob: '01/31/1980', date: '01/31/1980' };
@@ -20,6 +21,34 @@ function harness(page = {}, form = {}) {
   });
   return { strategy, attachments };
 }
+
+test('UAT product overrides resolve Mediator without changing TEST or PROD', () => {
+  const uat = siteRegistry.resolve('TXOCA', 'UAT');
+  const mediator = uat.products.find((product) => product.key === 'CR');
+  assert.equal(uat.loginUrl, 'https://alisuat.aithent.com/TXOCA/DefaultTexas.aspx');
+  assert.equal(mediator.name, 'Mediator');
+  assert.equal(mediator.program, 'Mediator');
+  assert.ok(mediator.aliases.includes('MEDIATOR'));
+  assert.equal(uat.products.find((product) => product.key === 'CRF').tabClickText, 'Mediator');
+  assert.equal(uat.products.find((product) => product.key === 'CF').registrationRowText, 'To Register a Guardianship as a Corporate Fiduciary');
+  const strategy = siteRegistry.createStrategy(uat, {});
+  assert.equal(strategy.product('MEDIATOR'), mediator);
+  for (const environment of ['TEST', 'PROD']) {
+    const reporter = siteRegistry.resolve('TXOCA', environment).products.find((product) => product.key === 'CR');
+    assert.equal(reporter.name, 'Court Reporters');
+    assert.equal(reporter.registrationHeading, 'Initial User Registration - Court Reporter Certification');
+    assert.equal(reporter.loginPrefix, 'CR_');
+  }
+  assert.equal(sites.TXOCA.products.find((product) => product.key === 'CR').name, 'Court Reporters');
+});
+
+test('Corporate Fiduciary has a shared registration-row contract in every environment', () => {
+  for (const environment of ['TEST', 'PROD', 'UAT']) {
+    const product = siteRegistry.resolve('TXOCA', environment).products.find((item) => item.key === 'CF');
+    assert.equal(product.registrationRowText, 'To Register a Guardianship as a Corporate Fiduciary');
+    assert.equal(product.registrationLinkId, 'Test_TabGuardianRegister_LinkButton1');
+  }
+});
 
 for (const productKey of ['GRD', 'CR', 'PS', 'CI', 'PROFESSIONAL_CG']) {
   test(`${productKey}: server mismatch stops after one submit and preserves evidence`, async () => {
@@ -121,6 +150,18 @@ test('local browser contracts for links and identity fields', async (t) => {
   const { strategy, attachments } = harness(page, form);
   const product = { key: 'CR', registrationRowText: 'To apply for New Certification', registrationLinkId: 'legacy-id' };
 
+  await t.test('Mediator tab selection skips the hidden startup dropdown option', async () => {
+    await page.setContent('<select hidden><option>Mediator</option></select><span class="ajax__tab_tab" onclick="document.body.dataset.selected = \'Mediator\'">Mediator</span>');
+    await strategy.selectProductTab({ key: 'CR', tabText: 'Mediator', tabClickText: 'Mediator' });
+    assert.equal(await page.locator('body').getAttribute('data-selected'), 'Mediator');
+  });
+
+  await t.test('an unavailable startup program fails without selecting another program', async () => {
+    await page.setContent('<div id="myModal"><label>Program<select><option value="">--Choose one--</option><option value="GRD">Guardians</option></select></label></div>');
+    await assert.rejects(strategy.selectStartupProgram({ key: 'CR', program: 'Mediator' }), { code: 'TXOCA_STARTUP_PROGRAM' });
+    assert.equal(await page.locator('select').inputValue(), '');
+  });
+
   await t.test('hidden duplicate rows and changed IDs resolve the visible intended link', async () => {
     await page.setContent(`<table>
       <tr hidden><td>To apply for New Certification</td><td><a id="legacy-id" href="#">Click Here</a></td></tr>
@@ -146,6 +187,36 @@ test('local browser contracts for links and identity fields', async (t) => {
   await t.test('products without a configured row retain the usable ID fallback', async () => {
     await page.setContent('<a id="legacy-id" href="#">Click Here</a>');
     assert.equal(await (await strategy.registrationLink({ key: 'CF', registrationLinkId: 'legacy-id' })).getAttribute('id'), 'legacy-id');
+  });
+
+  for (const [environment, linkId] of [
+    ['TEST', 'Test_TabGuardianRegister_LinkButton1'],
+    ['PROD', 'Test_TabGuardianRegister_LinkButton15'],
+    ['UAT', 'future-generated-id'],
+  ]) {
+    await t.test(`${environment}: Corporate Fiduciary resolves its row despite generated ID changes`, async () => {
+      const cf = siteRegistry.resolve('TXOCA', environment).products.find((item) => item.key === 'CF');
+      await page.setContent(`<table>
+        <tr><td>Register a Guardianship: <a id="regular-guardian" href="#">click here.</a></td></tr>
+        <tr><td>To Register a Guardianship as a Corporate Fiduciary: <a id="${linkId}" href="#">click here.</a></td></tr>
+        </table>`);
+      assert.equal(await (await strategy.registrationLink(cf)).getAttribute('id'), linkId);
+    });
+  }
+
+  await t.test('Corporate Fiduciary cannot reuse a legacy ID that now opens regular Guardianship', async () => {
+    const cf = strategy.product('CF');
+    await page.setContent(`<table><tr><td>Register a Guardianship:
+      <a id="${cf.registrationLinkId}" href="#">click here.</a></td></tr></table>`);
+    await assert.rejects(strategy.registrationLink(cf), { code: 'TXOCA_REGISTRATION_LINK' });
+  });
+
+  await t.test('duplicate visible Corporate Fiduciary links fail clearly', async () => {
+    await page.setContent(`<table>
+      <tr><td>To Register a Guardianship as a Corporate Fiduciary: <a href="#">click here.</a></td></tr>
+      <tr><td>To Register a Guardianship as a Corporate Fiduciary: <a href="#">click here.</a></td></tr>
+      </table>`);
+    await assert.rejects(strategy.registrationLink(strategy.product('CF')), { code: 'TXOCA_REGISTRATION_LINK' });
   });
 
   const fields = `<label>First Name *<input name="firstName"></label>

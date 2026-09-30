@@ -44,6 +44,10 @@ export const siteRegistry = {
 
     return {
       ...site,
+      products: site.products.map((product) => {
+        const overrides = product.environmentOverrides?.[environment.key];
+        return overrides ? { ...product, ...overrides } : product;
+      }),
       loginUrl,
       environment,
     };

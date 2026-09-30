@@ -23,7 +23,17 @@ export const environments = {
       DPBH: 'http://172.16.3.2/ALiSDPBH2TESTING11.3.25.03/Login.aspx',
       NJ: 'http://172.16.3.2/ALiSNJDOH2TESTING11.3.25.03/LoginNJ.aspx',
       SAPTA: 'http://172.16.3.2/ALiSNVSAPTA2TESTING11.3.25.03/LoginBHCEN.aspx',
-      CONV: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.39.08/LoginCMS.aspx',
+      CONV: 'https://aliswalni-uat.aithent.com/ALiSINVPROD/LoginCMS.aspx',
+    },
+  },
+
+  UAT: {
+    key: 'UAT',
+    name: 'User Acceptance Testing',
+    urls: {
+      NVRCP: 'https://alisuat.aithent.com/NVRCP/LoginRadiation.aspx',
+      NJ: 'https://alisuat.aithent.com/NJDOH_MIG/LoginNJ.aspx',
+      TXOCA: 'https://alisuat.aithent.com/TXOCA/DefaultTexas.aspx',
     },
   },
 };

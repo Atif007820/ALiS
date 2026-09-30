@@ -19,24 +19,28 @@ export class CranesStrategy extends BaseStrategy {
   }
 
   async fillRegistration(product, user) {
-    await this.form.clearInputs();
-    await this.fillText(this.page.getByRole('textbox', { name: 'Entity Name' }), user.entityName);
-    await this.fillText(this.page.getByRole('textbox', { name: 'UBI #' }), user.ubiNumber);
+    user.entityName = await this.fillText(this.page.getByRole('textbox', { name: 'Entity Name' }), user.entityName);
+    user.facilityName = user.entityName;
+    user.ubiNumber = await this.fillText(this.page.getByRole('textbox', { name: 'UBI #' }), user.ubiNumber);
     await this.fillText(this.page.locator('#txtFirstNameBE'), editableData.businessContactFirstName);
     await this.fillText(this.page.locator('#txtLastNameBE'), editableData.businessContactLastName);
     await this.fillText(this.page.locator('#Email'), user.email);
     await this.fillText(this.page.locator('#txtPhone'), user.businessPhone);
-    await this.selectByLabel('Country', user.country);
+    await this.selectByLabel('Country', user.country, { preserveLocked: true });
     await this.fillText(this.page.getByRole('textbox', { name: 'Address' }), user.streetOne);
-    await this.fillText(this.page.getByRole('textbox', { name: 'Suite/Apt/Unit/etc.' }), user.streetTwo);
+    await this.fillText(this.page.getByRole('textbox', { name: 'Suite/Apt/Unit/etc.' }), user.streetTwo, { required: false });
     await this.fillText(this.page.getByRole('textbox', { name: 'City' }), user.city);
-    await this.selectByLabel('State/Province', user.state);
+    await this.selectByLabel('State/Province', user.state, { preserveLocked: true });
     await this.fillText(this.page.getByRole('textbox', { name: 'Zip' }), user.zip);
-    await this.form.selectRandomCounty({ required: true });
+    const county = this.page.getByLabel('County', { exact: true }).first();
+    if (await county.isEnabled()) await this.form.selectRandomCounty({ required: true });
+    else if (!(await this.form.hasSelectedNonPlaceholderOption(county))) {
+      throw new Error('Locked Cranes County dropdown has no selected value.');
+    }
     await this.fillText(this.page.getByRole('textbox', { name: 'Primary Phone #', exact: true }), user.primaryPhone);
-    await this.fillText(this.page.getByRole('textbox', { name: 'Fax' }), user.fax);
+    await this.fillText(this.page.getByRole('textbox', { name: 'Fax' }), user.fax, { required: false });
     await this.fillText(this.page.getByRole('textbox', { name: 'Primary E-mail' }), user.email);
-    await this.fillText(this.page.getByRole('textbox', { name: 'Alternate E-mail' }), user.altEmail);
+    await this.fillText(this.page.getByRole('textbox', { name: 'Alternate E-mail' }), user.altEmail, { required: false });
   }
 
   async fillAccount(user) {
@@ -106,10 +110,14 @@ export class CranesStrategy extends BaseStrategy {
     );
   }
 
-  async selectByLabel(label, value) {
+  async selectByLabel(label, value, { preserveLocked = false } = {}) {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const control = this.page.getByLabel(label, { exact: true }).first();
       await control.waitFor({ state: 'visible', timeout: 30000 });
+      if (preserveLocked && !(await control.isEnabled())) {
+        if (await this.form.hasSelectedNonPlaceholderOption(control)) return;
+        throw new Error(`Locked Cranes ${label} dropdown has no selected value.`);
+      }
       await this.form.waitForSelectOptions(control);
       await control.selectOption(value);
       await this.form.waitForReady();
@@ -121,7 +129,18 @@ export class CranesStrategy extends BaseStrategy {
     throw new Error(`Cranes ${label} did not keep configured value "${value}".`);
   }
 
-  async fillText(locator, value) {
-    await this.form.fillHard(locator.first(), value);
+  async fillText(locator, value, { required = true } = {}) {
+    const target = locator.first();
+    await target.waitFor({ state: 'visible', timeout: 30000 });
+    if (!(await target.isEditable())) {
+      const actual = await target.inputValue();
+      if (required && !actual.trim()) {
+        const label = await target.getAttribute('aria-label') || await target.getAttribute('id') || 'text field';
+        throw new Error(`Locked Cranes ${label} field has no value. Check the preliminary registration details.`);
+      }
+      return actual;
+    }
+    await this.form.fillHard(target, value);
+    return target.inputValue();
   }
 }

@@ -1,8 +1,15 @@
 import { expect } from '@playwright/test';
 import { BaseStrategy } from './BaseStrategy.js';
-import { city, phone, simplePerson, street, timestampParts, unit, zip } from '../utils/randomData.js';
+import { adultDateOfBirth, city, phone, simplePerson, street, timestampParts, unit, zip } from '../utils/randomData.js';
 
 export class TxfscStrategy extends BaseStrategy {
+  buildUser(product) {
+    const user = super.buildUser(product);
+    user.date = adultDateOfBirth();
+    user.dob = user.date;
+    return user;
+  }
+
   async openRegistration(product) {
     await this.page.goto(this.site.loginUrl, { waitUntil: 'domcontentloaded' });
     await this.form.waitForLoginShell();
@@ -19,10 +26,6 @@ export class TxfscStrategy extends BaseStrategy {
   }
 
   async fillRegistration(product, user) {
-    await this.form.fillFirstText(['Last Name'], user.lastName, { hard: true, required: true });
-    await this.form.fillFirstText(['First Name'], user.firstName, { hard: true, required: true });
-    await this.fillDateOfBirth(user);
-
     await this.form.fillFirstText(['Street One', 'Street 1', 'Address Line 1'], user.streetOne, {
       hard: true,
       required: true,
@@ -49,6 +52,15 @@ export class TxfscStrategy extends BaseStrategy {
       throw new Error('Required primary email field was not available.');
     }
     await this.form.fillAlternateEmail(user.altEmail);
+
+    // Address changes can post back and replace personal-information controls.
+    await this.form.fillFirstText(['Last Name'], user.lastName, { hard: true, required: true });
+    await this.form.fillFirstText(['First Name'], user.firstName, { hard: true, required: true });
+    if (!(await this.fillDateOfBirth(user))) {
+      throw new Error('Required TXFSC date-of-birth field was not available.');
+    }
+    const dob = this.page.getByRole('textbox', { name: /^(DOB|Date of Birth|Birth Date)\s*\*?$/i });
+    await expect(dob.filter({ visible: true }).first()).toHaveValue(user.dob, { timeout: 5000 });
   }
 
   refreshUser(product, user) {
@@ -68,7 +80,7 @@ export class TxfscStrategy extends BaseStrategy {
     user.userPhone = phone();
     user.primaryPhone = phone();
     user.fax = phone();
-    user.date = timestampParts().dateForField;
+    user.date = adultDateOfBirth();
     user.dob = user.date;
     return user;
   }

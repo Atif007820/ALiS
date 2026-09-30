@@ -8,6 +8,7 @@
     "register": "node ./tools/register.js",
     "register:test": "node ./tools/register.js --env TEST",
     "register:prod": "node ./tools/register.js --env PROD",
+    "register:uat": "node ./tools/register.js --env UAT",
     "register:list": "node ./tools/register.js --list",
     "register:headed": "node ./tools/register.js --headed",
     "register:parallel": "node ./tools/register.js --parallel",

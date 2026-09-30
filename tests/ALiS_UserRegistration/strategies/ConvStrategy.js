@@ -24,7 +24,10 @@ const SELECTORS = {
 export class ConvStrategy extends BaseStrategy {
   async openRegistration(product, user) {
     await this.disableAutocomplete();
-    await this.page.goto(this.site.loginUrl, { waitUntil: 'networkidle', timeout: 60000 });
+    const response = await this.page.goto(this.site.loginUrl, { waitUntil: 'networkidle', timeout: 60000 });
+    if (response && response.status() >= 400) {
+      throw new Error(`Conveyance login URL returned HTTP ${response.status()}: ${this.site.loginUrl}. Check config/urls.js.`);
+    }
     await this.openPreliminaryRegistration();
     await this.selectBusinessUnit(editableData.conv.businessUnit);
     await this.selectUserType(product, user);

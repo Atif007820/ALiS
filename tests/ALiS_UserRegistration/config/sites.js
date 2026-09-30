@@ -57,9 +57,30 @@ export const sites = {
     profileRetryLimit: 2,
     products: [
       { key: 'GRD', name: 'Guardianship', tabText: 'Register A Guardianship', tabSelector: '#__tab_Test_TabGuardianRegister', registrationRowText: 'Register a Guardianship', registrationLinkId: 'Test_TabGuardianRegister_LinkButton24', registrationHeading: 'Initial User Registration - Guardianship Registration', loginPrefix: 'guardianship', entityPrefix: 'GRD' },
-      { key: 'CF', name: 'Guardianship as a Corporate Fiduciary', tabText: 'Register A Guardianship', tabSelector: '#__tab_Test_TabGuardianRegister', tabClickText: 'Register A Guardianship', registrationLinkId: 'Test_TabGuardianRegister_LinkButton1', loginPrefix: 'fiduciary', entityPrefix: 'PROGRAM' },
-      { key: 'CR', name: 'Court Reporters', tabText: 'Court Reporters', tabSelector: '#__tab_Test_tabCredentialDetail', registrationRowText: 'To apply for New Certification', registrationLinkId: 'Test_tabCredentialDetail_LinkButton11', registrationHeading: 'Initial User Registration - Court Reporter Certification', loginPrefix: 'CR_', entityPrefix: 'CR' },
-      { key: 'CRF', name: 'Court Reporter Firm', tabText: 'Court Reporters', tabSelector: '#__tab_Test_tabCredentialDetail', tabClickText: 'Court Reporters', registrationLinkId: 'Test_tabCredentialDetail_LinkButton6', loginPrefix: 'CR_FIRM_', entityPrefix: 'FIRM' },
+      {
+        key: 'CF', name: 'Guardianship as a Corporate Fiduciary', tabText: 'Register A Guardianship', tabSelector: '#__tab_Test_TabGuardianRegister', tabClickText: 'Register A Guardianship', registrationLinkId: 'Test_TabGuardianRegister_LinkButton1', loginPrefix: 'fiduciary', entityPrefix: 'PROGRAM',
+        registrationRowText: 'To Register a Guardianship as a Corporate Fiduciary',
+      },
+      {
+        key: 'CR', name: 'Court Reporters', tabText: 'Court Reporters', tabSelector: '#__tab_Test_tabCredentialDetail', registrationRowText: 'To apply for New Certification', registrationLinkId: 'Test_tabCredentialDetail_LinkButton11', registrationHeading: 'Initial User Registration - Court Reporter Certification', loginPrefix: 'CR_', entityPrefix: 'CR',
+        environmentOverrides: {
+          UAT: {
+            name: 'Mediator', aliases: ['MEDIATOR'], program: 'Mediator',
+            tabText: 'Mediator', tabClickText: 'Mediator', tabSelector: null,
+            registrationHeading: 'Initial User Registration - Mediator',
+            loginPrefix: 'Mediator_', entityPrefix: 'Mediator',
+          },
+        },
+      },
+      {
+        key: 'CRF', name: 'Court Reporter Firm', tabText: 'Court Reporters', tabSelector: '#__tab_Test_tabCredentialDetail', tabClickText: 'Court Reporters', registrationLinkId: 'Test_tabCredentialDetail_LinkButton6', loginPrefix: 'CR_FIRM_', entityPrefix: 'FIRM',
+        environmentOverrides: {
+          UAT: {
+            program: 'Mediator', tabText: 'Mediator', tabClickText: 'Mediator', tabSelector: null,
+            registrationHeading: 'Initial User Registration - Mediator',
+          },
+        },
+      },
       { key: 'PS', name: 'Process Servers', tabText: 'Process Servers', tabSelector: '#__tab_Test_TabPanel', registrationRowText: 'To apply for New Certification', registrationLinkId: 'Test_TabPanel_lnkFoodEstablishmentPermit', registrationHeading: 'Initial User Registration - Process Server Certification', loginPrefix: 'PS_', entityPrefix: 'PS' },
       { key: 'CI', name: 'Court Interpreters', tabText: 'Court Interpreters', tabSelector: '#__tab_Test_tabRevenue', registrationRowText: 'To apply for New Certification', registrationLinkId: 'Test_tabRevenue_lnkInitialEMT', registrationHeading: 'Initial User Registration - Licensed Court Interpreter', loginPrefix: 'CI_', entityPrefix: 'CI' },
       { key: 'PROFESSIONAL_CG', aliases: ['PROFESSIONAL CG', 'PCG'], name: 'Professional Certified Guardians', tabText: 'Certified Guardians', tabClickText: 'Certified Guardians', registrationRowText: 'Become a Certified Guardian', registrationLinkId: 'Test_TabPanelGuardianShipRegistry_LinkButton1', registrationHeading: 'Initial User Registration - Guardians', loginPrefix: 'Professional_CG_', entityPrefix: 'Professional_CG', dialogAction: 'dismiss' },

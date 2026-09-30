@@ -36,10 +36,10 @@ export class TxocaStrategy extends BaseStrategy {
     await expect(this.page.getByRole('textbox', { name: /Login Name\s*\*?/i }).first()).toBeVisible({ timeout: 30000 });
 
     if (product.registrationHeading) {
-      await expect(this.page.getByRole('heading', {
-        name: product.registrationHeading,
-        exact: true,
-      })).toBeVisible({ timeout: 30000 });
+      const heading = this.page.getByRole('heading', {
+        name: product.registrationHeading, exact: true,
+      }).or(this.page.getByText(product.registrationHeading, { exact: true }));
+      await expect(heading.filter({ visible: true }).first()).toBeVisible({ timeout: 30000 });
     }
   }
 
@@ -53,8 +53,11 @@ export class TxocaStrategy extends BaseStrategy {
     }
 
     if (product.tabClickText) {
-      await this.form.click(this.page.getByText(product.tabClickText, { exact: true }).first());
-      return;
+      const visibleTab = await this.form.firstUsable(this.page.getByText(product.tabClickText, { exact: true }));
+      if (visibleTab) {
+        await this.form.click(visibleTab);
+        return;
+      }
     }
 
     const tab = this.page.locator('.ajax__tab_tab').filter({ hasText: new RegExp(`^${escapeRegex(product.tabText)}$`, 'i') }).first();
@@ -153,7 +156,14 @@ export class TxocaStrategy extends BaseStrategy {
     const modalVisible = await modal.isVisible({ timeout: 3000 }).catch(() => false);
     if (!modalVisible) return;
 
-    await this.form.selectOption(modal.getByRole('combobox', { name: /Please choose the Program|Program/i }), programForProduct(product));
+    const program = programForProduct(product);
+    const dropdown = modal.getByRole('combobox', { name: /Please choose the Program|Program/i });
+    const options = await this.form.availableSelectOptions(dropdown);
+    const option = options.find((item) => item.value === program || item.label === program);
+    if (!option) {
+      throw txocaError('TXOCA_STARTUP_PROGRAM', `Startup program "${program}" is not available for ${product.key}. Available programs: ${options.map((item) => item.label).join(', ')}.`);
+    }
+    await this.form.selectOption(dropdown, option.value);
     const ok = modal.getByRole('link', { name: /^OK$/i }).or(modal.getByRole('button', { name: /^OK$/i })).first();
     await ok.click({ force: true, noWaitAfter: true, timeout: 10000 }).catch(async () => {
       await this.page.evaluate(() => {
