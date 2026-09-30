@@ -26,7 +26,7 @@ export function formatReportDateTime(value) {
   const hours24 = date.getHours();
   const hours12 = hours24 % 12 || 12;
   const meridiem = hours24 >= 12 ? 'PM' : 'AM';
-  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(hours12)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${meridiem}`;
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} | ${pad(hours12)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${meridiem}`;
 }
 
 // Both renderers use the same columns, categories and rows.
