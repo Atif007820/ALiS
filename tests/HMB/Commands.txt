@@ -34,6 +34,9 @@ Run Full E2E
 ------------
 npm run hmb:e2e -- --project=chromium --headed
 
+Run without a visible browser (headless=true in config\runSettings.json):
+npm run hmb:e2e -- --project=chromium
+
 This runs the two framework files in sequence:
   1. tests\01_Register.spec.js
   2. tests\02_LoginApply.spec.js
@@ -41,6 +44,15 @@ This runs the two framework files in sequence:
 Register creates a fresh HMB user and saves it. LoginApply uses the saved user,
 applies, uploads documents, submits, attempts payment, captures the transaction
 number when available, and prints annotations.
+
+Execution Time
+--------------
+Use --project=chromium for one browser. Omitting --project runs all configured
+browsers (Chromium, Firefox, and Edge), which increases total execution time.
+Keep slowMo: 0 in config\runSettings.json for normal-speed execution.
+Keep workers: 1 for Register followed by Login Apply using the saved account.
+The Playwright report shows timings for each Login Apply section, including
+personnel, mandatory documents, submission, and payment.
 
 
 Current Test Files

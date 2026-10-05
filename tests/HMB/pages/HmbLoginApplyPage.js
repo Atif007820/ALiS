@@ -28,25 +28,36 @@ import {
 import { logger } from '../utils/logger.js';
 import { DocumentUploadComponent } from './DocumentUploadComponent.js';
 
+class EmptyApplicationSectionError extends Error {
+  constructor(sectionName) {
+    super(
+      `ALiS opened the ${sectionName} tab but returned an empty section shell (no form fields or Add control). `
+      + 'This is a portal response/state issue, not a locator failure.',
+    );
+    this.name = 'EmptyApplicationSectionError';
+  }
+}
+
 export class HmbLoginApplyPage {
   constructor(page) {
     this.page = page;
     this.documents = new DocumentUploadComponent(page);
+    this.resumedPendingApplication = false;
   }
 
-  async loginAndApply(user) {
+  async loginAndApply(user, { step = async (_name, action) => action() } = {}) {
     logger.section('Login and Apply for RA-HMB');
-    await this.login(user);
-    await this.openApplication();
-    await this.fillEntityInformation();
-    await this.fillApplicantInformation();
-    await this.fillAddressInformation();
-    await this.fillOwnerDirectorPersonnel();
-    const mandatoryDocumentsUploaded = await this.uploadMandatoryDocuments();
-    await this.addOtherAuthorizedLocation();
-    await this.goToAttestation();
-    const submitted = await this.submitApplication();
-    const transactionNumber = submitted ? await this.completePayment() : 'Not submitted';
+    await step('Login', () => this.login(user));
+    await step('Open application', () => this.openApplication());
+    await step('Entity Information', () => this.fillEntityInformation());
+    await step('Applicant Information', () => this.fillApplicantInformation());
+    await step('Address Information', () => this.fillAddressInformation());
+    await step('Owner, Director and Personnel', () => this.fillOwnerDirectorPersonnel());
+    const mandatoryDocumentsUploaded = await step('Mandatory documents', () => this.uploadMandatoryDocuments());
+    await step('Other Authorized Location', () => this.addOtherAuthorizedLocation());
+    await step('Open Attestation', () => this.goToAttestation());
+    const submitted = await step('Submit application', () => this.submitApplication());
+    const transactionNumber = submitted ? await step('Payment', () => this.completePayment()) : 'Not submitted';
 
     return {
       submitted,
@@ -108,6 +119,7 @@ export class HmbLoginApplyPage {
 
   async openPendingApplication() {
     logger.info('Pending RA-HMB application found; opening it.');
+    this.resumedPendingApplication = true;
     await clickAndWait(this.page, await this.portalAction('View Pending Online Application(s)', { timeout: runSettings.navigationTimeout }), {
       label: 'View Pending Online Application(s)',
       timeout: 60000,
@@ -295,7 +307,16 @@ export class HmbLoginApplyPage {
     const ownerSection = this.page.locator('#divOwnershipInfo, cc-ownership-info').first();
     if (!(await ownerSection.isVisible().catch(() => false))
       && await this.canOpenApplicationSection('Owner, Director and Personnel')) {
-      await this.openApplicationSection('Owner, Director and Personnel', ownerSection, { timeout: 60000 });
+      try {
+        await this.openApplicationSection('Owner, Director and Personnel', ownerSection, { timeout: 60000 });
+      } catch (error) {
+        if (error instanceof EmptyApplicationSectionError
+          && await this.recoverResumedApplicationAtAttestation('Owner, Director and Personnel')) {
+          this.personnelDocumentsUploaded = 0;
+          return;
+        }
+        throw error;
+      }
     }
 
     await this.addOwner();
@@ -378,22 +399,83 @@ export class HmbLoginApplyPage {
     });
     await clickAndWait(this.page, section, { label: `${name} section`, timeout });
 
+    const quickReady = await firstVisible(readyCandidates, {
+      label: `${name} content`,
+      timeout: 3000,
+    }).catch(() => null);
+    if (quickReady) return quickReady;
+
+    const emptySectionShell = await this.hasEmptyApplicationSectionShell();
+    if (emptySectionShell) throw new EmptyApplicationSectionError(name);
+
     return firstVisible(readyCandidates, { label: `${name} content`, timeout }).catch(async () => {
-      const activeSection = await section.getAttribute('class').catch(() => '');
       const pageText = await this.page.locator('main, body').first().innerText().catch(() => '');
-      const hasEmptySectionShell = /active/i.test(activeSection || '')
-        && /\bBack\b[\s\S]*\bNext\b/.test(pageText)
-        && !/\bAdd\b|Ownership|Last Name|Contact Person/i.test(pageText);
+      if (await this.hasEmptyApplicationSectionShell()) throw new EmptyApplicationSectionError(name);
 
-      if (hasEmptySectionShell) {
-        throw new Error(
-          `ALiS opened the ${name} tab but returned an empty section shell (no form fields or Add control). `
-          + 'This is a portal response/state issue, not a locator failure; reopen or repair the incomplete application before retrying.',
-        );
-      }
-
-      throw new Error(`ALiS did not render ${name} content after selecting its tab.`);
+      throw new Error(
+        `ALiS did not render ${name} content after selecting its tab. `
+        + `Visible page text: ${pageText.replace(/\s+/g, ' ').trim().slice(0, 500)}`,
+      );
     });
+  }
+
+  async hasEmptyApplicationSectionShell() {
+    const main = this.page.locator('main').first();
+    const [hasBack, hasNext, hasReset] = await Promise.all([
+      main.getByRole('button', { name: /^Back$/i }).first().isVisible().catch(() => false),
+      main.getByRole('button', { name: /^Next$/i }).first().isVisible().catch(() => false),
+      main.getByRole('button', { name: /^Reset$/i }).first().isVisible().catch(() => false),
+    ]);
+    const hasNavigationShell = hasBack && hasNext && hasReset;
+    const hasSectionContent = await main
+      .locator('input, select, textarea, table, [role="grid"], [role="dialog"]')
+      .filter({ visible: true })
+      .count()
+      .then((count) => count > 0)
+      .catch(() => false);
+    const hasAddControl = await main
+      .getByRole('link', { name: /^Add$/i })
+      .or(main.getByRole('button', { name: /^Add$/i }))
+      .first()
+      .isVisible()
+      .catch(() => false);
+
+    return hasNavigationShell && !hasSectionContent && !hasAddControl;
+  }
+
+  async recoverResumedApplicationAtAttestation(stage) {
+    if (!this.resumedPendingApplication) return false;
+
+    const attestationSection = await firstVisible(this.applicationSectionCandidates('Attestation'), {
+      label: 'Attestation application section',
+      timeout: 3000,
+    }).catch(() => null);
+    if (!attestationSection) return false;
+
+    logger.warn(`${stage} returned an empty completed-section shell; checking Attestation for the resumed application.`);
+    const dialogHandled = this.page.waitForEvent('dialog', { timeout: 5000 })
+      .then(async (dialog) => {
+        const message = dialog.message();
+        if (!/unsaved changes[\s\S]*discard the changes/i.test(message)) {
+          await dialog.dismiss();
+          throw new Error(`Unexpected dialog while recovering at Attestation: ${message}`);
+        }
+        await dialog.accept();
+        logger.info('Accepted the portal confirmation to discard the empty section state.');
+        return true;
+      })
+      .catch((error) => {
+        if (error?.name === 'TimeoutError') return false;
+        throw error;
+      });
+
+    await click(this.page, attestationSection, { label: 'Attestation section recovery', timeout: 60000 });
+    await dialogHandled;
+    await waitAfterAction(this.page);
+    if (!(await this.isAttestationPageVisible())) return false;
+
+    logger.info('Resumed application recovered at Attestation.');
+    return true;
   }
 
   async ownerAlreadyAdded() {
@@ -597,7 +679,17 @@ export class HmbLoginApplyPage {
     let uploaded = 0;
 
     for (const doc of HMB_DATA.loginApply.mandatoryDocuments) {
+      if (await this.isAttestationPageVisible()) {
+        logger.info(`Mandatory document workflow completed after ${uploaded} upload(s); application advanced to Attestation.`);
+        break;
+      }
+
       const link = await this.ensureMandatoryDocumentLink(doc.id);
+      if (!link) {
+        logger.info(`Mandatory document workflow completed after ${uploaded} upload(s); application advanced to Attestation.`);
+        break;
+      }
+
       const linkText = await link.innerText().catch(() => '');
       if (!/Documents\s*\(\s*0\s*\)/i.test(linkText)) {
         logger.info(`${doc.id} already has uploaded document(s): ${linkText.trim()}. Skipping.`);
@@ -606,6 +698,11 @@ export class HmbLoginApplyPage {
 
       await this.documents.uploadFromLink(link, randomDocumentPath(), runSettings.uploadComment || 'Test12');
       uploaded += 1;
+
+      if (await this.isAttestationPageVisible()) {
+        logger.info(`Mandatory document workflow completed after ${uploaded} upload(s); application advanced to Attestation.`);
+        break;
+      }
     }
 
     return uploaded;
@@ -615,6 +712,8 @@ export class HmbLoginApplyPage {
     const prefix = docId.replace(/-\d+$/, '-');
 
     for (let attempt = 1; attempt <= 5; attempt++) {
+      if (await this.isAttestationPageVisible()) return null;
+
       const link = this.page.locator(`#${docId}`).or(this.page.locator(`a[id^="${prefix}"]`)).first();
       if (await link.isVisible().catch(() => false)) return link;
 
@@ -624,6 +723,8 @@ export class HmbLoginApplyPage {
 
       if (!moved) break;
     }
+
+    if (await this.isAttestationPageVisible()) return null;
 
     const rows = await this.page
       .locator('#MandatoryDocument tr, cc-mandatory-document tr, table tr')
@@ -635,10 +736,11 @@ export class HmbLoginApplyPage {
 
   async clickMandatoryPager(action) {
     const scope = this.page.locator('#MandatoryDocument, cc-mandatory-document').first();
+    if (!(await scope.isVisible().catch(() => false))) return false;
+
     const button = await firstVisible([
       scope.getByRole('button', { name: new RegExp(`^${action}$`, 'i') }),
       scope.locator(`button.image-button-${action}, button[aria-label="${action}"], .image-button-${action}`),
-      this.page.getByRole('button', { name: new RegExp(`^${action}$`, 'i') }),
     ], { label: `Mandatory ${action} pager`, timeout: 1500 }).catch(() => null);
 
     if (!button) return false;

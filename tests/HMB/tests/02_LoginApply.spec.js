@@ -12,7 +12,9 @@ test('HMB - Login Apply', async ({ loginApplyPage }, testInfo) => {
     throw new Error(`No registered user found. Run "npm run hmb:register" first. Expected file: ${registeredUserPath()}. ${error.message}`);
   }
 
-  const result = await loginApplyPage.loginAndApply(user);
+  const result = await loginApplyPage.loginAndApply(user, {
+    step: (name, action) => test.step(name, action),
+  });
 
   addApplicationAnnotations(testInfo, result, user);
 });

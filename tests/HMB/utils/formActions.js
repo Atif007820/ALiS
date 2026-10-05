@@ -4,36 +4,35 @@ import { logger } from './logger.js';
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const OVERLAY_SELECTOR = [
+  '#overlay',
+  '.blockUI.blockOverlay',
+  '.blockOverlay',
+  '.loading-overlay',
+  '.loader-overlay',
+  '.ngx-spinner-overlay',
+  '.k-loading-mask',
+  '[class*="loading"][class*="overlay"]',
+  '[class*="spinner"][class*="overlay"]',
+].join(', ');
+
 export async function clearBlockingOverlay(page) {
-  const selectors = [
-    '#overlay',
-    '.blockUI.blockOverlay',
-    '.blockOverlay',
-    '.loading-overlay',
-    '.loader-overlay',
-    '.ngx-spinner-overlay',
-    '.k-loading-mask',
-    '[class*="loading"][class*="overlay"]',
-    '[class*="spinner"][class*="overlay"]',
-  ];
+  const overlays = page.locator(OVERLAY_SELECTOR).filter({ visible: true });
+  if (await overlays.count() === 0) return;
 
-  for (const selector of selectors) {
-    const overlays = page.locator(selector);
-    const count = await overlays.count().catch(() => 0);
+  // A combined locator deduplicates overlays matching several selectors.
+  const cleared = await expect(overlays).toHaveCount(0, { timeout: runSettings.overlayTimeout })
+    .then(() => true).catch(() => false);
+  if (cleared) return;
 
-    for (let index = 0; index < count; index++) {
-      const overlay = overlays.nth(index);
-      await overlay.waitFor({ state: 'hidden', timeout: runSettings.overlayTimeout }).catch(() => {});
-      if (!(await overlay.isVisible().catch(() => false))) continue;
-
-      logger.warn(`Blocking overlay stayed visible (${selector}); disabling it for this step.`);
-      await overlay.evaluate((element) => {
-        element.style.pointerEvents = 'none';
-        element.style.display = 'none';
-        element.style.visibility = 'hidden';
-      }).catch(() => {});
+  logger.warn('Blocking overlay stayed visible; disabling it for this step.');
+  await overlays.evaluateAll((elements) => {
+    for (const element of elements) {
+      element.style.pointerEvents = 'none';
+      element.style.display = 'none';
+      element.style.visibility = 'hidden';
     }
-  }
+  });
 }
 
 export async function waitForPageReady(page) {
@@ -49,26 +48,10 @@ export async function waitAfterAction(page) {
 }
 
 export async function waitForAsyncPostback(page) {
-  await page.evaluate(() => new Promise((resolve) => {
+  await page.waitForFunction(() => {
     const manager = window.Sys?.WebForms?.PageRequestManager?.getInstance?.();
-    if (!manager || !manager.get_isInAsyncPostBack()) {
-      resolve();
-      return;
-    }
-
-    const interval = setInterval(() => {
-      if (!manager.get_isInAsyncPostBack()) {
-        clearInterval(interval);
-        resolve();
-      }
-    }, 50);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      resolve();
-    }, 15000);
-  })).catch(() => {});
-  await page.waitForTimeout(150).catch(() => {});
+    return !manager?.get_isInAsyncPostBack();
+  }, undefined, { polling: 50, timeout: runSettings.navigationTimeout });
 }
 
 export async function firstVisible(candidates, { label = 'element', timeout = runSettings.actionTimeout } = {}) {
@@ -78,15 +61,12 @@ export async function firstVisible(candidates, { label = 'element', timeout = ru
 
   while (Date.now() < deadline) {
     for (const locator of locators) {
-      const count = await locator.count().catch((error) => {
+      const candidate = locator.filter({ visible: true }).first();
+      const visible = await candidate.isVisible().catch((error) => {
         lastError = error;
-        return 0;
+        return false;
       });
-
-      for (let index = 0; index < count; index++) {
-        const candidate = locator.nth(index);
-        if (await candidate.isVisible().catch(() => false)) return candidate;
-      }
+      if (visible) return candidate;
     }
 
     await sleep(250);
@@ -99,7 +79,6 @@ export async function firstVisible(candidates, { label = 'element', timeout = ru
 export async function click(page, candidates, options = {}) {
   const target = await firstVisible(candidates, options);
   await clearBlockingOverlay(page);
-  await target.scrollIntoViewIfNeeded().catch(() => {});
 
   try {
     await target.click({ timeout: options.timeout || runSettings.actionTimeout, force: options.force || false });
@@ -119,9 +98,7 @@ export async function clickAndWait(page, candidates, options = {}) {
 export async function fill(page, candidates, value, options = {}) {
   const target = await firstVisible(candidates, options);
   await clearBlockingOverlay(page);
-  await expect(target).toBeEnabled({ timeout: options.timeout || runSettings.actionTimeout });
-  await target.scrollIntoViewIfNeeded().catch(() => {});
-  await target.fill(String(value ?? ''));
+  await target.fill(String(value ?? ''), { timeout: options.timeout || runSettings.actionTimeout });
 }
 
 export async function fillIfVisible(page, candidates, value, options = {}) {
@@ -134,8 +111,7 @@ export async function fillIfVisible(page, candidates, value, options = {}) {
 export async function select(page, candidates, value, options = {}) {
   const target = await firstVisible(candidates, options);
   await clearBlockingOverlay(page);
-  await expect(target).toBeEnabled({ timeout: options.timeout || runSettings.actionTimeout });
-  await target.selectOption(String(value));
+  await target.selectOption(String(value), { timeout: options.timeout || runSettings.actionTimeout });
 }
 
 export async function selectIfVisible(page, candidates, value, options = {}) {
@@ -148,16 +124,20 @@ export async function selectIfVisible(page, candidates, value, options = {}) {
 export async function check(page, candidates, options = {}) {
   const target = await firstVisible(candidates, options);
   await clearBlockingOverlay(page);
-  await target.scrollIntoViewIfNeeded().catch(() => {});
 
   if (await target.isChecked().catch(() => false)) return;
 
-  await target.check({ timeout: options.timeout || runSettings.actionTimeout }).catch(async () => {
+  const timeout = options.timeout || runSettings.actionTimeout;
+  const materialRadio = await target.locator('xpath=ancestor::mat-radio-button[1]').count() > 0;
+  // Material decorations can cover the native input. Use the existing label
+  // fallback promptly, while retaining the full timeout to verify selection.
+  await target.check({ timeout: materialRadio ? Math.min(timeout, 3000) : timeout }).catch(async () => {
     await target.evaluate((element) => {
       const label = element.id ? document.querySelector(`label[for="${element.id}"]`) : null;
       (label || element.closest('label') || element.parentElement || element).click();
     });
   });
+  await expect(target).toBeChecked({ timeout });
 }
 
 export async function checkIfVisible(page, candidates, options = {}) {

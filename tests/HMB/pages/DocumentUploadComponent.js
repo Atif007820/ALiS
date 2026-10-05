@@ -27,18 +27,16 @@ export class DocumentUploadComponent {
     const container = await this.visibleUploadContainer();
     await click(this.page, container.getByRole('link', { name: /^Add$/i }), { label: 'document Add link' });
 
-    const fileChooser = this.page.waitForEvent('filechooser', { timeout: 3000 }).catch(() => null);
-    const fileButton = container.getByRole('button', { name: /^file$/i }).first();
-    if (await fileButton.isVisible().catch(() => false)) {
-      await click(this.page, fileButton, { label: 'file button' });
-      const chooser = await fileChooser;
-      if (chooser) {
-        await chooser.setFiles(filePath);
-      } else {
-        await container.locator('input[type="file"]').last().setInputFiles(filePath);
-      }
+    const fileInput = container.locator('input[type="file"]').last();
+    if (await fileInput.count()) {
+      await fileInput.setInputFiles(filePath);
     } else {
-      await container.locator('input[type="file"]').last().setInputFiles(filePath);
+      const fileButton = container.getByRole('button', { name: /^file$/i }).first();
+      const [chooser] = await Promise.all([
+        this.page.waitForEvent('filechooser', { timeout: 3000 }),
+        click(this.page, fileButton, { label: 'file button' }),
+      ]);
+      await chooser.setFiles(filePath);
     }
 
     await fill(this.page, container.getByRole('textbox', { name: /comments/i }), comment, { label: 'document comments' });

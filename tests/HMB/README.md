@@ -33,6 +33,16 @@ verification, set `HMB_TEST_RESULTS_DIR`, `HMB_REPORT_DIR`, and
 
 The E2E command runs Register first, then Login/apply using the saved user.
 
+For a headless run with the current `headless: true` setting, omit `--headed`.
+Keep `--project=chromium` to run one browser; omitting `--project` runs all three
+configured browsers. Keep `slowMo: 0` for normal-speed execution and one worker
+because Login/apply consumes the account created by Register.
+
+The Login/apply report contains named steps with timings for each application
+section. Form helpers check loading overlays together and use Playwright's
+built-in field readiness checks. ASP.NET postbacks and page transitions are
+still awaited, with no fixed pause after each action.
+
 Register only:
 
 ```bash
