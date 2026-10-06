@@ -7,6 +7,6 @@ test('HMB - Register', async ({ registrationPage }, testInfo) => {
 
   const user = await registrationPage.register();
 
-  await saveRegisteredUser(user);
+  await saveRegisteredUser(user, testInfo.project.name);
   addRegistrationAnnotations(testInfo, user);
 });

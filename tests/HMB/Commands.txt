@@ -26,8 +26,17 @@ Run Login Apply Using Last Registered User
 ------------------------------------------
 npm run hmb:apply -- --project=chromium --headed
 
-This uses:
-  testData\lastRegisteredHmbUser.json
+This uses the project-specific user file, for example:
+  testData\lastRegisteredHmbUser.chromium.json
+For Chromium only, if the project-specific file is missing, the legacy
+testData\lastRegisteredHmbUser.json is still read as a fallback.
+
+To provide credentials directly for this standalone flow, edit:
+  config\standaloneLoginCredentials.js
+Set both loginName and password. If both are set, no saved registration file is
+needed. Blank or partial values use the saved account and override only values
+that are provided. LOGIN_NAME and LOGIN_PASSWORD environment variables take
+precedence over the config file.
 
 
 Run Full E2E
@@ -37,9 +46,9 @@ npm run hmb:e2e -- --project=chromium --headed
 Run without a visible browser (headless=true in config\runSettings.json):
 npm run hmb:e2e -- --project=chromium
 
-This runs the two framework files in sequence:
-  1. tests\01_Register.spec.js
-  2. tests\02_LoginApply.spec.js
+This runs the complete register, login, application, document upload, submit,
+and payment flow as one browser-project test. Chromium and Edge can run in
+parallel with the default two workers, and each browser saves its own account.
 
 Register creates a fresh HMB user and saves it. LoginApply uses the saved user,
 applies, uploads documents, submits, attempts payment, captures the transaction
@@ -47,18 +56,19 @@ number when available, and prints annotations.
 
 Execution Time
 --------------
-Use --project=chromium for one browser. Omitting --project runs all configured
-browsers (Chromium, Firefox, and Edge), which increases total execution time.
+Use --project chromium msedge to run Chromium and Edge concurrently. Omitting
+--project runs all configured browsers (Chromium, Firefox, and Edge). Set
+workers in config\runSettings.json or override with HMB_WORKERS.
 Keep slowMo: 0 in config\runSettings.json for normal-speed execution.
-Keep workers: 1 for Register followed by Login Apply using the saved account.
 The Playwright report shows timings for each Login Apply section, including
 personnel, mandatory documents, submission, and payment.
 
 
 Current Test Files
 ------------------
-tests\01_Register.spec.js
-tests\02_LoginApply.spec.js
+tests\01_Register.spec.js       Register only
+tests\02_LoginApply.spec.js     Apply using a previously registered account
+tests\03_E2E.spec.js            Full flow (default runner)
 
 
 Run All HMB Tests
@@ -70,6 +80,12 @@ Browser Options
 ---------------
 Chromium:
   npm run hmb:e2e -- --project=chromium --headed
+
+Run Chromium and Edge at the same time:
+  npm run hmb:e2e -- --project chromium msedge
+
+Override the number of concurrent browser workers:
+  $env:HMB_WORKERS=2; npm run hmb:e2e -- --project chromium msedge
 
 Firefox:
   npm run hmb:e2e -- --project=firefox --headed
@@ -83,6 +99,12 @@ Config Files
 URLs and run behavior:
   config\urls.js
   config\runSettings.json
+  config\standaloneLoginCredentials.js
+
+Payment recovery:
+  paymentReadyTimeoutMs controls how long to wait for the payment action.
+  paymentApiRetries controls retries after a transient GetApplicationFee error.
+  paymentRetryDelayMs controls the pause between those retries.
 
 Fixtures:
   fixtures\hmb.fixture.js

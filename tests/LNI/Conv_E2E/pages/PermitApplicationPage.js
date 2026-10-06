@@ -463,41 +463,67 @@ export class PermitApplicationPage extends BasePage {
     const ownerExistsDropdown = this.page.getByLabel('Does the owner already exist');
     if (await isVisible(ownerExistsDropdown, 1000)) return ownerExistsDropdown;
 
-    const addCandidates = [
-      this.page.locator(
-        'xpath=//h2[normalize-space()="Owner Information"]/ancestor::*[self::div or self::section][1]' +
-        '//*[self::a or self::button][normalize-space()="Add"]'
-      ).last(),
-      this.page.getByRole('link', { name: /^Add$/ }).last(),
-      this.page.getByRole('button', { name: /^Add$/ }).last(),
-      this.page.locator('a, button').filter({ hasText: /^Add$/ }).last(),
-    ];
+    const addLinks = this.page.getByRole('link', { name: /^Add$/i });
+    const addButtons = this.page.getByRole('button', { name: /^Add$/i });
+    const candidates = [];
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      for (const addOwner of addCandidates) {
-        if ((await addOwner.count().catch(() => 0)) === 0) continue;
-        if (!(await isVisible(addOwner, 3000))) continue;
+    for (const collection of [addLinks, addButtons]) {
+      const count = await collection.count().catch(() => 0);
+      for (let index = 0; index < count; index += 1) {
+        const candidate = collection.nth(index);
+        if (!(await isVisible(candidate, 1000))) continue;
 
-        logger.info(`Opening Owner Information Add dialog (attempt ${attempt})`);
-        await addOwner.scrollIntoViewIfNeeded().catch(() => {});
+        const belongsToOwnerSection = await candidate.evaluate((element) => {
+          let ancestor = element.parentElement;
+          while (ancestor && ancestor !== document.body) {
+            const headings = ancestor.querySelectorAll('h1, h2, h3, [role="heading"]');
+            if ([...headings].some((heading) => (
+              String(heading.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'owner information'
+            ))) return true;
+            ancestor = ancestor.parentElement;
+          }
+          return false;
+        }).catch(() => false);
 
-        try {
-          await addOwner.click({ timeout: 10000 });
-        } catch (error) {
-          logger.warn(`Owner Add click fallback: ${error.message.split('\n')[0]}`);
-          await addOwner.evaluate((element) => element.click()).catch(() => {});
-        }
+        candidates.push({ locator: candidate, belongsToOwnerSection });
+      }
+    }
 
-        await this.waitForLoad('domcontentloaded');
-        if (await isVisible(ownerExistsDropdown, 7000)) return ownerExistsDropdown;
+    const ownerCandidates = candidates.filter(({ belongsToOwnerSection }) => belongsToOwnerSection);
+    const addOwner = ownerCandidates.length === 1
+      ? ownerCandidates[0].locator
+      : ownerCandidates.length === 0 && candidates.length === 1
+        ? candidates[0].locator
+        : null;
+
+    if (addOwner) {
+      logger.info('Opening the visible Add control in Owner Information.');
+      await addOwner.scrollIntoViewIfNeeded();
+
+      try {
+        await addOwner.click({ timeout: 10000 });
+      } catch (error) {
+        logger.warn(`Owner Add click fallback: ${error.message.split('\n')[0]}`);
+        await addOwner.evaluate((element) => element.click());
       }
 
-      await this.page.waitForTimeout(1000);
+      const opened = await ownerExistsDropdown.waitFor({ state: 'visible', timeout: 15000 })
+        .then(() => true)
+        .catch(() => false);
+      if (opened) return ownerExistsDropdown;
     }
 
     const pageText = await this.page.locator('main').innerText({ timeout: 5000 }).catch(() => '');
+    const candidateSummary = candidates.map(({ locator, belongsToOwnerSection }) => ({
+      sectionMatch: belongsToOwnerSection,
+      text: locator.innerText().catch(() => ''),
+    }));
+    const candidateDetails = await Promise.all(candidateSummary.map(async ({ sectionMatch, text }) => (
+      `${await text} (owner section: ${sectionMatch})`
+    )));
     throw new Error(
       `Owner Information Add dialog did not open. Current URL: ${this.currentUrl()}. ` +
+      `Visible Add controls: ${candidateDetails.join(' | ') || 'none'}. ` +
       `Visible page text: ${pageText.slice(0, 500)}`
     );
   }

@@ -1,10 +1,43 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import { HmbLoginApplyPage } from '../pages/HmbLoginApplyPage.js';
 import { DocumentUploadComponent } from '../pages/DocumentUploadComponent.js';
 import { check, clearBlockingOverlay, fill, waitAfterAction } from '../utils/formActions.js';
+import { mergeLoginCredentials, registeredUserPath } from '../utils/userStore.js';
+
+test('HMB stores registered accounts separately for each browser project', () => {
+  const chromiumPath = registeredUserPath('chromium');
+  const edgePath = registeredUserPath('msedge');
+
+  assert.notEqual(chromiumPath, edgePath);
+  assert.equal(path.dirname(chromiumPath), path.dirname(edgePath));
+  assert.match(path.basename(chromiumPath), /\.chromium\.json$/);
+  assert.match(path.basename(edgePath), /\.msedge\.json$/);
+});
+
+test('HMB standalone Apply accepts configured credentials without a saved account', () => {
+  assert.deepEqual(
+    mergeLoginCredentials(null, { loginName: 'configured-user', password: 'configured-password' }),
+    { loginName: 'configured-user', password: 'configured-password' },
+  );
+});
+
+test('HMB standalone Apply overrides only configured credentials on a saved account', () => {
+  const savedUser = {
+    loginName: 'registered-user',
+    password: 'registered-password',
+    entityName: 'Saved Entity',
+  };
+
+  assert.deepEqual(
+    mergeLoginCredentials(savedUser, { loginName: 'configured-user' }),
+    { ...savedUser, loginName: 'configured-user' },
+  );
+  assert.deepEqual(mergeLoginCredentials(savedUser), savedUser);
+});
 
 test('HMB application entry waits for the delayed Angular list-item menu', async (t) => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -42,6 +75,26 @@ test('HMB application entry retains semantic link support', async (t) => {
 
   await application.openApplication();
   assert.equal(await page.getByRole('radio', { name: /Initial Registration/i }).isVisible(), true);
+});
+
+test('HMB fresh registration skips pending-application probes', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  await page.setContent('<a href="#apply">Apply for RA-HMB</a>');
+  const application = new HmbLoginApplyPage(page);
+  const requestedActions = [];
+  const portalAction = application.portalAction.bind(application);
+  application.portalAction = async (name, options) => {
+    requestedActions.push(name);
+    return portalAction(name, options);
+  };
+  application.isApplicationScreenVisible = async () => true;
+
+  await application.openApplication({ freshRegistration: true });
+
+  assert.equal(requestedActions.length, 1);
 });
 
 test('HMB opens named application sections instead of relying on page-wide Next order', async (t) => {
@@ -141,6 +194,42 @@ test('HMB stops mandatory uploads when the application advances to Attestation',
   assert.equal(await application.isAttestationPageVisible(), true);
 });
 
+test('HMB waits for asynchronously rendered mandatory rows and finds them without legacy IDs', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  await page.setContent(`
+    <main>
+      <h2>Mandatory Required Document(S)</h2>
+      <table><tbody id="documents"></tbody></table>
+      <div><span id="page">Page 1 of 2</span><button id="next" aria-label="next">next</button></div>
+    </main>
+    <script>
+      const renderRows = (first, last) => {
+        document.querySelector('#documents').innerHTML = Array.from({ length: last - first + 1 }, (_, index) => {
+          const item = first + index;
+          return '<tr><td>' + item + '</td><td>RA-HMB</td><td>Document ' + item + '</td><td><a href="#upload">Documents (0)</a></td></tr>';
+        }).join('');
+      };
+      setTimeout(() => renderRows(1, 5), 150);
+      document.querySelector('#next').addEventListener('click', () => {
+        setTimeout(() => {
+          renderRows(6, 7);
+          document.querySelector('#page').textContent = 'Page 2 of 2';
+        }, 200);
+      });
+    </script>`);
+
+  const application = new HmbLoginApplyPage(page);
+  const firstDocument = await application.ensureMandatoryDocumentLink('mandatoryDoc0-0');
+  assert.equal(await firstDocument.innerText(), 'Documents (0)');
+
+  const sixthDocument = await application.ensureMandatoryDocumentLink('mandatoryDoc5-0');
+  assert.equal(await sixthDocument.innerText(), 'Documents (0)');
+  assert.equal(await page.getByText('Page 2 of 2').isVisible(), true);
+});
+
 test('HMB mandatory paging never clicks unrelated page-wide controls', async (t) => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   t.after(() => browser.close());
@@ -160,7 +249,7 @@ test('HMB mandatory paging never clicks unrelated page-wide controls', async (t)
   assert.equal(await page.evaluate(() => window.unrelatedClicks), 0);
 });
 
-test('HMB recovers a resumed application from an empty completed section at Attestation', async (t) => {
+test('HMB recovers a resumed application through Additional Information before Attestation', async (t) => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   t.after(() => browser.close());
 
@@ -171,6 +260,7 @@ test('HMB recovers a resumed application from an empty completed section at Atte
     <main>
       <nav>
         <a id="owner" href="#owner">Owner, Director and Personnel</a>
+        <a id="additional" href="#additional">Additional Information</a>
         <a id="attestation" href="#attestation">Attestation</a>
       </nav>
       <section id="content"></section>
@@ -179,16 +269,122 @@ test('HMB recovers a resumed application from an empty completed section at Atte
       document.querySelector('#owner').addEventListener('click', () => {
         document.querySelector('#content').innerHTML = '<button>Back</button><button>Next</button><button>Reset</button>';
       });
-      document.querySelector('#attestation').addEventListener('click', () => {
+      document.querySelector('#additional').addEventListener('click', () => {
         if (!confirm('You have unsaved changes.\\n\\nClick OK to discard the changes and continue on next page, or Cancel to stay on current page.')) return;
-        document.querySelector('#content').innerHTML = '<h2>Attestation</h2><input aria-label="Operator*">';
+        document.querySelector('#content').innerHTML = '<h2>Mandatory Required Document(S)</h2><table><tbody><tr><td>1</td><td>Document</td><td><a href="#upload">Documents (0)</a></td></tr></tbody></table>';
       });
     </script>`);
 
   await application.fillOwnerDirectorPersonnel();
 
-  assert.equal(await application.isAttestationPageVisible(), true);
+  assert.equal(await application.isMandatoryDocumentsPageVisible(), true);
   assert.equal(application.personnelDocumentsUploaded, 0);
+});
+
+test('HMB fails when the fee service rejects lookup and payment action is absent', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  await page.route('**/FeeDetail', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: `<h1>Fee Detail</h1><script>
+      fetch('/api/Common/GetApplicationFee', { method: 'POST' });
+    </script>`,
+  }));
+  await page.route('**/GetApplicationFee', (route) => route.fulfill({
+    status: 404,
+    contentType: 'application/json',
+    body: '{"error":"not found"}',
+  }));
+  await page.setContent('<h1>Submitted</h1>');
+
+  const application = new HmbLoginApplyPage(page);
+  await assert.rejects(
+    () => application.completePayment({ required: true }),
+    /GetApplicationFee returned HTTP 404/,
+  );
+});
+
+test('HMB retries transient Fee Detail API failures and continues when payment becomes available', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  let feeLookupAttempts = 0;
+  await page.route('**/FeeDetail', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: `<h1>Fee Detail</h1><script>
+      fetch('/api/Common/GetApplicationFee', { method: 'POST' }).then((response) => {
+        if (response.ok) document.body.insertAdjacentHTML('beforeend', '<button>Submit Application and Pay By Credit Card</button>');
+      });
+    </script>`,
+  }));
+  await page.route('**/GetApplicationFee', async (route) => {
+    feeLookupAttempts += 1;
+    await route.fulfill({
+      status: feeLookupAttempts === 1 ? 500 : 200,
+      contentType: 'application/json',
+      body: feeLookupAttempts === 1 ? '{"error":"temporary"}' : '{}',
+    });
+  });
+  await page.setContent('<h1>Submitted</h1>');
+
+  const application = new HmbLoginApplyPage(page);
+  application.captureTransactionNumber = async () => '12345';
+  const transaction = await application.completePayment({ required: true });
+
+  assert.equal(transaction, '12345');
+  assert.equal(feeLookupAttempts, 2);
+});
+
+test('HMB reports persistent Fee Detail API 500 responses with actionable diagnostics', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  let feeLookupAttempts = 0;
+  await page.route('**/FeeDetail', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: `<h1>Fee Detail</h1><script>
+      fetch('/api/Common/GetApplicationFee', { method: 'POST' });
+    </script>`,
+  }));
+  await page.route('**/GetApplicationFee', async (route) => {
+    feeLookupAttempts += 1;
+    await route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"temporary"}' });
+  });
+  await page.setContent('<h1>Submitted</h1>');
+
+  const application = new HmbLoginApplyPage(page);
+  await assert.rejects(
+    () => application.completePayment({ required: true }),
+    /GetApplicationFee returned HTTP 500 after 3 attempts.*fee service is failing/s,
+  );
+  assert.equal(feeLookupAttempts, 3);
+});
+
+test('HMB fails when payment click has no transaction confirmation', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+
+  const page = await browser.newPage();
+  await page.route('**/FeeDetail', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: '<h1>Fee Detail</h1><button>Submit Application and Pay By Credit Card</button>',
+  }));
+  await page.setContent('<h1>Submitted</h1>');
+
+  const application = new HmbLoginApplyPage(page);
+  application.captureTransactionNumber = async () => 'Not captured';
+  await assert.rejects(
+    () => application.completePayment({ required: true }),
+    /no transaction or receipt confirmation was found/,
+  );
 });
 
 test('HMB waits for all loading overlays, including one matching multiple selectors', async (t) => {

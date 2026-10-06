@@ -45,10 +45,13 @@ export class HmbLoginApplyPage {
     this.resumedPendingApplication = false;
   }
 
-  async loginAndApply(user, { step = async (_name, action) => action() } = {}) {
+  async loginAndApply(user, {
+    step = async (_name, action) => action(),
+    freshRegistration = false,
+  } = {}) {
     logger.section('Login and Apply for RA-HMB');
     await step('Login', () => this.login(user));
-    await step('Open application', () => this.openApplication());
+    await step('Open application', () => this.openApplication({ freshRegistration }));
     await step('Entity Information', () => this.fillEntityInformation());
     await step('Applicant Information', () => this.fillApplicantInformation());
     await step('Address Information', () => this.fillAddressInformation());
@@ -91,10 +94,12 @@ export class HmbLoginApplyPage {
     }
   }
 
-  async openApplication() {
+  async openApplication({ freshRegistration = false } = {}) {
     const applyName = HMB_DATA.loginApply.applicationLink;
     const applyLink = await this.portalAction(applyName, { timeout: runSettings.navigationTimeout });
-    const pendingLink = await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
+    const pendingLink = freshRegistration
+      ? null
+      : await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
 
     const applyHref = await applyLink.getAttribute('href').catch(() => '');
     if (/already started|pending/i.test(decodeURIComponent(applyHref || '')) && pendingLink) {
@@ -108,7 +113,9 @@ export class HmbLoginApplyPage {
     // Legacy pages return an href that tells us to resume; the current Angular
     // dashboard uses a clickable menu item with no href. In the latter case,
     // allow the application action to decide whether to open/resume the form.
-    const resumedLink = await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
+    const resumedLink = freshRegistration
+      ? null
+      : await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
     if (resumedLink) {
       await this.openPendingApplication();
       if (await this.isApplicationScreenVisible()) return;
@@ -311,7 +318,7 @@ export class HmbLoginApplyPage {
         await this.openApplicationSection('Owner, Director and Personnel', ownerSection, { timeout: 60000 });
       } catch (error) {
         if (error instanceof EmptyApplicationSectionError
-          && await this.recoverResumedApplicationAtAttestation('Owner, Director and Personnel')) {
+          && await this.recoverResumedApplicationAtAdditionalInformation('Owner, Director and Personnel')) {
           this.personnelDocumentsUploaded = 0;
           return;
         }
@@ -443,22 +450,22 @@ export class HmbLoginApplyPage {
     return hasNavigationShell && !hasSectionContent && !hasAddControl;
   }
 
-  async recoverResumedApplicationAtAttestation(stage) {
+  async recoverResumedApplicationAtAdditionalInformation(stage) {
     if (!this.resumedPendingApplication) return false;
 
-    const attestationSection = await firstVisible(this.applicationSectionCandidates('Attestation'), {
-      label: 'Attestation application section',
+    const additionalInformationSection = await firstVisible(this.applicationSectionCandidates('Additional Information'), {
+      label: 'Additional Information application section',
       timeout: 3000,
     }).catch(() => null);
-    if (!attestationSection) return false;
+    if (!additionalInformationSection) return false;
 
-    logger.warn(`${stage} returned an empty completed-section shell; checking Attestation for the resumed application.`);
+    logger.warn(`${stage} returned an empty completed-section shell; checking mandatory documents before Attestation.`);
     const dialogHandled = this.page.waitForEvent('dialog', { timeout: 5000 })
       .then(async (dialog) => {
         const message = dialog.message();
         if (!/unsaved changes[\s\S]*discard the changes/i.test(message)) {
           await dialog.dismiss();
-          throw new Error(`Unexpected dialog while recovering at Attestation: ${message}`);
+          throw new Error(`Unexpected dialog while recovering at Additional Information: ${message}`);
         }
         await dialog.accept();
         logger.info('Accepted the portal confirmation to discard the empty section state.');
@@ -469,12 +476,12 @@ export class HmbLoginApplyPage {
         throw error;
       });
 
-    await click(this.page, attestationSection, { label: 'Attestation section recovery', timeout: 60000 });
+    await click(this.page, additionalInformationSection, { label: 'Additional Information section recovery', timeout: 60000 });
     await dialogHandled;
     await waitAfterAction(this.page);
-    if (!(await this.isAttestationPageVisible())) return false;
+    if (!(await this.isMandatoryDocumentsPageVisible())) return false;
 
-    logger.info('Resumed application recovered at Attestation.');
+    logger.info('Resumed application recovered at Additional Information.');
     return true;
   }
 
@@ -676,6 +683,8 @@ export class HmbLoginApplyPage {
       return 0;
     }
 
+    if (!(await this.waitForMandatoryDocumentGrid())) return 0;
+
     let uploaded = 0;
 
     for (const doc of HMB_DATA.loginApply.mandatoryDocuments) {
@@ -709,44 +718,105 @@ export class HmbLoginApplyPage {
   }
 
   async ensureMandatoryDocumentLink(docId) {
-    const prefix = docId.replace(/-\d+$/, '-');
+    if (!(await this.waitForMandatoryDocumentGrid())) return null;
 
     for (let attempt = 1; attempt <= 5; attempt++) {
       if (await this.isAttestationPageVisible()) return null;
 
-      const link = this.page.locator(`#${docId}`).or(this.page.locator(`a[id^="${prefix}"]`)).first();
-      if (await link.isVisible().catch(() => false)) return link;
+      const link = await this.findMandatoryDocumentLink(docId);
+      if (link) return link;
 
-      const moved = await this.clickMandatoryPager('next')
-        || await this.clickMandatoryPager('last')
-        || await this.clickMandatoryPager('first');
-
-      if (!moved) break;
+      if (!(await this.clickMandatoryPager('next'))) break;
     }
 
     if (await this.isAttestationPageVisible()) return null;
 
-    const rows = await this.page
-      .locator('#MandatoryDocument tr, cc-mandatory-document tr, table tr')
-      .evaluateAll((elements) => elements.map((row) => row.innerText?.replace(/\s+/g, ' ').trim()).filter(Boolean))
-      .catch(() => []);
+    const rows = await this.page.getByRole('row').allInnerTexts().catch(() => []);
 
     throw new Error(`Mandatory document link "${docId}" was not found. Visible rows: ${JSON.stringify(rows.slice(0, 12))}`);
   }
 
-  async clickMandatoryPager(action) {
-    const scope = this.page.locator('#MandatoryDocument, cc-mandatory-document').first();
-    if (!(await scope.isVisible().catch(() => false))) return false;
+  async waitForMandatoryDocumentGrid() {
+    if (await this.isAttestationPageVisible()) return false;
 
-    const button = await firstVisible([
-      scope.getByRole('button', { name: new RegExp(`^${action}$`, 'i') }),
-      scope.locator(`button.image-button-${action}, button[aria-label="${action}"], .image-button-${action}`),
-    ], { label: `Mandatory ${action} pager`, timeout: 1500 }).catch(() => null);
+    const documentLinks = this.page.getByRole('link', { name: /^Documents\s*\(\s*\d+\s*\)$/i });
+    const legacyDocumentLinks = this.page.locator('a[id^="mandatoryDoc"]');
+    await firstVisible([documentLinks.first(), legacyDocumentLinks.first()], {
+      label: 'mandatory documents section',
+      timeout: runSettings.navigationTimeout,
+    });
+
+    if (await this.isAttestationPageVisible()) return false;
+    await firstVisible([documentLinks.first(), legacyDocumentLinks.first()], {
+      label: 'mandatory document rows',
+      timeout: runSettings.navigationTimeout,
+    });
+    return true;
+  }
+
+  async findMandatoryDocumentLink(docId) {
+    const idLink = this.page.locator(`#${docId}`).or(this.page.locator(`a[id^="${docId.replace(/-\d+$/, '-')}"]`)).first();
+    if (await idLink.isVisible().catch(() => false)) return idLink;
+
+    const itemIndex = Number(docId.match(/^mandatoryDoc(\d+)-/)?.[1]);
+    if (!Number.isInteger(itemIndex)) return null;
+
+    const itemNumber = itemIndex + 1;
+    const rows = this.page.getByRole('row');
+    const rowCount = await rows.count().catch(() => 0);
+
+    for (let index = 0; index < rowCount; index++) {
+      const row = rows.nth(index);
+      const rowText = await row.innerText().catch(() => '');
+      if (!/Documents\s*\(\s*\d+\s*\)/i.test(rowText)) continue;
+
+      const cells = await row.getByRole('cell').allInnerTexts().catch(() => []);
+      const displayedItemNumber = cells[0]?.trim() || rowText.trim().split(/\s+/)[0];
+      if (displayedItemNumber !== String(itemNumber)) continue;
+
+      const rowLink = row.getByRole('link').filter({ hasText: /^Documents\s*\(\s*\d+\s*\)$/i }).first();
+      return await rowLink.isVisible().catch(() => false) ? rowLink : null;
+    }
+
+    return null;
+  }
+
+  async clickMandatoryPager(action) {
+    const pageIndicator = this.page.getByText(/^Page\s+\d+\s+of\s+\d+$/i).first();
+    const indicatorVisible = await pageIndicator.isVisible().catch(() => false);
+    const indicatorText = indicatorVisible ? (await pageIndicator.innerText()).trim() : '';
+    const currentPage = indicatorText.match(/^Page\s+(\d+)\s+of\s+(\d+)$/i);
+    if (action === 'next' && currentPage && Number(currentPage[1]) >= Number(currentPage[2])) return false;
+
+    const name = new RegExp(`^${escapeRegex(action)}$`, 'i');
+    const scopes = indicatorVisible
+      ? [pageIndicator.locator('xpath=..'), pageIndicator.locator('xpath=../..')]
+      : [];
+    scopes.push(this.page.locator('#MandatoryDocument, cc-mandatory-document').first());
+
+    let button = null;
+    for (const scope of scopes) {
+      const candidate = scope.getByRole('button', { name })
+        .or(scope.locator(`button.image-button-${action}, button[aria-label="${action}"], .image-button-${action}`))
+        .first();
+      if (await candidate.isVisible().catch(() => false)) {
+        button = candidate;
+        break;
+      }
+    }
 
     if (!button) return false;
-    if (!(await button.isEnabled().catch(() => false))) return false;
+    if (!(await button.isEnabled().catch(() => false))) {
+      if (!currentPage || Number(currentPage[1]) >= Number(currentPage[2])) return false;
+      await expect(button).toBeEnabled({ timeout: runSettings.navigationTimeout });
+    }
 
     await clickAndWait(this.page, button, { label: `Mandatory ${action} page`, timeout: 60000 });
+    if (indicatorVisible) {
+      await expect.poll(async () => pageIndicator.innerText().catch(() => ''), {
+        timeout: runSettings.navigationTimeout,
+      }).not.toBe(indicatorText);
+    }
     return true;
   }
 
@@ -830,30 +900,109 @@ export class HmbLoginApplyPage {
     return true;
   }
 
-  async completePayment() {
-    if (!runSettings.submitPayment) {
+  async completePayment({ required = runSettings.submitPayment } = {}) {
+    if (!required) {
       logger.warn('submitPayment=false. Payment not submitted.');
       return 'Payment skipped';
     }
 
     logger.section('Payment');
-    let payButton = this.page.getByRole('button', { name: /Submit Application and Pay By/i });
-    if (!(await payButton.isVisible().catch(() => false))) {
-      await this.page.goto(URLS.feeDetailUrl, { waitUntil: 'domcontentloaded', timeout: runSettings.navigationTimeout });
-      await waitForPageReady(this.page);
-      payButton = this.page.getByRole('button', { name: /Submit Application and Pay By/i });
-    }
-
-    if (!(await payButton.isVisible().catch(() => false))) {
-      const pageText = await this.page.locator('body').innerText().catch(() => '');
-      logger.warn(`Payment button was not visible on Fee Detail. Page text: ${pageText.replace(/\s+/g, ' ').trim().slice(0, 500)}`);
-      return 'Not captured - payment button not visible';
-    }
+    const payButton = await this.findPaymentAction();
 
     await clickAndWait(this.page, payButton, { label: 'Submit Application and Pay By', timeout: 60000 });
     const transactionNumber = await this.captureTransactionNumber();
+    if (!transactionNumber || transactionNumber === 'Not captured') {
+      throw new Error(
+        `Payment action was clicked, but no transaction or receipt confirmation was found. `
+        + `URL: ${this.page.url()}.`,
+      );
+    }
     logger.info(`Transaction Number: ${transactionNumber}`);
     return transactionNumber;
+  }
+
+  async findPaymentAction() {
+    const readyTimeout = Math.max(1000, Number(runSettings.paymentReadyTimeoutMs) || 20000);
+    const retries = Math.min(5, Math.max(0, Math.floor(Number(runSettings.paymentApiRetries) || 0)));
+    const attempts = retries + 1;
+    const retryDelay = Math.max(0, Number(runSettings.paymentRetryDelayMs) || 0);
+    const payButton = this.paymentActionLocator();
+
+    try {
+      await payButton.waitFor({ state: 'visible', timeout: Math.min(3000, readyTimeout) });
+      return payButton;
+    } catch {}
+
+    let lastFeeResponse = null;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const feeResponsePromise = this.page.waitForResponse(
+        (response) => /\/GetApplicationFee(?:[/?#]|$)/i.test(response.url()),
+        { timeout: readyTimeout },
+      ).catch(() => null);
+
+      await this.page.goto(URLS.feeDetailUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: runSettings.navigationTimeout,
+      });
+      await waitForPageReady(this.page);
+
+      if (await payButton.isVisible().catch(() => false)) return payButton;
+
+      const feeResponse = await feeResponsePromise;
+      if (feeResponse) lastFeeResponse = feeResponse;
+
+      if (feeResponse && feeResponse.status() >= 500) {
+        if (attempt < attempts) {
+          logger.warn(
+            `Fee lookup returned HTTP ${feeResponse.status()} (attempt ${attempt}/${attempts}); retrying in ${retryDelay} ms.`,
+          );
+          if (retryDelay) await this.page.waitForTimeout(retryDelay);
+          continue;
+        }
+
+        throw new Error(
+          `Fee Detail could not load payment data: GetApplicationFee returned HTTP ${feeResponse.status()} `
+          + `after ${attempts} attempts. URL: ${feeResponse.url()}. `
+          + 'The fee service is failing; check the HMB API/server logs.',
+        );
+      }
+
+      if (feeResponse && !feeResponse.ok()) {
+        throw new Error(
+          `Fee Detail could not load payment data: GetApplicationFee returned HTTP ${feeResponse.status()}. `
+          + `URL: ${feeResponse.url()}.`,
+        );
+      }
+
+      try {
+        await payButton.waitFor({ state: 'visible', timeout: readyTimeout });
+        return payButton;
+      } catch {}
+
+      if (!feeResponse && attempt < attempts) {
+        logger.warn(`Fee Detail did not return GetApplicationFee (attempt ${attempt}/${attempts}); retrying.`);
+        if (retryDelay) await this.page.waitForTimeout(retryDelay);
+        continue;
+      }
+
+      break;
+    }
+
+    const pageText = await this.page.locator('body').innerText().catch(() => '');
+    const apiStatus = lastFeeResponse
+      ? `GetApplicationFee returned HTTP ${lastFeeResponse.status()}.`
+      : 'No GetApplicationFee response was observed.';
+    throw new Error(
+      `Fee Detail loaded without the "Submit Application and Pay By" action. ${apiStatus} `
+      + `URL: ${this.page.url()}. Page text: ${pageText.replace(/\s+/g, ' ').trim().slice(0, 500)}`,
+    );
+  }
+
+  paymentActionLocator() {
+    const name = /Submit Application and Pay By/i;
+    return this.page.getByRole('button', { name })
+      .or(this.page.getByRole('link', { name }))
+      .first();
   }
 
   async captureTransactionNumber() {
