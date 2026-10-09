@@ -54,6 +54,7 @@ export class BaseStrategy {
     logger.section(`${this.site.environment.key}-${this.site.key}-${product.key} Registration`);
     logger.info(`Environment: ${this.site.environment.name}`);
     logger.info(`Login URL: ${this.site.loginUrl}`);
+    logger.info(`URL Version: ${this.site.urlVersion || 'Not versioned'} (${this.site.versionSource})`);
     logger.info(`Product: ${product.name}`);
     logger.info(`Initial Login Name: ${user.loginName}`);
     addRegistrationAnnotations(this.testInfo, { site: this.site, product });

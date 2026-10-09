@@ -5,6 +5,18 @@ import { resolveRunMatrix } from '../utils/helpers.js';
 
 const combinations = resolveRunMatrix(siteRegistry);
 
+if (process.argv.includes('--list')) {
+  const seen = new Set();
+  for (const { environment, site } of combinations) {
+    const key = `${environment.key}:${site.key}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    console.log(`\n${key} [${site.versionSource}] Version: ${site.urlVersion || 'Not versioned'}`);
+    console.log(`  Configured URL: ${site.configuredLoginUrl}`);
+    console.log(`  Effective URL:  ${site.loginUrl}`);
+  }
+}
+
 test.describe('AllUserRegistration', () => {
   if (isParallelRunEnabled()) {
     test.describe.configure({ mode: 'parallel' });

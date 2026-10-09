@@ -13,6 +13,7 @@
     "test:debug": "playwright test --debug",
     "list": "playwright test --list",
     "test:reports": "node --test reporters/tests/nativeReports.test.js",
+    "test:urls": "node --test config/tests/*.test.js",
     "report": "playwright show-report --host 127.0.0.1 --port 0"
   },
   "devDependencies": {

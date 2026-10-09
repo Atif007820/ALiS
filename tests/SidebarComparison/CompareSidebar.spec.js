@@ -29,7 +29,9 @@ test.describe('Sidebar Comparison', () => {
         { type: 'Site', description: comparison.site },
         { type: 'Product', description: `${comparison.id} - ${comparison.name}` },
         { type: 'URL A', description: comparison.urlA.loginUrl },
+        { type: 'URL A Source', description: comparison.urlA.urlSource },
         { type: 'URL B', description: comparison.urlB.loginUrl },
+        { type: 'URL B Source', description: comparison.urlB.urlSource },
       ],
     }, async ({ browser }, testInfo) => {
       let payload = {

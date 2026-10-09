@@ -60,3 +60,40 @@ test('local browser preserves locked Cranes fields and fills editable fields', a
   await page.setContent('<label>Entity Name<input value="Old Entity"></label>');
   assert.equal(await strategy.fillText(page.getByRole('textbox', { name: 'Entity Name' }), 'New Entity'), 'New Entity');
 });
+
+test('Cranes accepts explicit approval-pending confirmation without treating the account as approved', async (t) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  const approval = 'There may be processing time while your company administrator reviews your request for access. Once your registration is complete, you will receive an email notification.';
+  let body = '';
+  await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body }));
+  const testInfo = { annotations: [] };
+  const strategy = siteRegistry.createStrategy(siteRegistry.resolve('CRANES', 'TEST'), {
+    page, registrationPage: new RegistrationPage(page), testInfo,
+  });
+  for (const message of ['You have successfully registered.', 'User has been registered successfully.']) {
+    body = `<p>${message}</p>`;
+    await page.goto('http://cranes.example/SuccessPage.aspx');
+    assert.equal(await strategy.isSuccessful(), true);
+  }
+  body = `<p>${approval}</p><button>Return to Login</button>`;
+  await page.goto('http://cranes.example/ALiSWADLNI3TESTING11.4.42.01/SuccessPage');
+  assert.equal(await strategy.isSuccessful(), true);
+  assert.equal(await strategy.isSuccessful(), true);
+  assert.deepEqual(testInfo.annotations, [{
+    type: 'Registration Outcome', description: 'Submitted - pending company administrator approval',
+  }]);
+  await page.goto('http://cranes.example/InitialUserRegistration.aspx');
+  assert.equal(await strategy.isSuccessful(), false, 'Approval text outside a confirmation page must not pass');
+  body = `<p>${approval}</p><button hidden>Return to Login</button>`;
+  await page.goto('http://cranes.example/SuccessPage');
+  assert.equal(await strategy.isSuccessful(), false, 'The confirmation must have a visible return action');
+  body = `<p>${approval}</p><label>Login Name *<input></label><button>Register</button><button>Return to Login</button>`;
+  await page.goto('http://cranes.example/SuccessPage');
+  assert.equal(await strategy.isSuccessful(), false, 'An open registration form must not pass');
+  assert.equal(await strategy.shouldRetryWhenFormStillOpen(), true);
+  body = `<p>${approval}</p><button>Return to Login</button>`;
+  await page.goto('http://cranes.example/UnknownResponse');
+  await assert.rejects(strategy.shouldRetryWhenFormStillOpen(), /did not reach a confirmed success/);
+});

@@ -37,6 +37,8 @@ const SIDEBAR_SIGNATURES = {
 };
 
 const PAGE_GOTO_TIMEOUT = Number(runSettings.gotoTimeout || 60000);
+const NAVIGATION_RETRIES = Number.isSafeInteger(runSettings.navigationRetries) && runSettings.navigationRetries >= 0
+  ? runSettings.navigationRetries : 1;
 const LOGIN_TIMEOUT = Number(runSettings.loginTimeout || 45000);
 const SIDEBAR_TIMEOUT = Number(runSettings.sidebarTimeout || 45000);
 const SIDEBAR_POLL_INTERVAL = Number(runSettings.sidebarPollInterval || 500);
@@ -118,7 +120,7 @@ export async function getSidebarItems(browser, env) {
 
   try {
     console.log(`\nOpening ${env.label} -> ${env.loginUrl}`);
-    await page.goto(env.loginUrl, { waitUntil: 'domcontentloaded', timeout: PAGE_GOTO_TIMEOUT });
+    await openLoginPage(page, env);
     console.log(`   ${env.label} login page loaded (${elapsed(started)})`);
 
     await selectBusinessUnitIfNeeded(page, env);
@@ -136,6 +138,27 @@ export async function getSidebarItems(browser, env) {
     await page.close().catch(() => {});
     await context.close().catch(() => {});
     console.log(`   ${env.label} session closed (${elapsed(started)})`);
+  }
+}
+
+// Retry only the initial GET navigation; never repeat credential submissions.
+export async function openLoginPage(page, { loginUrl, label }, {
+  retries = NAVIGATION_RETRIES,
+  timeout = PAGE_GOTO_TIMEOUT,
+} = {}) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout });
+      if (response && response.status() >= 400) {
+        throw new Error(`Could not load ${label}: HTTP ${response.status()} ${response.statusText()}. URL: ${page.url()}`);
+      }
+      return response;
+    } catch (error) {
+      const transient = error.name === 'TimeoutError'
+        || /net::ERR_(NETWORK_CHANGED|NETWORK_IO_SUSPENDED|CONNECTION_RESET|CONNECTION_CLOSED|CONNECTION_TIMED_OUT|TIMED_OUT)\b/.test(error.message);
+      if (!transient || attempt >= retries) throw error;
+      console.log(`   Retrying ${label} page load (${attempt + 1}/${retries}): ${error.message.split('\n')[0]}`);
+    }
   }
 }
 

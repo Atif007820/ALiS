@@ -4,6 +4,11 @@ export function addRegistrationAnnotations(testInfo, { site, product, user }) {
   pushUnique(testInfo, 'Site', annotationSiteName(site.displayName));
   pushUnique(testInfo, 'Site Key', site.key);
   pushUnique(testInfo, 'Login URL', site.loginUrl);
+  if (site.configuredLoginUrl && site.configuredLoginUrl !== site.loginUrl) {
+    pushUnique(testInfo, 'Configured Login URL', site.configuredLoginUrl);
+  }
+  pushUnique(testInfo, 'URL Version', site.urlVersion);
+  pushUnique(testInfo, 'Version Source', site.versionSource);
   pushUnique(testInfo, 'Product', product.name);
   pushUnique(testInfo, 'Product Key', product.key);
 

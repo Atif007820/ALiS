@@ -1,5 +1,10 @@
 import { BaseStrategy } from './BaseStrategy.js';
 import { editableData } from '../config/editableData.js';
+import { logger } from '../utils/logger.js';
+
+const registeredMessage = /successfully\s+registered|registered\s+successfully/i;
+const approvalMessage = /company administrator reviews your request for access/i;
+const approvalOutcome = 'Submitted - pending company administrator approval';
 
 export class CranesStrategy extends BaseStrategy {
   async openRegistration(product, user) {
@@ -61,11 +66,34 @@ export class CranesStrategy extends BaseStrategy {
   }
 
   async isSuccessful() {
-    await this.page.getByText(/You have successfully registered|successfully registered/i)
+    await this.page.getByText(registeredMessage)
+      .or(this.page.getByText(approvalMessage))
       .first()
       .waitFor({ state: 'visible', timeout: 10000 })
       .catch(() => {});
-    return /You have successfully registered|successfully registered/i.test(await this.form.bodyText());
+    if (await this.form.isRegistrationFormOpen()) return false;
+    const text = await this.form.bodyText();
+    if (registeredMessage.test(text)) return true;
+
+    const successPage = /\/SuccessPage(?:\.aspx)?\/?$/i.test(new URL(this.page.url()).pathname);
+    const returnToLogin = this.page.getByRole('button', { name: /Return to Login/i })
+      .or(this.page.getByRole('link', { name: /Return to Login/i })).first();
+    const pendingApproval = successPage && approvalMessage.test(text)
+      && /Once your registration is complete, you will receive an email notification/i.test(text)
+      && await returnToLogin.isVisible();
+    if (!pendingApproval) return false;
+
+    if (this.registrationOutcome !== approvalOutcome) {
+      this.registrationOutcome = approvalOutcome;
+      this.testInfo?.annotations?.push({ type: 'Registration Outcome', description: approvalOutcome });
+      logger.info(approvalOutcome);
+    }
+    return true;
+  }
+
+  async shouldRetryWhenFormStillOpen() {
+    if (await this.form.isRegistrationFormOpen()) return true;
+    throw new Error(`Cranes registration did not reach a confirmed success or pending-approval page. URL=${this.page.url()}`);
   }
 
   async disableAutocomplete() {

@@ -1,7 +1,9 @@
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
-import { availableEnvironmentKeys, resolveEnvironment } from '../config/urls.js';
+import { availableEnvironmentKeys, resolveEnvironment, versionFromUrl } from '../config/urls.js';
+
+export { versionFromUrl };
 
 export const frameworkRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -158,15 +160,10 @@ function validateRequestedSites(siteRegistry, wantedSites) {
 export function isProductAvailableForSite(product, site) {
   if (!product.minimumVersion) return true;
 
-  const siteVersion = versionFromUrl(site.loginUrl);
+  const siteVersion = site.urlVersion ?? versionFromUrl(site.loginUrl);
   if (!siteVersion) return true;
 
   return compareVersions(siteVersion, product.minimumVersion) >= 0;
-}
-
-export function versionFromUrl(url) {
-  const matches = [...String(url || '').matchAll(/(\d+\.\d+\.\d+(?:\.\d+)?)/g)];
-  return matches.at(-1)?.[1] || '';
 }
 
 export function compareVersions(left, right) {

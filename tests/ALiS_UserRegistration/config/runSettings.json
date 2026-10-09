@@ -1,5 +1,15 @@
 {
   "defaultEnvironment": "TEST",
+  "environmentVersionOverrides": {
+    "TEST": {
+      "enabled": true,
+      "version": "11.4.42.01"
+    },
+    "PROD": {
+      "enabled": true,
+      "version": "11.3.25.03"
+    }
+  },
   "defaultSite": "ALL",
   "defaultProduct": "ALL",
   "defaultProject": "chromium",

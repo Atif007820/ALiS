@@ -1,5 +1,5 @@
 import { sites } from '../config/sites.js';
-import { resolveEnvironment, resolveLoginUrl } from '../config/urls.js';
+import { resolveEnvironment, resolveLoginUrlDetails } from '../config/urls.js';
 import { ConvStrategy } from '../strategies/ConvStrategy.js';
 import { CranesStrategy } from '../strategies/CranesStrategy.js';
 import { DpbhStrategy } from '../strategies/DpbhStrategy.js';
@@ -35,12 +35,12 @@ export const siteRegistry = {
     return this.get(siteKey).products;
   },
 
-  resolve(siteKey, environmentKey) {
+  resolve(siteKey, environmentKey, options) {
     const site = this.get(siteKey);
     const environment = resolveEnvironment(environmentKey);
-    const loginUrl = resolveLoginUrl(environment.key, site.key);
+    const urlDetails = resolveLoginUrlDetails(environment.key, site.key, options);
 
-    if (!loginUrl) return null;
+    if (!urlDetails.loginUrl) return null;
 
     return {
       ...site,
@@ -48,7 +48,7 @@ export const siteRegistry = {
         const overrides = product.environmentOverrides?.[environment.key];
         return overrides ? { ...product, ...overrides } : product;
       }),
-      loginUrl,
+      ...urlDetails,
       environment,
     };
   },

@@ -17,6 +17,11 @@ try {
   });
   console.log(`Selected comparisons (${pairs.length}): ${pairs.map((pair) => `${pair.site}/${pair.id}`).join(', ')}`);
   if (options.list) {
+    for (const pair of pairs) {
+      console.log(`\n${pair.site} / ${pair.id} - ${pair.name}`);
+      console.log(`  URL A [${pair.urlA.urlSource}]: ${pair.urlA.loginUrl}`);
+      console.log(`  URL B [${pair.urlB.urlSource}]: ${pair.urlB.loginUrl}`);
+    }
     const incomplete = pairs.filter((pair) => [pair.urlA, pair.urlB]
       .some((side) => !String(side.username).trim() || !String(side.password).trim()));
     if (incomplete.length) {

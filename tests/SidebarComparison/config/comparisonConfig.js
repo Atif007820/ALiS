@@ -41,7 +41,11 @@ export function getComparisonPairs({
     const selected = configuredProducts.filter((product) => product.enabled
       && (!selectedProducts.length || selectedProducts.includes('all')
         || selectedProducts.some((value) => matchesProduct(product, value))));
-    pairs.push(...selected);
+    if (selected.length) {
+      const global = normalizeUrlOverrides(settings.globalUrlOverrides, 'config/runSettings.json > globalUrlOverrides');
+      const site = normalizeUrlOverrides(config.siteUrlOverrides, `${config.configFile} > siteUrlOverrides`);
+      pairs.push(...selected.map((pair) => applyUrlOverrides(pair, { global, site })));
+    }
   }
 
   if (!pairs.length) {
@@ -49,6 +53,47 @@ export function getComparisonPairs({
   }
   validateComparisons(pairs, { requireCredentials });
   return pairs;
+}
+
+function normalizeUrlOverrides(value, location) {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw configurationError([`${location} must be an object with enabled, urlA and urlB`]);
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
+    throw configurationError([`${location}.enabled must be true or false`]);
+  }
+  if (value.enabled !== true) return {};
+
+  const urls = {};
+  const errors = [];
+  for (const side of ['urlA', 'urlB']) {
+    if (value[side] !== undefined && typeof value[side] !== 'string') {
+      errors.push(`${location}.${side} must be a string (use "" to fall back)`);
+      continue;
+    }
+    urls[side] = (value[side] ?? '').trim();
+    if (urls[side] && !isLoginUrl(urls[side])) {
+      errors.push(`${location}.${side} must be an HTTP(S) URL without embedded credentials`);
+    }
+  }
+  if (!errors.length && !urls.urlA && !urls.urlB) {
+    errors.push(`${location} is enabled but both URLs are blank; supply at least one URL or set enabled: false`);
+  }
+  if (errors.length) throw configurationError(errors);
+  return urls;
+}
+
+function applyUrlOverrides(pair, { global, site }) {
+  const resolveSide = (side) => {
+    const urlSource = global[side] ? 'GLOBAL' : site[side] ? 'SITE' : 'PRODUCT';
+    return {
+      ...pair[side],
+      loginUrl: global[side] || site[side] || pair[side].loginUrl,
+      urlSource,
+    };
+  };
+  return { ...pair, urlA: resolveSide('urlA'), urlB: resolveSide('urlB') };
 }
 
 function normalizeProducts(config, settings) {
@@ -100,10 +145,7 @@ function validateComparisons(pairs, { requireCredentials }) {
       if (typeof value.businessUnit !== 'string') {
         errors.push(`config/runSettings.json > businessUnits.${pair.site}.${pair.id}.${side} must be a string (use "" for automatic selection)`);
       }
-      try {
-        const url = new URL(value.loginUrl);
-        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error();
-      } catch {
+      if (!isLoginUrl(value.loginUrl)) {
         errors.push(`${location}.loginUrl must be an HTTP(S) URL without embedded credentials`);
       }
       for (const field of Object.keys(defaultLogin)) {
@@ -120,9 +162,20 @@ function validateComparisons(pairs, { requireCredentials }) {
       }
     }
   }
-  if (errors.length) {
-    throw new Error(`SidebarComparison configuration needs attention:\n${errors.map((error) => `- ${error}`).join('\n')}\nFill the selected configuration before running. Use --list to preview selections without logging in.`);
+  if (errors.length) throw configurationError(errors);
+}
+
+function isLoginUrl(value) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+  } catch {
+    return false;
   }
+}
+
+function configurationError(errors) {
+  return new Error(`SidebarComparison configuration needs attention:\n${errors.map((error) => `- ${error}`).join('\n')}\nFill the selected configuration before running. Use --list to preview selections without logging in.`);
 }
 
 function selection(value, label) {

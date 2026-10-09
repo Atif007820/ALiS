@@ -17,6 +17,7 @@ config/sites/SAPTA.js  Products 1-3; URL A/B supplied; credentials blank.
 
 Fill username/password for BOTH sides before running a new site.
 --list works with blank credentials and makes no login attempts.
+It prints each resolved URL and its GLOBAL, SITE or PRODUCT source.
 No credentials are copied between sites or between URL A and URL B.
 
 config/runSettings.json:
@@ -28,10 +29,66 @@ config/runSettings.json:
   workers: 3            Default Playwright workers.
   fullyParallel: true  Allow independent comparisons to run together.
   headless: true        Default browser visibility.
+  navigationRetries: 1 Retry the initial login-page GET once on a transient
+                       network error or navigation timeout. Set 0 to disable.
 
 Precedence: command options > environment variables > runSettings.json.
 Environment variables: SITES, PRODUCTS, WORKERS, SIDEBAR_HEADED.
 SIDEBAR_HEADED=true shows browsers; false runs headless.
+
+URL MODES (EXISTING COMMANDS STAY THE SAME)
+------------------------------------------------------------
+URL precedence for each side: GLOBAL > SITE > PRODUCT.
+
+1. Product-wise URLs (default)
+   Keep globalUrlOverrides and all siteUrlOverrides disabled.
+   Each selected product uses its existing urlA.loginUrl and urlB.loginUrl.
+
+2. Site-wise URLs
+   In config/sites/<SITE>.js, add/edit CONFIG.siteUrlOverrides:
+   siteUrlOverrides: {
+     enabled: true,
+     urlA: 'https://server/site-a/login',
+     urlB: 'https://server/site-b/login',
+   },
+   These URLs apply to the selected enabled products within that site.
+   Set globalUrlOverrides.enabled to false to use site overrides directly.
+   Other sites continue using their own site overrides or product URLs.
+
+3. Global URLs
+   In config/runSettings.json, add/edit:
+   "globalUrlOverrides": {
+     "enabled": true,
+     "urlA": "https://server/shared-a/login",
+     "urlB": "https://server/shared-b/login"
+   }
+   These exact URLs apply to all selected enabled products across selected sites.
+   Use --site=ALL --product=ALL to select all discovered sites' enabled products.
+   Global URLs take priority over site and product URLs.
+
+Each side resolves independently. A blank override URL falls back to the
+next level. For example, global URL A + blank global URL B can use site or
+product URL B. Both URLs may be the same address for a same-URL comparison.
+An enabled override needs at least one populated URL. Active override values
+must be HTTP(S) URLs without embedded credentials. Invalid active overrides
+fail before browsers open. Disabled override URLs are ignored.
+Overrides change only URLs; product credentials, labels, login controls and
+business unit selections remain product-specific. Credentials must be valid
+on the chosen URLs. Product URLs are retained and restored by disabling the
+overrides. Only selected sites with enabled selections validate overrides.
+New site files may omit siteUrlOverrides and use product/global URLs normally.
+Selected product URLs may be blank when their effective URLs come from overrides.
+The reports and Playwright annotations show the resolved URLs actually used.
+
+The SAME commands work for all three modes:
+npm run sidebar -- --site=NVRCP --product=ALL --parallel 3
+npm run sidebar -- --site=NVRCP,NJ --product=ALL --parallel 3
+npm run sidebar -- --site=ALL --product=ALL --parallel 3
+
+Preview the selected URLs and sources without logging in:
+npm run sidebar -- --site=ALL --product=ALL --list
+npm run sidebar -- --site=NVRCP,NJ --product=1,2 --list
+--list preserves the latest reports and never prints credentials.
 
 OPTIONS
 ------------------------------------------------------------
@@ -57,7 +114,7 @@ Set enabled:true to include a product; omitted enabled defaults to true.
 Disabled products do not require URLs or credentials to be filled.
 Sites with no enabled selections are skipped while other sites continue.
 If no enabled products remain in the entire selection, the run stops clearly.
-Enabled products must still have valid URLs and both sides' credentials.
+Enabled products must have valid resolved URLs and both sides' credentials.
 Without --product, runSettings.products applies; [] uses enabled products.
 A requested id must exist in EVERY selected site; invalid selections fail.
 ALL must be used alone, not combined with individual ids or site names.
@@ -135,7 +192,7 @@ npm run sidebar -- --site=NVRCP --product="Product 1,Product 3" --list
 ADDING MORE PRODUCTS
 ------------------------------------------------------------
 1. Open the appropriate config/sites/<SITE>.js file.
-2. Copy one product object inside productComparisons.
+2. Copy one product object in the array returned by getProductComparisons().
 3. Assign a new, unique positive integer id (for example 7).
 4. Edit its name and both sides' URLs, credentials and labels.
 5. Preview with --site=<SITE> --product=ALL --list.
@@ -184,6 +241,8 @@ CONFIG.login defines each site's login field/button names.
 For different login labels on URL B, add a login object inside urlB.
 Partial per-URL overrides inherit the remaining site's login settings.
 Both URLs independently detect Angular or ASP.NET sidebars.
+HTTP errors such as 404/500 fail immediately with the URL and status.
+Initial page-load retries do not retry HTTP errors or login submissions.
 
 One consolidated HTML report and one Excel workbook are written after
 ALL selected comparisons finish, for both single-site and multiple-site runs.
@@ -261,3 +320,12 @@ npm run test:reports
 Checks native report generation, HTML/Excel attachment links, retries, failures,
 skipped tests, auto-open preferences and preservation of reports during --list.
 Uses temporary files and does not replace the latest framework reports.
+
+URL RESOLUTION AND BROWSER SMOKE VERIFICATION (NO REAL SITE LOGIN)
+------------------------------------------------------------
+npm run test:urls
+Checks product, site and global URL precedence, partial fallbacks, invalid
+configuration, disabled products, automatic site discovery and --list output.
+Also checks bounded navigation retries and immediate HTTP error diagnostics.
+Browser smoke scenarios exercise isolated logins, ASP.NET/Angular sidebars and
+consolidated/native reporting using local fixture pages and temporary reports.
