@@ -1,3 +1,4 @@
+import { errors, expect } from '@playwright/test';
 import { BaseStrategy } from './BaseStrategy.js';
 import { editableData } from '../config/editableData.js';
 import { logger } from '../utils/logger.js';
@@ -9,35 +10,64 @@ const approvalOutcome = 'Submitted - pending company administrator approval';
 export class CranesStrategy extends BaseStrategy {
   async openRegistration(product, user) {
     await this.disableAutocomplete();
-    await this.page.goto(this.site.loginUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const response = await this.page.goto(this.site.loginUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    if (response && response.status() >= 400) {
+      throw new Error(`Cranes login URL returned HTTP ${response.status()}: ${this.site.loginUrl}. Check config/urls.js and version overrides.`);
+    }
     await this.form.waitForLoginShell();
+    await this.dismissInactiveDialog();
     await this.openPreliminaryRegistration();
-    await this.selectByLabel('Business Unit', editableData.cranes.businessUnit);
-    await this.selectByLabel('Please select your role', editableData.cranes.role);
-    await this.fillText(this.page.getByRole('textbox', { name: 'General Contractor License#' }), user.gclNumber);
-    await this.fillText(this.page.getByRole('textbox', { name: 'Crane Owner ID' }), user.craneOwnerId);
+    const role = this.selectLocator('Please select your role');
+    const generalLicense = this.page.getByRole('textbox', { name: 'General Contractor License#' });
+    const craneOwner = this.page.getByRole('textbox', { name: 'Crane Owner ID' });
+    await this.selectByLabel('Business Unit', editableData.cranes.businessUnit, {
+      ready: async () => await role.isVisible() && await role.isEnabled()
+        && await role.evaluate((select, value) => Array.from(select.options).some((option) => option.value === value && !option.disabled), editableData.cranes.role),
+    });
+    await this.selectByLabel('Please select your role', editableData.cranes.role, {
+      ready: async () => await generalLicense.isVisible() && await craneOwner.isVisible(),
+    });
+    await this.fillText(generalLicense, user.gclNumber);
+    await this.fillText(craneOwner, user.craneOwnerId);
 
+    await this.dismissInactiveDialog();
     await this.page.getByRole('button', { name: 'Next' }).click({ noWaitAfter: true });
     await this.page.getByRole('heading', { name: /Initial User Registration/i })
       .waitFor({ state: 'visible', timeout: 60000 });
-    await this.form.waitForReady();
+    await expect(this.page.getByRole('textbox', { name: 'Entity Name' })).toBeVisible({ timeout: 60000 });
   }
 
   async fillRegistration(product, user) {
-    user.entityName = await this.fillText(this.page.getByRole('textbox', { name: 'Entity Name' }), user.entityName);
+    const entity = await this.registrationSection('Entity Information');
+    user.entityName = await this.fillText(this.textLocator(entity, 'Entity Name'), user.entityName);
     user.facilityName = user.entityName;
-    user.ubiNumber = await this.fillText(this.page.getByRole('textbox', { name: 'UBI #' }), user.ubiNumber);
-    await this.fillText(this.page.locator('#txtFirstNameBE'), editableData.businessContactFirstName);
-    await this.fillText(this.page.locator('#txtLastNameBE'), editableData.businessContactLastName);
-    await this.fillText(this.page.locator('#Email'), user.email);
-    await this.fillText(this.page.locator('#txtPhone'), user.businessPhone);
-    await this.selectByLabel('Country', user.country, { preserveLocked: true });
+    user.ubiNumber = await this.fillText(this.textLocator(entity, 'UBI #'), user.ubiNumber);
+    await this.fillText(this.textLocator(entity, 'First Name'), editableData.businessContactFirstName);
+    await this.fillText(this.textLocator(entity, 'Last Name'), editableData.businessContactLastName);
+    await this.fillText(this.textLocator(entity, 'Email'), user.email);
+    await this.fillText(this.phoneLocator(entity, 'Phone'), user.businessPhone);
+    const state = this.selectLocator('State/Province');
+    user.country = await this.selectByLabel('Country', user.country, {
+      preserveLocked: true,
+      ready: async () => await state.isVisible() && (
+        await state.isEnabled()
+          ? await state.evaluate((select, value) => Array.from(select.options).some((option) => option.value === value && !option.disabled), user.state)
+          : await this.form.hasSelectedNonPlaceholderOption(state)
+      ),
+    });
     await this.fillText(this.page.getByRole('textbox', { name: 'Address' }), user.streetOne);
     await this.fillText(this.page.getByRole('textbox', { name: 'Suite/Apt/Unit/etc.' }), user.streetTwo, { required: false });
     await this.fillText(this.page.getByRole('textbox', { name: 'City' }), user.city);
-    await this.selectByLabel('State/Province', user.state, { preserveLocked: true });
+    const county = this.selectLocator('County');
+    user.state = await this.selectByLabel('State/Province', user.state, {
+      preserveLocked: true,
+      ready: async () => await county.isVisible() && (
+        await county.isEnabled()
+          ? (await this.form.availableSelectOptions(county)).length > 0
+          : await this.form.hasSelectedNonPlaceholderOption(county)
+      ),
+    });
     await this.fillText(this.page.getByRole('textbox', { name: 'Zip' }), user.zip);
-    const county = this.page.getByLabel('County', { exact: true }).first();
     if (await county.isEnabled()) await this.form.selectRandomCounty({ required: true });
     else if (!(await this.form.hasSelectedNonPlaceholderOption(county))) {
       throw new Error('Locked Cranes County dropdown has no selected value.');
@@ -49,10 +79,11 @@ export class CranesStrategy extends BaseStrategy {
   }
 
   async fillAccount(user) {
-    await this.fillText(this.page.locator('#txtLastName'), user.lastName);
-    await this.fillText(this.page.locator('#txtFirstName'), user.firstName);
-    await this.fillText(this.page.getByPlaceholder('E-mail'), user.email);
-    await this.fillText(this.page.locator('#txtUserPhone'), user.userPhone);
+    const details = await this.registrationSection('User Detail');
+    await this.fillText(this.textLocator(details, 'Last Name'), user.lastName);
+    await this.fillText(this.textLocator(details, 'First Name'), user.firstName);
+    await this.fillText(this.textLocator(details, 'Email'), user.email);
+    await this.fillText(this.phoneLocator(details, 'Phone # - Ext'), user.userPhone);
     await this.page.getByRole('checkbox', { name: 'I have read and agree to the' })
       .check({ force: true, timeout: 10000 });
     await this.fillText(this.page.getByRole('textbox', { name: 'Name*', exact: true }), user.fullName);
@@ -62,7 +93,8 @@ export class CranesStrategy extends BaseStrategy {
   }
 
   async submit() {
-    await this.page.getByRole('button', { name: 'Register' }).click();
+    await this.dismissInactiveDialog();
+    await this.page.getByRole('button', { name: 'Register' }).click({ timeout: 30000 });
   }
 
   async isSuccessful() {
@@ -106,7 +138,8 @@ export class CranesStrategy extends BaseStrategy {
   }
 
   async openPreliminaryRegistration() {
-    const registrationLink = this.page.locator('#m_LoginControl_LinkButton2').first();
+    const registrationLink = this.page.getByRole('row', { name: /^Sign Up for New User\s*:\s*Click Here$/i })
+      .getByRole('link', { name: /^Click Here$/i });
     await registrationLink.click({ noWaitAfter: true, timeout: 30000 });
     await this.page.waitForURL(/UserRegistrationPrelim/i, {
       timeout: 60000,
@@ -116,50 +149,110 @@ export class CranesStrategy extends BaseStrategy {
   }
 
   async waitForPreliminaryPage() {
-    const businessUnit = this.page.getByLabel('Business Unit', { exact: true }).first();
-
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      await this.page.waitForLoadState('domcontentloaded').catch(() => {});
-      await this.page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-      await this.form.waitForAspNetIdle();
-
-      const visible = await businessUnit.waitFor({ state: 'visible', timeout: 15000 })
-        .then(() => true)
-        .catch(() => false);
-      if (visible) return;
-
-      if (attempt < 3 && /UserRegistrationPrelim/i.test(this.page.url())) {
-        await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-      }
-    }
-
-    throw new Error(
-      `Cranes preliminary registration page did not finish loading Business Unit. URL=${this.page.url()}`,
-    );
+    const businessUnit = this.selectLocator('Business Unit');
+    await expect.poll(async () => {
+      await this.dismissInactiveDialog();
+      return await businessUnit.isVisible() && await businessUnit.isEnabled();
+    }, {
+      timeout: 60000,
+      message: `Cranes preliminary registration did not expose an enabled Business Unit. URL=${this.page.url()}`,
+    }).toBe(true);
   }
 
-  async selectByLabel(label, value, { preserveLocked = false } = {}) {
+  selectLocator(label) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const name = new RegExp(`^${escaped}\\s*\\*?$`, 'i');
+    return this.page.getByRole('combobox', { name })
+      .or(this.page.getByLabel(name)).filter({ visible: true }).first();
+  }
+
+  async registrationSection(title, { timeout = 30000 } = {}) {
+    const name = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+    const section = this.page.getByRole('region', { name })
+      .or(this.page.getByRole('group', { name }))
+      .or(this.page.locator('section, fieldset').filter({ has: this.page.getByRole('heading', { name }) }))
+      .filter({ visible: true });
+    await expect(section, `Expected one visible Cranes "${title}" section.`).toHaveCount(1, { timeout });
+    return section;
+  }
+
+  textLocator(section, label) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return section.getByRole('textbox', { name: new RegExp(`^${escaped}\\s*\\*?$`, 'i') });
+  }
+
+  phoneLocator(section, label) {
+    // Phone and extension share an accessible label; the extension has a native form name.
+    return this.textLocator(section, label).and(section.locator('input:not([name="Extension" i])'));
+  }
+
+  async dismissInactiveDialog() {
+    const dialog = this.page.getByRole('dialog')
+      .or(this.page.getByRole('alertdialog'))
+      .or(this.page.getByRole('alert'))
+      .filter({ hasText: /Are you still there\s*\?/i, visible: true });
+    if (!(await dialog.count())) return;
+    await expect(dialog, 'Expected one visible Cranes inactivity dialog.').toHaveCount(1, { timeout: 10000 });
+    const button = dialog.getByRole('button', { name: /^Yes$/i });
+    await button.click({ timeout: 10000 });
+    await expect(dialog).toBeHidden({ timeout: 10000 });
+  }
+
+  async selectByLabel(label, value, { preserveLocked = false, ready, timeout = 10000 } = {}) {
+    const control = this.selectLocator(label);
+    const expected = String(value ?? '');
+    if (!expected) throw new Error(`Cranes ${label} has no configured selection.`);
+    await expect(control).toBeVisible({ timeout: 30000 });
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const control = this.page.getByLabel(label, { exact: true }).first();
-      await control.waitFor({ state: 'visible', timeout: 30000 });
+      await this.dismissInactiveDialog();
       if (preserveLocked && !(await control.isEnabled())) {
-        if (await this.form.hasSelectedNonPlaceholderOption(control)) return;
+        if (!(await this.form.hasSelectedNonPlaceholderOption(control))) {
+          await expect.poll(async () => await control.isEnabled()
+            || await this.form.hasSelectedNonPlaceholderOption(control), {
+            timeout: Math.min(timeout, 5000),
+          }).toBe(true).catch(() => {});
+        }
+      }
+      if (preserveLocked && !(await control.isEnabled())) {
+        if (await this.form.hasSelectedNonPlaceholderOption(control)) return control.inputValue();
         throw new Error(`Locked Cranes ${label} dropdown has no selected value.`);
       }
-      await this.form.waitForSelectOptions(control);
-      await control.selectOption(value);
-      await this.form.waitForReady();
-
-      const selectedValue = await control.inputValue().catch(() => '');
-      if (selectedValue === value) return;
+      try {
+        // Exact-option auto-wait and fresh locators handle delayed lists and DOM replacement.
+        await control.selectOption(expected, { timeout });
+        await this.form.waitForAspNetIdle();
+        await expect.poll(async () => {
+          await this.dismissInactiveDialog();
+          if (!(await control.isVisible())) return false;
+          return await control.inputValue() === expected && (!ready || await ready());
+        }, { timeout, intervals: [100, 250, 500] }).toBe(true);
+        return expected;
+      } catch (error) {
+        if (this.page.isClosed()) throw error;
+        if (attempt === 3) {
+          const actual = await control.inputValue().catch(() => '(unavailable)');
+          throw new Error(`Cranes ${label} did not keep configured value "${expected}" or load its dependent fields. Actual="${actual}". URL=${this.page.url()}`, { cause: error });
+        }
+      }
     }
-
-    throw new Error(`Cranes ${label} did not keep configured value "${value}".`);
   }
 
-  async fillText(locator, value, { required = true } = {}) {
-    const target = locator.first();
-    await target.waitFor({ state: 'visible', timeout: 30000 });
+  async fillText(locator, value, { required = true, timeout = required ? 30000 : 5000 } = {}) {
+    await this.dismissInactiveDialog();
+    const target = locator.filter({ visible: true });
+    const visible = await target.waitFor({ state: 'visible', timeout }).then(() => true).catch((error) => {
+      if (required || this.page.isClosed() || !(error instanceof errors.TimeoutError)) throw error;
+      return false;
+    });
+    if (!visible) {
+      logger.info(`Skipped unavailable optional Cranes text field: ${locator}.`);
+      return null;
+    }
+    if (required && !(await target.isEditable()) && !(await target.inputValue()).trim()) {
+      await expect.poll(async () => await target.isEditable() || Boolean((await target.inputValue()).trim()), {
+        timeout: Math.min(timeout, 5000),
+      }).toBe(true).catch(() => {});
+    }
     if (!(await target.isEditable())) {
       const actual = await target.inputValue();
       if (required && !actual.trim()) {
@@ -168,7 +261,8 @@ export class CranesStrategy extends BaseStrategy {
       }
       return actual;
     }
-    await this.form.fillHard(target, value);
+    await target.fill(String(value));
+    await expect(target).toHaveValue(String(value), { timeout });
     return target.inputValue();
   }
 }

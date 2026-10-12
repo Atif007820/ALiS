@@ -85,6 +85,8 @@ mkdirSync(resolve(frameworkRoot, 'playwright-report'), { recursive: true });
 
 if (listOnly) playwrightArgs.push('--list');
 playwrightArgs.push(...passthrough);
+// A preview must not replace the last executed run's reports with skipped tests.
+if (listOnly) playwrightArgs.push('--reporter=list');
 
 const child = spawn(command, playwrightArgs, {
   cwd: frameworkRoot,

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
@@ -188,8 +189,21 @@ test('local browser smoke reaches the resolved application path for both environ
 });
 
 test('--list previews resolved URLs and preserves existing registration artifacts', async () => {
-  const artifact = path.join(root, 'test-results', 'latest-registration-report.json');
-  const before = await fs.readFile(artifact, 'utf8').catch(() => null);
+  const artifacts = [
+    path.join(root, 'test-results', 'latest-registration-report.json'),
+    path.join(root, 'test-results', 'latest-registration-report.xlsx'),
+    path.join(root, 'playwright-report', 'index.html'),
+    path.join(root, 'playwright-report', 'latest-registration-report.xlsx'),
+  ];
+  const snapshot = async () => Promise.all(artifacts.map(async (artifact) => {
+    try {
+      return createHash('sha256').update(await fs.readFile(artifact)).digest('hex');
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }));
+  const before = await snapshot();
   const { stdout } = await exec(process.execPath, [path.join(root, 'tools', 'register.js'), '--env', 'TEST,PROD', '--site', 'NJ,CONV', '--product', 'ALL', '--list'], {
     cwd: root, timeout: 45000, maxBuffer: 2 * 1024 * 1024,
     env: { ...process.env, REGISTER_TARGETS: '' },
@@ -200,5 +214,5 @@ test('--list previews resolved URLs and preserves existing registration artifact
   assert.match(stdout, /Configured URL:/);
   assert.match(stdout, /Effective URL:/);
   assert.doesNotMatch(stdout, /Registration .*Login Name|Credentials saved/);
-  assert.equal(await fs.readFile(artifact, 'utf8').catch(() => null), before);
+  assert.deepEqual(await snapshot(), before, 'Preview must preserve native HTML, Excel and report metadata');
 });
