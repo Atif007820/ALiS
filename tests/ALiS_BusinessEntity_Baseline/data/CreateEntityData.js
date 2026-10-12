@@ -225,8 +225,7 @@ export function buildHfRunData(testData) {
   return buildDpbhFacilityRunData(testData, {
     applicationType: 'NHF',
     credentialPopupActions: [
-      { type: 'radio', name: 'BUSINESS THAT PROVIDES', exact: false },
-      { type: 'checkbox', name: 'CLASS - A', exact: true },
+      { type: 'radio', name: 'Hospital', exact: false },
       { type: 'clickLink', name: 'OK' },
     ],
     mailingCounty: 'LA',

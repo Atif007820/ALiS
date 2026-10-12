@@ -1483,11 +1483,13 @@ async function checkConfiguredRadio(page, action) {
     }
   }
 
-  if (await checkRadioByDomText(page, action)) {
+  const radioMatch = await findRadioMatch(page, action);
+  if (radioMatch.index >= 0 && await checkRadioByDomText(page, radioMatch.index)) {
     return;
   }
 
-  throw new Error(`Radio option "${action.name}" was not found.`);
+  const options = radioMatch.options.length ? radioMatch.options.join(' | ') : 'none detected';
+  throw new Error(`Radio option "${action.name}" was not found. Available options: ${options}`);
 }
 
 async function checkConfiguredCheckbox(page, action) {
@@ -1549,50 +1551,8 @@ async function checkBoxLocator(locator, timeoutMs) {
 }
 
 async function radioExistsOnPage(page, action) {
-  return page.evaluate(({ name, exact }) => {
-    const radio = findMatchingRadio(name, exact);
-    return Boolean(radio);
-
-    function findMatchingRadio(optionName, isExact) {
-      const wanted = normalize(optionName);
-      const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-
-      return radios.find((candidate) => {
-        if (candidate.disabled) {
-          return false;
-        }
-
-        return radioTexts(candidate).some((text) => (
-          isExact ? text === wanted : text.includes(wanted)
-        ));
-      }) || null;
-    }
-
-    function radioTexts(radio) {
-      const labels = Array.from(document.querySelectorAll('label'))
-        .filter((label) => label.htmlFor && label.htmlFor === radio.id)
-        .map((label) => label.textContent);
-
-      return [
-        radio.getAttribute('aria-label'),
-        radio.getAttribute('title'),
-        radio.getAttribute('value'),
-        radio.id,
-        radio.name,
-        radio.closest('label')?.textContent,
-        radio.parentElement?.textContent,
-        radio.closest('td')?.textContent,
-        ...labels,
-      ].map(normalize).filter(Boolean);
-    }
-
-    function normalize(text) {
-      return String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    }
-  }, {
-    name: action.name,
-    exact: action.exact ?? false,
-  }).catch(() => false);
+  const match = await findRadioMatch(page, action);
+  return match.index >= 0;
 }
 
 async function checkboxExistsOnPage(page, action) {
@@ -1642,51 +1602,46 @@ async function checkboxExistsOnPage(page, action) {
   }).catch(() => false);
 }
 
-async function checkRadioByDomText(page, action) {
+async function findRadioMatch(page, action) {
   return page.evaluate(({ name, exact }) => {
-    const radio = findMatchingRadio(name, exact);
+    const wanted = normalize(name);
+    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+    const options = radios.map((radio, index) => radioTexts(radio).at(-1) || `Radio ${index + 1}`);
+    const index = radios.findIndex((radio) => (
+      !radio.disabled
+      && radioTexts(radio).some((text) => (exact ? text === wanted : text.includes(wanted)))
+    ));
 
-    if (!radio) {
-      return false;
-    }
-
-    radio.scrollIntoView({ block: 'center', inline: 'nearest' });
-    radio.click();
-    radio.checked = true;
-    radio.dispatchEvent(new Event('input', { bubbles: true }));
-    radio.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
-
-    function findMatchingRadio(optionName, isExact) {
-      const wanted = normalize(optionName);
-      const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-
-      return radios.find((candidate) => {
-        if (candidate.disabled) {
-          return false;
-        }
-
-        return radioTexts(candidate).some((text) => (
-          isExact ? text === wanted : text.includes(wanted)
-        ));
-      }) || null;
-    }
+    return { index, options };
 
     function radioTexts(radio) {
       const labels = Array.from(document.querySelectorAll('label'))
         .filter((label) => label.htmlFor && label.htmlFor === radio.id)
         .map((label) => label.textContent);
+      const labelledBy = String(radio.getAttribute('aria-labelledby') || '')
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent);
+      const cell = radio.closest('td, th');
+      const row = radio.closest('tr');
+      const rowHasSingleRadio = row?.querySelectorAll('input[type="radio"]').length === 1;
+      const localCellText = cell?.querySelectorAll('input[type="radio"]').length === 1
+        ? cell.textContent
+        : '';
 
       return [
         radio.getAttribute('aria-label'),
+        ...labelledBy,
         radio.getAttribute('title'),
         radio.getAttribute('value'),
         radio.id,
         radio.name,
         radio.closest('label')?.textContent,
         radio.parentElement?.textContent,
-        radio.closest('td')?.textContent,
         ...labels,
+        localCellText,
+        cell?.previousElementSibling?.textContent,
+        cell?.nextElementSibling?.textContent,
+        rowHasSingleRadio ? row.textContent : '',
       ].map(normalize).filter(Boolean);
     }
 
@@ -1696,7 +1651,23 @@ async function checkRadioByDomText(page, action) {
   }, {
     name: action.name,
     exact: action.exact ?? false,
-  }).catch(() => false);
+  }).catch(() => ({ index: -1, options: [] }));
+}
+
+async function checkRadioByDomText(page, index) {
+  return page.evaluate((radioIndex) => {
+    const radio = document.querySelectorAll('input[type="radio"]')[radioIndex];
+    if (!radio || radio.disabled) {
+      return false;
+    }
+
+    radio.scrollIntoView({ block: 'center', inline: 'nearest' });
+    radio.click();
+    radio.checked = true;
+    radio.dispatchEvent(new Event('input', { bubbles: true }));
+    radio.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }, index).catch(() => false);
 }
 
 async function checkBoxByDomText(page, action) {

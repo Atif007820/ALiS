@@ -26,8 +26,7 @@ test('test', async ({ page }) => {
   const page1Promise = page.waitForEvent('popup');
   await page.getByRole('link', { name: "Credential Type" }).click();
   const page1 = await page1Promise;
-  await page1.getByRole('radio', { name: "BUSINESS THAT PROVIDES" }).check();
-  await page1.getByRole('checkbox', { name: "CLASS - A", exact: true }).check();
+  await page1.getByRole('radio', { name: "Hospital" }).first().check();
   await page1.getByRole('link', { name: "OK", exact: true }).click();
   await page.getByRole('textbox', { name: "Facility Name (DBA Name)" }).fill(entityName);
   await page.getByRole('textbox', { name: "Registered Name with" }).fill(entityName);

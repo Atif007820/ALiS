@@ -262,7 +262,7 @@ async function fillEntityName(page, businessUnit, entityName) {
   throw new Error(`Could not find create entity name field. Tried: ${fieldNames.join(', ')}`);
 }
 
-async function saveCreatedEntity(page, businessUnit, {
+export async function saveCreatedEntity(page, businessUnit, {
   repairForm,
   recoverValidation,
 } = {}) {
@@ -275,8 +275,31 @@ async function saveCreatedEntity(page, businessUnit, {
   let lastState = null;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    if (!await clickFirstVisible(page, candidates)) {
-      throw new Error(`Could not find create entity Save control. Tried: ${saveNames.join(', ')}`);
+    lastState = await readCreateSaveState(page);
+    if (lastState.status === 'saved') {
+      return;
+    }
+
+    const clicked = await clickFirstVisible(page, candidates)
+      || await clickCreateSaveControlByDom(page, saveNames);
+
+    if (!clicked) {
+      lastState = await waitForCreateSaveOutcome(page);
+      if (lastState.status === 'saved') {
+        return;
+      }
+      if (lastState.status === 'validation') {
+        if (await recoverCreateValidation(lastState.message, attempt, attempts, {
+          repairForm,
+          recoverValidation,
+        })) {
+          continue;
+        }
+      }
+
+      throw new Error(
+        `Could not find create entity Save control. Tried: ${saveNames.join(', ')}. ${lastState.message}`,
+      );
     }
 
     await waitForAppIdle(page);
@@ -287,27 +310,12 @@ async function saveCreatedEntity(page, businessUnit, {
     }
 
     if (lastState.status === 'validation') {
-      const recovered = attempt < attempts && recoverValidation
-        ? await recoverValidation(lastState.message)
-        : false;
-
-      if (recovered) {
+      if (await recoverCreateValidation(lastState.message, attempt, attempts, {
+        repairForm,
+        recoverValidation,
+      })) {
         continue;
       }
-
-      if (
-        attempt < attempts
-        && repairForm
-        && isRecoverableRequiredFieldValidation(lastState.message)
-      ) {
-        logger.warn(
-          `Create Save reported required fields after a dynamic refresh on attempt ${attempt}; restoring the configured form values and retrying.`,
-        );
-        await repairForm();
-        continue;
-      }
-
-      throw new Error(`Create entity was not saved. Validation error: ${lastState.message}`);
     }
 
     if (attempt < attempts) {
@@ -321,6 +329,72 @@ async function saveCreatedEntity(page, businessUnit, {
   throw new Error(
     `Create Save did not reach a persisted profile after ${attempts} attempts. ${lastState?.message || ''}`.trim(),
   );
+}
+
+async function recoverCreateValidation(message, attempt, attempts, {
+  repairForm,
+  recoverValidation,
+} = {}) {
+  const recovered = attempt < attempts && recoverValidation
+    ? await recoverValidation(message)
+    : false;
+
+  if (recovered) {
+    return true;
+  }
+
+  if (attempt < attempts && repairForm && isRecoverableRequiredFieldValidation(message)) {
+    logger.warn(
+      `Create Save reported required fields after a dynamic refresh on attempt ${attempt}; restoring the configured form values and retrying.`,
+    );
+    await repairForm();
+    return true;
+  }
+
+  throw new Error(`Create entity was not saved. Validation error: ${message}`);
+}
+
+async function clickCreateSaveControlByDom(page, saveNames) {
+  return page.evaluate((names) => {
+    const wanted = new Set(names.map(normalize));
+    const candidates = Array.from(document.querySelectorAll(
+      'button, a, input[type="submit"], input[type="button"], input[type="image"], [role="button"]',
+    ));
+    const target = candidates.find((element) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      const labels = [
+        element.innerText,
+        element.textContent,
+        element.value,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('alt'),
+        element.id,
+        element.name,
+      ].map(normalize);
+
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && Number(style.opacity) !== 0
+        && rect.width > 0
+        && rect.height > 0
+        && !element.disabled
+        && labels.some((label) => wanted.has(label));
+    });
+
+    if (!target) {
+      return false;
+    }
+
+    target.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+    target.click();
+    return true;
+
+    function normalize(value) {
+      return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+  }, saveNames).catch(() => false);
 }
 
 function isRecoverableRequiredFieldValidation(message) {
@@ -345,8 +419,10 @@ function findCreateValidationRecoveryRule(rules = [], message = '') {
   });
 }
 
-async function waitForCreateSaveOutcome(page) {
-  const timeoutMs = baselineConfig.timeouts.postCreateProfileReadyMs || 20_000;
+async function waitForCreateSaveOutcome(page, requestedTimeoutMs) {
+  const timeoutMs = requestedTimeoutMs
+    ?? baselineConfig.timeouts.postCreateProfileReadyMs
+    ?? 20_000;
   const deadline = Date.now() + timeoutMs;
   let latestState = { status: 'pending', message: '' };
 
