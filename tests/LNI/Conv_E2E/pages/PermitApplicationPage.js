@@ -461,10 +461,12 @@ export class PermitApplicationPage extends BasePage {
 
   async openOwnerInformationDialog() {
     const ownerExistsDropdown = this.page.getByLabel('Does the owner already exist');
-    if (await isVisible(ownerExistsDropdown, 1000)) return ownerExistsDropdown;
-
     const addLinks = this.page.getByRole('link', { name: /^Add$/i });
     const addButtons = this.page.getByRole('button', { name: /^Add$/i });
+
+    await this.waitForOwnerInformationReady(ownerExistsDropdown, [addLinks, addButtons]);
+    if (await ownerExistsDropdown.isVisible().catch(() => false)) return ownerExistsDropdown;
+
     const candidates = [];
 
     for (const collection of [addLinks, addButtons]) {
@@ -514,6 +516,21 @@ export class PermitApplicationPage extends BasePage {
     }
 
     const pageText = await this.page.locator('main').innerText({ timeout: 5000 }).catch(() => '');
+    const loadingIndicators = await this.page.locator(
+      '[aria-busy="true"], [role="progressbar"], mat-spinner, mat-progress-spinner, .loading-overlay, .loading-spinner, .spinner-overlay',
+    ).evaluateAll((elements) => elements
+      .filter((element) => {
+        const style = window.getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+      })
+      .slice(0, 5)
+      .map((element) => ({
+        tag: element.tagName.toLowerCase(),
+        id: element.id || '',
+        className: typeof element.className === 'string' ? element.className : '',
+        text: String(element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 100),
+      }))
+    ).catch(() => []);
     const candidateSummary = candidates.map(({ locator, belongsToOwnerSection }) => ({
       sectionMatch: belongsToOwnerSection,
       text: locator.innerText().catch(() => ''),
@@ -523,9 +540,27 @@ export class PermitApplicationPage extends BasePage {
     )));
     throw new Error(
       `Owner Information Add dialog did not open. Current URL: ${this.currentUrl()}. ` +
+      `Visible loading indicators: ${JSON.stringify(loadingIndicators)}. ` +
       `Visible Add controls: ${candidateDetails.join(' | ') || 'none'}. ` +
       `Visible page text: ${pageText.slice(0, 500)}`
     );
+  }
+
+  async waitForOwnerInformationReady(ownerExistsDropdown, addControlGroups, timeout = 60000) {
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+      if (await ownerExistsDropdown.isVisible().catch(() => false)) return;
+
+      for (const controls of addControlGroups) {
+        const count = await controls.count().catch(() => 0);
+        for (let index = 0; index < count; index += 1) {
+          if (await controls.nth(index).isVisible().catch(() => false)) return;
+        }
+      }
+
+      await this.page.waitForTimeout(300);
+    }
   }
 
   async waitForConveyanceRadios(label) {
