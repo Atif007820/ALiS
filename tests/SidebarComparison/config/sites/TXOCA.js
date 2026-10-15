@@ -2,9 +2,9 @@ export const CONFIG = {
   site: 'TXOCA',
   // Change only the application version in each selected product's base URLs.
   siteVersionOverrides: {
-    enabled: false,
+    enabled: true,
     versionA: '11.3.25.03',
-    versionB: '11.4.41.09',
+    versionB: '11.4.42.03',
   },
   products: getProductComparisons(),
   login: {

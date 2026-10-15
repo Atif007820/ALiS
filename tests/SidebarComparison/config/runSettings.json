@@ -2,7 +2,7 @@
   "sites": ["NVRCP"],
   "products": [],
   "globalVersionOverrides": {
-    "enabled": true,
+    "enabled": false,
     "versionA": "11.3.25.03",
     "versionB": "11.4.42.03"
   },
