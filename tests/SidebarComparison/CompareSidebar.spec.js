@@ -29,9 +29,11 @@ test.describe('Sidebar Comparison', () => {
         { type: 'Site', description: comparison.site },
         { type: 'Product', description: `${comparison.id} - ${comparison.name}` },
         { type: 'URL A', description: comparison.urlA.loginUrl },
-        { type: 'URL A Source', description: comparison.urlA.urlSource },
+        { type: 'Version A', description: comparison.urlA.version || 'Original URL' },
+        { type: 'Version A Source', description: comparison.urlA.versionSource },
         { type: 'URL B', description: comparison.urlB.loginUrl },
-        { type: 'URL B Source', description: comparison.urlB.urlSource },
+        { type: 'Version B', description: comparison.urlB.version || 'Original URL' },
+        { type: 'Version B Source', description: comparison.urlB.versionSource },
       ],
     }, async ({ browser }, testInfo) => {
       let payload = {
@@ -43,8 +45,8 @@ test.describe('Sidebar Comparison', () => {
       try {
         // Let both isolated sessions finish cleanup before reporting a side's failure.
         const results = await Promise.allSettled([
-          getSidebarItems(browser, comparison.urlA),
-          getSidebarItems(browser, comparison.urlB),
+          getSidebarItems(browser, comparison.urlA, { testInfo, side: 'A' }),
+          getSidebarItems(browser, comparison.urlB, { testInfo, side: 'B' }),
         ]);
         payload.itemsA = results[0].status === 'fulfilled' ? results[0].value : [];
         payload.itemsB = results[1].status === 'fulfilled' ? results[1].value : [];
@@ -82,6 +84,10 @@ function buildBasePayload(comparison) {
     labelB: comparison.urlB.label,
     urlA: comparison.urlA.loginUrl,
     urlB: comparison.urlB.loginUrl,
+    versionA: comparison.urlA.version,
+    versionB: comparison.urlB.version,
+    versionSourceA: comparison.urlA.versionSource,
+    versionSourceB: comparison.urlB.versionSource,
   };
 }
 

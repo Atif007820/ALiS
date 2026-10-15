@@ -1,10 +1,10 @@
 export const CONFIG = {
   site: 'NVRCP',
-  // Enable to use shared URLs for this site's selected products.
-  siteUrlOverrides: {
+  // Change only the application version in each selected product's base URLs.
+  siteVersionOverrides: {
     enabled: true,
-    urlA: 'https://172.16.3.2/ALiSNVRCP2TESTING11.3.25.03/LoginRadiation.aspx',
-    urlB: 'http://172.16.3.2/ALiSNVRCP2TESTING11.4.41.09/LoginRadiation.aspx',
+    versionA: '11.3.25.03',
+    versionB: '11.4.41.09',
   },
   products: getProductComparisons(),
 

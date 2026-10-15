@@ -19,8 +19,8 @@ try {
   if (options.list) {
     for (const pair of pairs) {
       console.log(`\n${pair.site} / ${pair.id} - ${pair.name}`);
-      console.log(`  URL A [${pair.urlA.urlSource}]: ${pair.urlA.loginUrl}`);
-      console.log(`  URL B [${pair.urlB.urlSource}]: ${pair.urlB.loginUrl}`);
+      console.log(`  URL A [${pair.urlA.versionSource}, version=${pair.urlA.version || 'original'}]: ${pair.urlA.loginUrl}`);
+      console.log(`  URL B [${pair.urlB.versionSource}, version=${pair.urlB.version || 'original'}]: ${pair.urlB.loginUrl}`);
     }
     const incomplete = pairs.filter((pair) => [pair.urlA, pair.urlB]
       .some((side) => !String(side.username).trim() || !String(side.password).trim()));

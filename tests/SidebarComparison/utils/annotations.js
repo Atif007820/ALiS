@@ -37,6 +37,8 @@ export async function attachReport({ testInfo, includeReports = true, ...payload
   }
   lines.push(`Source   : ${labelA}  (${urlA})`);
   lines.push(`Comparing: ${labelB}  (${urlB})`);
+  if (payload.versionA) lines.push(`Version A: ${payload.versionA} (${payload.versionSourceA})`);
+  if (payload.versionB) lines.push(`Version B: ${payload.versionB} (${payload.versionSourceB})`);
   lines.push('');
 
   if (error) {

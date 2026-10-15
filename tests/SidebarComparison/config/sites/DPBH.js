@@ -1,10 +1,10 @@
 export const CONFIG = {
   site: 'DPBH',
-  // Enable to use shared URLs for this site's selected products.
-  siteUrlOverrides: {
+  // Change only the application version in each selected product's base URLs.
+  siteVersionOverrides: {
     enabled: true,
-    urlA: 'https://172.16.3.2/ALiSDPBH2TESTING11.3.25.03/Login.aspx',
-    urlB: 'http://172.16.3.2/ALiSDPBH2TESTING11.4.41.09/login.aspx',
+    versionA: '11.3.25.03',
+    versionB: '11.4.41.09',
   },
   products: getProductComparisons(),
   login: {

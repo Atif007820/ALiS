@@ -42,9 +42,11 @@ export function getComparisonPairs({
       && (!selectedProducts.length || selectedProducts.includes('all')
         || selectedProducts.some((value) => matchesProduct(product, value))));
     if (selected.length) {
-      const global = normalizeUrlOverrides(settings.globalUrlOverrides, 'config/runSettings.json > globalUrlOverrides');
-      const site = normalizeUrlOverrides(config.siteUrlOverrides, `${config.configFile} > siteUrlOverrides`);
-      pairs.push(...selected.map((pair) => applyUrlOverrides(pair, { global, site })));
+      rejectLegacyOverrides(settings, 'global', 'config/runSettings.json');
+      rejectLegacyOverrides(config, 'site', config.configFile);
+      const global = normalizeVersionOverrides(settings.globalVersionOverrides, 'config/runSettings.json > globalVersionOverrides');
+      const site = normalizeVersionOverrides(config.siteVersionOverrides, `${config.configFile} > siteVersionOverrides`);
+      pairs.push(...selected.map((pair) => applyVersionOverrides(pair, { global, site })));
     }
   }
 
@@ -55,45 +57,89 @@ export function getComparisonPairs({
   return pairs;
 }
 
-function normalizeUrlOverrides(value, location) {
+function rejectLegacyOverrides(config, scope, location) {
+  if (Object.hasOwn(config, `${scope}UrlOverrides`)) {
+    throw configurationError([
+      `${location} > ${scope}UrlOverrides is no longer supported; use ${scope}VersionOverrides with versionA and versionB`,
+    ]);
+  }
+}
+
+function normalizeVersionOverrides(value, location) {
   if (value === undefined) return {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw configurationError([`${location} must be an object with enabled, urlA and urlB`]);
+    throw configurationError([`${location} must be an object with enabled, versionA and versionB`]);
   }
   if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
     throw configurationError([`${location}.enabled must be true or false`]);
   }
   if (value.enabled !== true) return {};
 
-  const urls = {};
+  const versions = {};
   const errors = [];
-  for (const side of ['urlA', 'urlB']) {
-    if (value[side] !== undefined && typeof value[side] !== 'string') {
-      errors.push(`${location}.${side} must be a string (use "" to fall back)`);
+  if (Object.hasOwn(value, 'urlA') || Object.hasOwn(value, 'urlB')) {
+    errors.push(`${location} accepts versionA and versionB instead of urlA and urlB`);
+  }
+  for (const key of ['versionA', 'versionB']) {
+    if (value[key] !== undefined && typeof value[key] !== 'string') {
+      errors.push(`${location}.${key} must be a string (use "" to fall back)`);
       continue;
     }
-    urls[side] = (value[side] ?? '').trim();
-    if (urls[side] && !isLoginUrl(urls[side])) {
-      errors.push(`${location}.${side} must be an HTTP(S) URL without embedded credentials`);
+    versions[key] = (value[key] ?? '').trim();
+    if (versions[key] && !/^\d+\.\d+\.\d+\.\d+$/.test(versions[key])) {
+      errors.push(`${location}.${key} must be a four-part version such as 11.4.42.03, not a URL`);
     }
   }
-  if (!errors.length && !urls.urlA && !urls.urlB) {
-    errors.push(`${location} is enabled but both URLs are blank; supply at least one URL or set enabled: false`);
+  if (!errors.length && !versions.versionA && !versions.versionB) {
+    errors.push(`${location} is enabled but both versions are blank; supply at least one version or set enabled: false`);
   }
   if (errors.length) throw configurationError(errors);
-  return urls;
+  return versions;
 }
 
-function applyUrlOverrides(pair, { global, site }) {
+function applyVersionOverrides(pair, { global, site }) {
   const resolveSide = (side) => {
-    const urlSource = global[side] ? 'GLOBAL' : site[side] ? 'SITE' : 'PRODUCT';
+    const key = side === 'urlA' ? 'versionA' : 'versionB';
+    const versionSource = global[key] ? 'GLOBAL' : site[key] ? 'SITE' : 'PRODUCT';
+    const versionOverride = global[key] || site[key] || '';
+    const resolved = resolveVersionedUrl(
+      pair[side].loginUrl,
+      versionOverride,
+      `${pair.configFile} > product ${pair.id} > ${side}.loginUrl`,
+    );
     return {
       ...pair[side],
-      loginUrl: global[side] || site[side] || pair[side].loginUrl,
-      urlSource,
+      ...resolved,
+      versionSource,
     };
   };
   return { ...pair, urlA: resolveSide('urlA'), urlB: resolveSide('urlB') };
+}
+
+function resolveVersionedUrl(loginUrl, versionOverride, location) {
+  if (!isLoginUrl(loginUrl)) {
+    throw configurationError([`${location} must be a full HTTP(S) URL without embedded credentials, even when a version override is enabled`]);
+  }
+  const url = new URL(loginUrl);
+  const segments = url.pathname.split('/');
+  const matches = segments.flatMap((segment, index) => {
+    if (!/^ALiS/i.test(segment)) return [];
+    const versions = [...segment.matchAll(/\d+\.\d+\.\d+\.\d+/g)];
+    return versions.map((match) => ({ segment, index, version: match[0], offset: match.index }));
+  });
+  const target = matches.length === 1 && matches[0].segment.endsWith(matches[0].version)
+    ? matches[0] : null;
+  if (!versionOverride) return { loginUrl, version: target?.version || '' };
+  if (!target) {
+    throw configurationError([
+      `${location} needs exactly one four-part version at the end of an ALiS application folder (for example ALiSNVRCP2TESTING11.4.42.03) to apply a version override`,
+    ]);
+  }
+
+  // Only the ALiS folder changes; never replace four-part numbers in the host, query or login page.
+  segments[target.index] = target.segment.slice(0, target.offset) + versionOverride;
+  url.pathname = segments.join('/');
+  return { loginUrl: url.href, version: versionOverride };
 }
 
 function normalizeProducts(config, settings) {

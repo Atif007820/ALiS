@@ -149,6 +149,8 @@ export async function buildComparisonRecord(test, result) {
     repeat: (test.repeatEachIndex || 0) + 1,
     labelA: metadata.labelA || 'URL A', labelB: metadata.labelB || 'URL B',
     urlA: metadata.urlA || '', urlB: metadata.urlB || '',
+    versionA: metadata.versionA || '', versionB: metadata.versionB || '',
+    versionSourceA: metadata.versionSourceA || '', versionSourceB: metadata.versionSourceB || '',
     status, executionStatus, comparisonComplete: complete,
     capturedA: payload?.capturedA ?? complete,
     capturedB: payload?.capturedB ?? complete,

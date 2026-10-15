@@ -1,10 +1,10 @@
 {
   "sites": ["NVRCP"],
   "products": [],
-  "globalUrlOverrides": {
-    "enabled": false,
-    "urlA": "https://172.16.3.2/ALiSNVRCP2TESTING11.3.25.03/LoginRadiation.aspx",
-    "urlB": "http://172.16.3.2/ALiSNVRCP2TESTING11.4.42.02/LoginRadiation.aspx"
+  "globalVersionOverrides": {
+    "enabled": true,
+    "versionA": "11.3.25.03",
+    "versionB": "11.4.42.03"
   },
   "businessUnits": {
     "NVRCP": {
@@ -35,6 +35,8 @@
   "loginTimeout": 45000,
   "sidebarTimeout": 45000,
   "sidebarPollInterval": 500,
+  "sidebarStableMs": 1000,
+  "retainSessionTraceOnFailure": true,
   "openHtmlReport": true,
   "openPlaywrightReport": true,
   "openExcelReport": false,

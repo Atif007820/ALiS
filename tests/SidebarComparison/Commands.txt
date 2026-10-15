@@ -17,7 +17,7 @@ config/sites/SAPTA.js  Products 1-3; URL A/B supplied; credentials blank.
 
 Fill username/password for BOTH sides before running a new site.
 --list works with blank credentials and makes no login attempts.
-It prints each resolved URL and its GLOBAL, SITE or PRODUCT source.
+It prints each resolved URL, effective version and GLOBAL, SITE or PRODUCT version source.
 No credentials are copied between sites or between URL A and URL B.
 
 config/runSettings.json:
@@ -31,61 +31,93 @@ config/runSettings.json:
   headless: true        Default browser visibility.
   navigationRetries: 1 Retry the initial login-page GET once on a transient
                        network error or navigation timeout. Set 0 to disable.
+  sidebarStableMs: 1000 Capture only after menu content is unchanged for this
+                        many milliseconds and visible loading indicators finish.
+  retainSessionTraceOnFailure: true Keep URL A/B traces on the first failure.
 
 Precedence: command options > environment variables > runSettings.json.
 Environment variables: SITES, PRODUCTS, WORKERS, SIDEBAR_HEADED.
 SIDEBAR_HEADED=true shows browsers; false runs headless.
 
-URL MODES (EXISTING COMMANDS STAY THE SAME)
+PARALLEL EXECUTION
 ------------------------------------------------------------
-URL precedence for each side: GLOBAL > SITE > PRODUCT.
+npm run sidebar -- --site=ALL --product=ALL --parallel 4
+npm run sidebar -- --site=ALL --product=ALL --parallel=5
+npm run sidebar -- --site=ALL --product=ALL --parallel 5
+npm run sidebar -- --site=ALL --product=ALL --parallel=5 --headed
+Four workers may open eight isolated browser sessions (URL A and URL B per test).
+Five workers may open ten isolated sessions. No four-worker cap is applied.
+An explicit --parallel value overrides the defaults; workers and parallelWorkers
+in runSettings.json remain unchanged unless you edit them yourself.
+Login waits for editable fields and any required business-unit selection.
+Sidebar capture waits for loading to finish and menu items to stabilize.
+Login clicks are submitted once; invalid credentials and HTTP errors are not
+hidden by whole-test retries. Failure screenshots and per-side traces are
+attached to the Playwright report, including when retries are disabled.
+The practical worker limit still depends on available RAM/CPU and server capacity.
+
+VERSION OVERRIDES (EXISTING COMMANDS STAY THE SAME)
+------------------------------------------------------------
+Version precedence for each side: GLOBAL > SITE > PRODUCT.
 
 1. Product-wise URLs (default)
-   Keep globalUrlOverrides and all siteUrlOverrides disabled.
+   Keep globalVersionOverrides and all siteVersionOverrides disabled.
    Each selected product uses its existing urlA.loginUrl and urlB.loginUrl.
 
-2. Site-wise URLs
-   In config/sites/<SITE>.js, add/edit CONFIG.siteUrlOverrides:
-   siteUrlOverrides: {
+2. Site-wise versions
+   In config/sites/<SITE>.js, add/edit CONFIG.siteVersionOverrides:
+   siteVersionOverrides: {
      enabled: true,
-     urlA: 'https://server/site-a/login',
-     urlB: 'https://server/site-b/login',
+     versionA: '11.3.25.03',
+     versionB: '11.4.42.03',
    },
-   These URLs apply to the selected enabled products within that site.
-   Set globalUrlOverrides.enabled to false to use site overrides directly.
-   Other sites continue using their own site overrides or product URLs.
+   These versions apply to the selected enabled products within that site.
+   Set globalVersionOverrides.enabled to false to use site versions directly.
+   Other sites continue using their own site versions or product URLs.
 
-3. Global URLs
+3. Global versions
    In config/runSettings.json, add/edit:
-   "globalUrlOverrides": {
+   "globalVersionOverrides": {
      "enabled": true,
-     "urlA": "https://server/shared-a/login",
-     "urlB": "https://server/shared-b/login"
+     "versionA": "11.3.25.03",
+     "versionB": "11.4.42.03"
    }
-   These exact URLs apply to all selected enabled products across selected sites.
+   These versions apply to all selected enabled products across selected sites.
    Use --site=ALL --product=ALL to select all discovered sites' enabled products.
-   Global URLs take priority over site and product URLs.
+   Each product keeps its own site, server, HTTP/HTTPS and login page.
 
-Each side resolves independently. A blank override URL falls back to the
-next level. For example, global URL A + blank global URL B can use site or
-product URL B. Both URLs may be the same address for a same-URL comparison.
-An enabled override needs at least one populated URL. Active override values
-must be HTTP(S) URLs without embedded credentials. Invalid active overrides
-fail before browsers open. Disabled override URLs are ignored.
-Overrides change only URLs; product credentials, labels, login controls and
-business unit selections remain product-specific. Credentials must be valid
-on the chosen URLs. Product URLs are retained and restored by disabling the
-overrides. Only selected sites with enabled selections validate overrides.
-New site files may omit siteUrlOverrides and use product/global URLs normally.
-Selected product URLs may be blank when their effective URLs come from overrides.
-The reports and Playwright annotations show the resolved URLs actually used.
+Only the four-part version at the end of the ALiS application folder changes:
+Before: http://172.16.3.2/ALiSNVRCP2TESTING11.4.42.01/LoginRadiation.aspx
+After:  http://172.16.3.2/ALiSNVRCP2TESTING11.4.42.03/LoginRadiation.aspx
+The IP address, port, login path, query string and fragment are preserved.
+
+Each side resolves independently. A blank versionA or versionB falls back
+to the next level. Both versions may be equal for a same-version comparison;
+the URLs are identical only when the products' remaining URL parts also match.
+An enabled override needs at least one populated version. Use four numeric
+parts such as 11.4.42.03; leading zeroes are preserved. Do not enter full URLs
+in version fields. Invalid active overrides fail before browsers open.
+Disabled override values are ignored.
+
+Every selected enabled product still needs complete urlA.loginUrl and
+urlB.loginUrl base URLs without embedded credentials. Active version overrides
+require exactly one version at the end of an ALiS application folder in each
+affected base URL. Missing or ambiguous folder versions give a clear error.
+Credentials, labels, login controls and business unit selections remain
+product-specific. Disabling overrides restores the original product URLs.
+Only selected sites with enabled selections validate overrides. New site
+files may omit siteVersionOverrides and use product/global versions normally.
+The former globalUrlOverrides/siteUrlOverrides objects are replaced by the
+version objects above; obsolete objects give migration guidance.
+Reports show the resolved URLs; Playwright annotations and JSON also include
+the effective versions and their GLOBAL, SITE or PRODUCT sources.
 
 The SAME commands work for all three modes:
 npm run sidebar -- --site=NVRCP --product=ALL --parallel 3
 npm run sidebar -- --site=NVRCP,NJ --product=ALL --parallel 3
 npm run sidebar -- --site=ALL --product=ALL --parallel 3
 
-Preview the selected URLs and sources without logging in:
+Preview the selected URLs, versions and sources without logging in:
 npm run sidebar -- --site=ALL --product=ALL --list
 npm run sidebar -- --site=NVRCP,NJ --product=1,2 --list
 --list preserves the latest reports and never prints credentials.
@@ -103,6 +135,7 @@ OPTIONS
 --project=chromium      Current configured browser project.
 --parallel 3            Up to 3 comparison tests at once.
 --parallel=3            Same as above.
+--parallel=5            Up to 5 comparisons (10 URL sessions) at once.
 --parallel              Use runSettings.parallelWorkers.
 --list                  Preview selected tests without opening browsers.
 
@@ -321,11 +354,17 @@ Checks native report generation, HTML/Excel attachment links, retries, failures,
 skipped tests, auto-open preferences and preservation of reports during --list.
 Uses temporary files and does not replace the latest framework reports.
 
-URL RESOLUTION AND BROWSER SMOKE VERIFICATION (NO REAL SITE LOGIN)
+VERSION RESOLUTION AND BROWSER SMOKE VERIFICATION (NO REAL SITE LOGIN)
 ------------------------------------------------------------
 npm run test:urls
-Checks product, site and global URL precedence, partial fallbacks, invalid
-configuration, disabled products, automatic site discovery and --list output.
+Checks product, site and global version precedence, partial fallbacks, invalid
+versions, disabled products, automatic site discovery and --list output.
+Checks that only the ALiS folder version changes, preserving IPs, protocols,
+ports, login paths, query strings, credentials and leading zeroes.
 Also checks bounded navigation retries and immediate HTTP error diagnostics.
 Browser smoke scenarios exercise isolated logins, ASP.NET/Angular sidebars and
 consolidated/native reporting using local fixture pages and temporary reports.
+The browser suite runs at both four and five workers with delayed business-unit
+modals and lazy menu items, and verifies first-failure traces and no login replay.
+It also checks both five-worker command formats, headed/headless option parsing
+and precedence over configured defaults. Real-site commands use the same runner.

@@ -1,10 +1,10 @@
 export const CONFIG = {
   site: 'TXOCA',
-  // Enable to use shared URLs for this site's selected products.
-  siteUrlOverrides: {
+  // Change only the application version in each selected product's base URLs.
+  siteVersionOverrides: {
     enabled: false,
-    urlA: 'https://172.16.3.2/ALiSTXOCA2TESTING11.3.25.03/DefaultTexas.aspx',
-    urlB: 'https://172.16.3.2/ALiSTXOCA2TESTING11.4.41.09/DefaultTexas.aspx',
+    versionA: '11.3.25.03',
+    versionB: '11.4.41.09',
   },
   products: getProductComparisons(),
   login: {
@@ -23,14 +23,14 @@ function getProductComparisons() {
       enabled: true,
       urlA: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.3.25.03/DefaultTexas.aspx',
-        username: '',
-        password: '',
+        username: 'PS_9427',
+        password: 'Password@1',
         label: 'TXOCA URL A',
       },
       urlB: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.4.42.01/DefaultTexas.aspx',
-        username: '',
-        password: '',
+        username: 'PS_4725',
+        password: 'Password@1',
         label: 'TXOCA URL B',
       },
     },
@@ -40,14 +40,14 @@ function getProductComparisons() {
       enabled: true,
       urlA: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.3.25.03/DefaultTexas.aspx',
-        username: '',
-        password: '',
+        username: 'CR_899',
+        password: 'Password@1',
         label: 'TXOCA URL A',
       },
       urlB: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.4.42.01/DefaultTexas.aspx',
-        username: '',
-        password: '',
+        username: 'CR_5621',
+        password: 'Password@1',
         label: 'TXOCA URL B',
       },
     },
@@ -57,21 +57,21 @@ function getProductComparisons() {
       enabled: true,
       urlA: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.3.25.03/DefaultTexas.aspx',
-        username: '',
-        password: '',
+        username: 'CI_9590',
+        password: 'Password@1',
         label: 'TXOCA URL A',
       },
       urlB: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.4.42.01/DefaultTexas.aspx',
-        username: '',
-        password: '',
+        username: 'CI_2220',
+        password: 'Password@1',
         label: 'TXOCA URL B',
       },
     },
     {
       id: 4,
       name: 'Product 4',
-      enabled: true,
+      enabled: false,
       urlA: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.3.25.03/DefaultTexas.aspx',
         username: '',
@@ -88,7 +88,7 @@ function getProductComparisons() {
     {
       id: 5,
       name: 'Product 5',
-      enabled: true,
+      enabled: false,
       urlA: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.3.25.03/DefaultTexas.aspx',
         username: '',
@@ -105,7 +105,7 @@ function getProductComparisons() {
     {
       id: 6,
       name: 'Product 6',
-      enabled: true,
+      enabled: false,
       urlA: {
         loginUrl: 'https://172.16.3.2/ALiSTXOCA2TESTING11.3.25.03/DefaultTexas.aspx',
         username: '',

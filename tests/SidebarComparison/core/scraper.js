@@ -42,18 +42,43 @@ const NAVIGATION_RETRIES = Number.isSafeInteger(runSettings.navigationRetries) &
 const LOGIN_TIMEOUT = Number(runSettings.loginTimeout || 45000);
 const SIDEBAR_TIMEOUT = Number(runSettings.sidebarTimeout || 45000);
 const SIDEBAR_POLL_INTERVAL = Number(runSettings.sidebarPollInterval || 500);
+const SIDEBAR_STABLE_MS = Number(runSettings.sidebarStableMs ?? 1000);
+if (!Number.isFinite(SIDEBAR_STABLE_MS) || SIDEBAR_STABLE_MS < 0) {
+  throw new Error('config/runSettings.json > sidebarStableMs must be a non-negative number.');
+}
 
 async function detectAndScrape(page, label) {
   const started = Date.now();
+  const deadline = started + SIDEBAR_TIMEOUT;
 
   console.log(`   Detecting sidebar type on ${label}...`);
-  const sidebarType = await detectSidebarType(page, label);
+  const sidebarType = await detectSidebarType(page, label, deadline);
 
   console.log(`   Sidebar type detected: "${sidebarType}" on ${label} (${elapsed(started)})`);
 
+  const menuSelector = await firstVisibleSelector(
+    page, SIDEBAR_SIGNATURES[sidebarType].menuItemSelectors, Math.max(1, deadline - Date.now()),
+  );
+  let previous = '';
+  let stableSince = 0;
+  while (Date.now() < deadline) {
+    await failFastOnLoginFailure(page, label);
+    const items = await scrapeItems(page, sidebarType, menuSelector).catch(() => []);
+    const signature = JSON.stringify(items);
+    const busy = await pageIsBusy(page);
+    if (!items.length || busy || signature !== previous) stableSince = Date.now();
+    if (items.length && !busy && signature === previous && Date.now() - stableSince >= SIDEBAR_STABLE_MS) {
+      return { items, sidebarType };
+    }
+    previous = signature;
+    await page.waitForTimeout(Math.min(SIDEBAR_POLL_INTERVAL, Math.max(1, deadline - Date.now())));
+  }
+  throw new Error(`Sidebar content did not stabilize on ${label} within ${SIDEBAR_TIMEOUT} ms. Current URL: ${page.url()}`);
+}
+
+async function scrapeItems(page, sidebarType, menuSelector) {
   if (sidebarType === 'angular') {
-    const menuSelector = await firstVisibleSelector(page, SIDEBAR_SIGNATURES.angular.menuItemSelectors, SIDEBAR_TIMEOUT);
-    const items = await page.locator(menuSelector).evaluateAll(
+    return page.locator(menuSelector).evaluateAll(
       (anchors) =>
         anchors
           .map((a) => ({
@@ -67,12 +92,9 @@ async function detectAndScrape(page, label) {
           }))
           .filter((item) => item.title || item.text),
     );
-
-    return { items, sidebarType };
   }
 
-  const menuSelector = await firstVisibleSelector(page, SIDEBAR_SIGNATURES.legacy.menuItemSelectors, SIDEBAR_TIMEOUT);
-  const items = await page.locator(menuSelector).evaluateAll(
+  return page.locator(menuSelector).evaluateAll(
     (anchors) =>
       anchors
         .map((a) => {
@@ -81,22 +103,19 @@ async function detectAndScrape(page, label) {
         })
         .filter((item) => item.title.length > 0),
   );
-
-  return { items, sidebarType };
 }
 
-async function detectSidebarType(page, label) {
-  const deadline = Date.now() + SIDEBAR_TIMEOUT;
-
+async function detectSidebarType(page, label, deadline) {
   while (Date.now() < deadline) {
-    const remaining = Math.max(250, Math.min(SIDEBAR_POLL_INTERVAL, deadline - Date.now()));
+    await failFastOnLoginFailure(page, label);
     const [angularVisible, legacyVisible] = await Promise.all([
-      anyVisible(page, SIDEBAR_SIGNATURES.angular.containerSelectors, remaining),
-      anyVisible(page, SIDEBAR_SIGNATURES.legacy.containerSelectors, remaining),
+      anyVisible(page, SIDEBAR_SIGNATURES.angular.containerSelectors),
+      anyVisible(page, SIDEBAR_SIGNATURES.legacy.containerSelectors),
     ]);
 
     if (angularVisible) return 'angular';
     if (legacyVisible) return 'legacy';
+    await page.waitForTimeout(Math.min(SIDEBAR_POLL_INTERVAL, Math.max(1, deadline - Date.now())));
   }
 
   const summary = await pageSummary(page);
@@ -106,19 +125,24 @@ async function detectSidebarType(page, label) {
   );
 }
 
-export async function getSidebarItems(browser, env) {
+export async function getSidebarItems(browser, env, { testInfo, side = 'session' } = {}) {
   const started = Date.now();
   const { usernameField, passwordField, loginButton } = env.login;
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
     viewport: runSettings.viewport ?? null,
   });
-  const page = await context.newPage();
-
-  page.setDefaultTimeout(Number(runSettings.defaultTimeout || 30000));
-  page.setDefaultNavigationTimeout(PAGE_GOTO_TIMEOUT);
+  let page;
+  let tracing = false;
 
   try {
+    if (testInfo && runSettings.retainSessionTraceOnFailure !== false) {
+      await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+      tracing = true;
+    }
+    page = await context.newPage();
+    page.setDefaultTimeout(Number(runSettings.defaultTimeout || 30000));
+    page.setDefaultNavigationTimeout(PAGE_GOTO_TIMEOUT);
     console.log(`\nOpening ${env.label} -> ${env.loginUrl}`);
     await openLoginPage(page, env);
     console.log(`   ${env.label} login page loaded (${elapsed(started)})`);
@@ -133,9 +157,28 @@ export async function getSidebarItems(browser, env) {
 
     console.log(`   Found ${items.length} sidebar item(s) on ${env.label} [${sidebarType}] (${elapsed(started)})`);
     return items;
+  } catch (error) {
+    if (testInfo) {
+      const artifactSide = String(side).replace(/[^a-zA-Z0-9_-]/g, '_');
+      if (page && !page.isClosed()) {
+        const screenshot = await page.screenshot({ fullPage: true, timeout: 5000 }).catch(() => null);
+        if (screenshot) await testInfo.attach(`URL ${side} failure screenshot`, {
+          body: screenshot, contentType: 'image/png',
+        }).catch(() => {});
+      }
+      if (tracing) {
+        const tracePath = testInfo.outputPath(`url-${artifactSide}-trace.zip`);
+        await context.tracing.stop({ path: tracePath })
+          .then(() => testInfo.attach(`URL ${side} trace`, { path: tracePath, contentType: 'application/zip' }))
+          .catch(() => {});
+        tracing = false;
+      }
+    }
+    throw error;
   } finally {
+    if (tracing) await context.tracing.stop().catch(() => {});
     await context.clearCookies().catch(() => {});
-    await page.close().catch(() => {});
+    await page?.close().catch(() => {});
     await context.close().catch(() => {});
     console.log(`   ${env.label} session closed (${elapsed(started)})`);
   }
@@ -163,106 +206,135 @@ export async function openLoginPage(page, { loginUrl, label }, {
 }
 
 async function selectBusinessUnitIfNeeded(page, env) {
-  const modal = page.locator('#myModal').filter({ hasText: /select business unit/i }).first();
-  if (!(await isVisible(modal, 1500))) return;
+  const modal = page.locator('#myModal').filter({ has: page.locator('#ddlBusinessUnits2') }).first();
+  const deadline = Date.now() + LOGIN_TIMEOUT;
+  while (Date.now() < deadline) {
+    if (await modal.isVisible().catch(() => false)) {
+      await selectBusinessUnit(page, env, modal, deadline);
+    }
+    if (!await pageIsBusy(page)) {
+      const fields = loginFieldLocators(page, env.login);
+      const [username, password] = await Promise.all([
+        editableField(fields.username), editableField(fields.password),
+      ]);
+      if (username && password && !await modal.isVisible().catch(() => false)) return;
+    }
+    await page.waitForTimeout(Math.min(SIDEBAR_POLL_INTERVAL, Math.max(1, deadline - Date.now())));
+  }
+  throw new Error(`Login form was not ready on ${env.label} within ${LOGIN_TIMEOUT} ms; required business-unit selection or read-only fields did not finish initializing. Current URL: ${page.url()}`);
+}
 
-  const dropdown = page.locator('#ddlBusinessUnits2');
-  const businessUnit = env.businessUnit || await firstBusinessUnitValue(dropdown);
+async function selectBusinessUnit(page, env, modal, deadline) {
+  const remaining = () => Math.max(1, deadline - Date.now());
+  const dropdown = modal.locator('#ddlBusinessUnits2');
+  const businessUnit = env.businessUnit || await firstBusinessUnitValue(page, dropdown, deadline);
   if (!businessUnit) {
     throw new Error(`Business unit modal is visible on ${env.label}, but no selectable business unit was found.`);
   }
 
   console.log(`   Selecting business unit "${businessUnit}" on ${env.label}.`);
-  await dropdown.selectOption(businessUnit, { timeout: 5000 });
-  await checkBusinessUnitMessageIfVisible(page, env.label);
+  await dropdown.selectOption(businessUnit, { timeout: remaining() });
+  if (!await modal.isVisible().catch(() => false)) return;
+  await checkBusinessUnitMessageIfVisible(modal, env.label, remaining());
+  if (!await modal.isVisible().catch(() => false)) return;
 
-  const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: LOGIN_TIMEOUT }).catch(() => null);
-  await page.locator('#btnOk').evaluate((element) => element.click());
-  await navigation;
-  await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
-  await modal.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  try {
+    await modal.locator('#btnOk').click({ timeout: remaining(), noWaitAfter: true });
+  } catch (error) {
+    // A legacy postback can already have accepted the modal while the click was waiting.
+    if (await modal.isVisible().catch(() => false)) throw error;
+  }
+  await modal.waitFor({ state: 'hidden', timeout: remaining() });
 }
 
-async function checkBusinessUnitMessageIfVisible(page, label) {
-  const checkbox = page.locator('#chkMessage');
-  if (!(await isVisible(checkbox, 1500))) return;
+async function checkBusinessUnitMessageIfVisible(modal, label, timeout) {
+  const checkbox = modal.locator('#chkMessage');
+  if (!await checkbox.isVisible().catch(() => false)) return;
 
   const checked = await checkbox.isChecked().catch(() => false);
   if (checked) return;
 
   try {
-    await checkbox.check({ timeout: 3000, force: true });
-  } catch {
+    await checkbox.check({ timeout: Math.min(3000, timeout) });
+  } catch (error) {
+    if (!await modal.isVisible().catch(() => false)) return;
+    if (!await checkbox.isVisible().catch(() => false)) throw error;
+    // Some legacy modal layouts clip this checkbox; run its real handler without toggling twice.
     await checkbox.evaluate((element) => {
-      element.checked = true;
-      element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
+      if (!element.checked && !element.disabled) element.click();
     });
   }
 
   console.log(`   Checked business unit message checkbox on ${label}.`);
 }
 
-async function firstBusinessUnitValue(dropdown) {
-  return dropdown
-    .locator('option')
-    .evaluateAll((options) => options.map((option) => option.value).find((value) => value))
-    .catch(() => '');
+async function firstBusinessUnitValue(page, dropdown, deadline) {
+  while (Date.now() < deadline) {
+    const value = await dropdown.locator('option')
+      .evaluateAll((options) => options.map((option) => option.value).find((value) => value))
+      .catch(() => '');
+    if (value) return value;
+    await page.waitForTimeout(Math.min(SIDEBAR_POLL_INTERVAL, Math.max(1, deadline - Date.now())));
+  }
+  return '';
 }
 
-async function fillLoginCredentials(page, { usernameField, passwordField, username, password }) {
-  await fillLoginField(page, 'Login Name', username, [
-    page.getByRole('textbox', { name: usernameField }),
-    page.getByLabel(usernameField),
-    page.locator('#m_LoginControl_UserName'),
-    page.locator('input[name="m_LoginControl$UserName"]'),
-    page.locator('input[id$="_UserName"]'),
-    page.locator('input[name$="$UserName"]'),
-  ]);
+function loginFieldLocators(page, { usernameField, passwordField }) {
+  return {
+    username: [
+      page.getByRole('textbox', { name: usernameField }),
+      page.getByLabel(usernameField),
+      page.locator('#m_LoginControl_UserName'),
+      page.locator('input[name="m_LoginControl$UserName"]'),
+      page.locator('input[id$="_UserName"]'),
+      page.locator('input[name$="$UserName"]'),
+    ],
+    password: [
+      page.getByLabel(passwordField),
+      page.getByRole('textbox', { name: passwordField }),
+      page.locator('#m_LoginControl_Password'),
+      page.locator('input[name="m_LoginControl$Password"]'),
+      page.locator('input[id$="_Password"]'),
+      page.locator('input[name$="$Password"]'),
+      page.locator('input[type="password"]'),
+    ],
+  };
+}
 
-  await fillLoginField(page, 'Password', password, [
-    page.getByLabel(passwordField),
-    page.getByRole('textbox', { name: passwordField }),
-    page.locator('#m_LoginControl_Password'),
-    page.locator('input[name="m_LoginControl$Password"]'),
-    page.locator('input[id$="_Password"]'),
-    page.locator('input[name$="$Password"]'),
-    page.locator('input[type="password"]'),
-  ]);
+async function editableField(locators) {
+  for (const locator of locators) {
+    const field = locator.first();
+    if (!await field.isVisible().catch(() => false)) continue;
+    if (await field.isEditable().catch(() => false)) return field;
+
+    // Some login pages remove their autofill lock on focus; use the real focus handler.
+    const focusUnlock = await field.evaluate((element) => element.readOnly && !element.disabled).catch(() => false);
+    if (focusUnlock) {
+      await field.click({ timeout: 1000 }).catch(() => {});
+      if (await field.isEditable().catch(() => false)) return field;
+    }
+  }
+  return null;
+}
+
+async function fillLoginCredentials(page, env) {
+  const fields = loginFieldLocators(page, env);
+  await fillLoginField(page, 'Login Name', env.username, fields.username);
+  await fillLoginField(page, 'Password', env.password, fields.password);
 }
 
 async function fillLoginField(page, label, value, locators) {
-  for (const locator of locators) {
-    const field = locator.first();
-    if (!(await isVisible(field, 1500))) continue;
-
-    const state = await field.evaluate((element) => ({
-      disabled: Boolean(element.disabled),
-      readonly: Boolean(element.readOnly || element.getAttribute('readonly') !== null),
-    })).catch(() => ({ disabled: true, readonly: true }));
-
-    if (!state.disabled && !state.readonly) {
-      await field.fill(value, { timeout: 5000 });
+  const deadline = Date.now() + LOGIN_TIMEOUT;
+  while (Date.now() < deadline) {
+    const field = await editableField(locators);
+    if (field) {
+      await field.fill(value, { timeout: Math.max(1, deadline - Date.now()) });
       return;
     }
-
-    await field.evaluate((element, inputValue) => {
-      element.removeAttribute('readonly');
-      element.readOnly = false;
-      element.disabled = false;
-      element.removeAttribute('disabled');
-      element.value = inputValue;
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
-      element.dispatchEvent(new Event('blur', { bubbles: true }));
-    }, value);
-
-    console.log(`   Filled ${label} after unlocking readonly login field.`);
-    return;
+    await page.waitForTimeout(Math.min(SIDEBAR_POLL_INTERVAL, Math.max(1, deadline - Date.now())));
   }
-
   const summary = await pageSummary(page);
-  throw new Error(`Could not find visible ${label} field. Current URL: ${summary.url}. Visible text: ${summary.text}`);
+  throw new Error('Could not find an editable ' + label + ' field. Current URL: ' + summary.url + '. Visible text: ' + summary.text);
 }
 
 async function submitLogin(page, loginButton) {
@@ -272,25 +344,12 @@ async function submitLogin(page, loginButton) {
     .or(page.getByText(loginButton, { exact: true }))
     .first();
 
-  await dismissBlockingOverlays(page);
-
-  const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: LOGIN_TIMEOUT }).catch(() => null);
-
-  try {
-    await loginLocator.click({ timeout: Math.min(LOGIN_TIMEOUT, 5000) });
-  } catch (error) {
-    await dismissBlockingOverlays(page);
-    console.log(`   Normal Login click was blocked; retrying with force. ${error.message.split('\n')[0]}`);
-    await loginLocator.click({ timeout: Math.min(LOGIN_TIMEOUT, 5000), force: true });
-  }
-
-  await navigation;
-
-  await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
+  // Submit once. Sidebar detection observes both navigation and SPA login completion.
+  await loginLocator.click({ timeout: LOGIN_TIMEOUT, noWaitAfter: true });
 }
 
 async function failFastOnLoginFailure(page, label) {
-  const text = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  const text = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
   const normalizedText = text.replace(/\s+/g, ' ').trim();
   const failurePatterns = [
     /user does not exist in the database or the user status is inactive/i,
@@ -316,44 +375,25 @@ async function failFastOnLoginFailure(page, label) {
   );
 }
 
-async function dismissBlockingOverlays(page) {
-  await page.evaluate(() => {
-    const selectors = [
-      '#myModal',
-      '.modal-backdrop',
-      '.blockUI',
-      '.blockOverlay',
-      '.ui-widget-overlay',
-      '[data-showbusycursor]',
-    ];
-
-    for (const selector of selectors) {
-      for (const element of document.querySelectorAll(selector)) {
-        if (element.matches?.('[data-showbusycursor]')) continue;
-        element.classList?.remove('show', 'in');
-        element.style.pointerEvents = 'none';
-        element.style.display = 'none';
-        element.style.visibility = 'hidden';
-      }
-    }
-
-    document.body?.classList?.remove('modal-open');
-    if (document.body) {
-      document.body.style.overflow = '';
-      document.body.style.pointerEvents = '';
-    }
-  }).catch(() => {});
+async function pageIsBusy(page) {
+  return page.evaluate(() => {
+    try {
+      if (window.Sys?.WebForms?.PageRequestManager?.getInstance?.()?.get_isInAsyncPostBack?.()) return true;
+    } catch {}
+    return Array.from(document.querySelectorAll(
+      '.blockOverlay, .ui-widget-overlay, .loading-spinner, .spinner-border, .loading-mask, [aria-busy="true"], [data-loading="true"]',
+    )).some((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+    });
+  }).catch(() => true);
 }
 
-async function isVisible(locator, timeout) {
-  return locator.first().waitFor({ state: 'visible', timeout })
-    .then(() => true)
-    .catch(() => false);
-}
-
-async function anyVisible(page, selectors, timeout) {
+async function anyVisible(page, selectors) {
   const results = await Promise.all(
-    selectors.map((selector) => isVisible(page.locator(selector), timeout)),
+    selectors.map((selector) => page.locator(selector).first().isVisible().catch(() => false)),
   );
 
   return results.some(Boolean);
@@ -363,25 +403,20 @@ async function firstVisibleSelector(page, selectors, timeout) {
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    const remaining = Math.max(250, Math.min(SIDEBAR_POLL_INTERVAL, deadline - Date.now()));
-
     for (const selector of selectors) {
       const locator = page.locator(selector);
-      if (await hasVisibleItems(locator, remaining)) {
+      if (await hasVisibleItems(locator)) {
         return selector;
       }
     }
+    await page.waitForTimeout(Math.min(SIDEBAR_POLL_INTERVAL, Math.max(1, deadline - Date.now())));
   }
 
   throw new Error(`No visible sidebar menu item selector matched. Tried: ${selectors.join(', ')}`);
 }
 
-async function hasVisibleItems(locator, timeout) {
-  return locator
-    .first()
-    .waitFor({ state: 'visible', timeout })
-    .then(async () => (await locator.count()) > 0)
-    .catch(() => false);
+async function hasVisibleItems(locator) {
+  return locator.first().isVisible().catch(() => false);
 }
 
 async function pageSummary(page) {
