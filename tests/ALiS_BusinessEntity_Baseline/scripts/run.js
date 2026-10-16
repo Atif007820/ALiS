@@ -22,10 +22,10 @@ import { openFile, openReportArtifacts } from '../utils/openArtifacts.js';
 import { ensurePlaywrightBrowsers } from '../utils/browserPreflight.js';
 import { getAvailableFlows, getFlowInfo } from '../utils/flowLabels.js';
 import { isClosedPageError } from '../utils/pageGuards.js';
+import { runJobsWithWorkers } from '../utils/parallelRuntime.js';
 
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testResultsDir = path.join(frameworkRoot, 'test-results');
-const latestRunDir = path.join(testResultsDir, 'latest-run');
 const BY_BUSINESS_UNIT_URL = 'ALL';
 const browserProjects = {
   chromium: {
@@ -47,6 +47,13 @@ const browserProjects = {
 };
 
 const args = parseArgs(process.argv.slice(2));
+const latestRunDir = args.outputDir
+  ? path.resolve(testResultsDir, String(args.outputDir))
+  : path.join(testResultsDir, 'latest-run');
+const relativeOutputDir = path.relative(testResultsDir, latestRunDir);
+if (!relativeOutputDir || relativeOutputDir.startsWith('..') || path.isAbsolute(relativeOutputDir)) {
+  throw new Error('--output-dir must name a subdirectory inside this framework\'s test-results directory.');
+}
 const runSettings = await loadRunSettings();
 
 if (args.list) {
@@ -147,17 +154,28 @@ if (hasFailure) {
 async function runCombination(options) {
   const runtimeRetries = Math.max(0, Number(options.runSettings.runtimeRetries ?? 1));
   let lastResult = null;
+  let createdEntity;
+  const attempts = [];
 
   for (let attempt = 1; attempt <= runtimeRetries + 1; attempt += 1) {
-    const result = await runCombinationOnce(options);
+    const result = await runCombinationOnce({
+      ...options,
+      reportDir: attempt === 1 ? options.reportDir : path.join(options.reportDir, `retry-${attempt}`),
+      createdEntity,
+    });
     lastResult = result;
+    createdEntity = result.createdEntity || createdEntity;
+    attempts.push({ attempt, error: result.error || '', tracePath: result.tracePath || '', durationMs: result.durationMs });
 
-    if (!result.failed || !isClosedPageError(result.error) || attempt > runtimeRetries) {
-      return result;
+    const retryable = isClosedPageError(result.error)
+      || /ALiS denied access/i.test(result.error);
+    if (!result.failed || !retryable || attempt > runtimeRetries) {
+      return { ...result, runtimeAttempts: attempts };
     }
 
     logger.info(
-      `Transient page/browser close detected for ${options.businessUnit.id} ${getFlowInfo(options.flow).label}; retrying clean run ${attempt}/${runtimeRetries}.`,
+      `Transient runtime state for ${options.businessUnit.id} ${getFlowInfo(options.flow).label}; `
+      + `${createdEntity ? 'reopening the same entity' : 'retrying before entity Save'} ${attempt}/${runtimeRetries}.`,
     );
   }
 
@@ -174,6 +192,7 @@ async function runCombinationOnce({
   credentials,
   headless,
   reportDir,
+  createdEntity,
 }) {
   const flowInfo = getFlowInfo(flow);
   const browserProject = resolveBrowserProject(project);
@@ -188,8 +207,12 @@ async function runCombinationOnce({
     totalMs: 0,
   };
   let browser;
+  let browserContext;
   let page;
   let runEnvironment;
+  let tracePath = '';
+  let phase = 'setup';
+  let entityCheckpoint = createdEntity;
 
   try {
     const setupStart = Date.now();
@@ -201,7 +224,10 @@ async function runCombinationOnce({
       runSettings: settings,
     });
 
-    const browserContext = await browser.newContext(browserContextOptions(settings));
+    browserContext = await browser.newContext(browserContextOptions(settings));
+    browserContext.setDefaultTimeout(Math.max(30_000, baselineConfig.timeouts.actionMs));
+    browserContext.setDefaultNavigationTimeout(baselineConfig.timeouts.navigationMs);
+    await browserContext.tracing.start({ screenshots: true, snapshots: true, sources: true });
     page = await browserContext.newPage();
     timings.setupMs = elapsedMs(setupStart);
 
@@ -219,12 +245,15 @@ async function runCombinationOnce({
     logger.section(`${flowInfo.label} | ${businessUnit.id} | ${runEnvironment.id} | ${browserProject.name}`);
     logger.info(flowInfo.description);
     const flowStart = Date.now();
+    phase = 'open-profile';
     const flowResult = await executeFlow(page, {
       flow,
       environment: runEnvironment,
       businessUnit,
       credentials,
       entityName: parsedArgs.entity,
+      createdEntity,
+      onEntityCheckpoint: (checkpoint) => { entityCheckpoint = checkpoint; },
     });
     page = flowResult.page || page;
     timings.flowMs = elapsedMs(flowStart);
@@ -235,6 +264,7 @@ async function runCombinationOnce({
     const baselinesByTestCase = new Map();
 
     const baselineStart = Date.now();
+    phase = 'read-baselines';
     for (const testCase of testCases) {
       const baseline = await excelManager.readBaselineRows({
         businessUnit,
@@ -258,10 +288,12 @@ async function runCombinationOnce({
     shared.flow = String(flow);
 
     const captureWarmupStart = Date.now();
+    phase = 'capture';
     await warmCaptureSnapshot(page, captureEngine, testCases, shared);
     timings.captureWarmupMs = elapsedMs(captureWarmupStart);
 
     for (const testCase of testCases) {
+      phase = testCase.id;
       logger.info(`Running ${testCase.id} - ${testCase.name} | ${flowInfo.label}`);
       const testCaseStart = Date.now();
       const baseline = baselinesByTestCase.get(testCase.id);
@@ -305,6 +337,7 @@ async function runCombinationOnce({
 
     timings.totalMs = elapsedMs(combinationStart);
     const reportStart = Date.now();
+    phase = 'write-reports';
     const report = await reporter.write({
       results,
       context: {
@@ -348,6 +381,8 @@ async function runCombinationOnce({
       })),
     };
   } catch (error) {
+    tracePath = path.join(reporter.reportDir, 'runtime-trace.zip');
+    await browserContext?.tracing.stop({ path: tracePath }).catch(() => { tracePath = ''; });
     const screenshotPath = page ? await saveFailureScreenshot(page, reporter.reportDir) : '';
     timings.totalMs = elapsedMs(combinationStart);
     logger.error(`\nRun failed (${flowInfo.label} | ${businessUnit.id} | ${browserProject.name}): ${error.message}`);
@@ -361,6 +396,10 @@ async function runCombinationOnce({
     }
 
     logger.error(error.stack);
+    await fs.writeFile(path.join(reporter.reportDir, 'runtime-error.json'), JSON.stringify({
+      phase, error: error.message, stack: error.stack, url: page?.url(), tracePath, screenshotPath,
+      businessUnit: businessUnit.id, flow, project: browserProject.id, createdEntity: entityCheckpoint,
+    }, null, 2)).catch(() => {});
     return {
       failed: true,
       comparisonFailed: false,
@@ -368,11 +407,16 @@ async function runCombinationOnce({
       environment: runEnvironment,
       browserProject,
       error: error.message,
+      tracePath,
+      screenshotPath,
+      phase,
+      createdEntity: entityCheckpoint,
       durationMs: timings.totalMs,
       timings: { ...timings },
       testResults: [],
     };
   } finally {
+    await browserContext?.tracing.stop().catch(() => {});
     await browser?.close();
   }
 }
@@ -724,6 +768,16 @@ async function prepareLatestRunOutputDir() {
   ensureInsideFramework(latestRunDir);
   await fs.mkdir(testResultsDir, { recursive: true });
 
+  if (args.outputDir) {
+    // Verification runs keep the user's latest run and all earlier artifacts.
+    await fs.mkdir(latestRunDir, { recursive: true });
+    const existingFiles = await fs.readdir(latestRunDir);
+    if (existingFiles.length) {
+      throw new Error(`Output directory already contains artifacts: ${latestRunDir}. Choose a new --output-dir.`);
+    }
+    return;
+  }
+
   await Promise.all([
     removeIfUnlocked(latestRunDir),
     removeIfUnlocked(path.join(testResultsDir, 'latest-results.json')),
@@ -770,19 +824,27 @@ function buildRunJobs({ businessUnitIds, flows, projectIds, testCases }) {
 
   for (const flow of flows) {
     for (const businessUnitId of businessUnitIds) {
-      const businessUnit = resolveBusinessUnit(businessUnitId);
+      const businessUnitConfig = businessUnits[normalizeId(businessUnitId)];
       const applicableTestCases = testCases.filter((testCase) => (
-        testCaseSupportsBusinessUnit(testCase, businessUnit)
+        testCaseSupportsBusinessUnit(testCase, businessUnitConfig)
       ));
 
       if (!applicableTestCases.length) {
         logger.info(
-          `Skipped ${businessUnit.id} ${getFlowInfo(flow).label}: selected test cases are not configured for this BU.`,
+          `Skipped ${businessUnitConfig.id} ${getFlowInfo(flow).label}: selected test cases are not configured for this BU.`,
         );
         continue;
       }
 
       for (const projectId of projectIds) {
+        const businessUnit = resolveBusinessUnit(businessUnitId);
+        const existingEntityName = args.entity || (String(flow) === '4'
+          ? businessUnit.flow4EntityName || businessUnit.flow2EntityName
+          : businessUnit.flow2EntityName);
+        const runEnvironment = resolveRunEnvironment({ parsedArgs: args, runSettings, businessUnit });
+        const exclusiveResourceKey = ['2', '4'].includes(String(flow)) && existingEntityName
+          ? `${runEnvironment.loginUrl.toLowerCase()}|${String(existingEntityName).replace(/\s+/g, ' ').trim().toLowerCase()}`
+          : '';
         const project = resolveBrowserProject(projectId);
         const reportDir = path.join(
           latestRunDir,
@@ -800,6 +862,7 @@ function buildRunJobs({ businessUnitIds, flows, projectIds, testCases }) {
           project,
           testCases: applicableTestCases,
           reportDir,
+          exclusiveResourceKey,
         });
       }
     }
@@ -832,24 +895,6 @@ function baselineRowsForBusinessUnit(testCase, rows, businessUnit) {
   }
 
   return rows.filter((row) => !skippedTabs.has(normalizeId(row['Parent Tab'])));
-}
-
-async function runJobsWithWorkers(jobs, workers, runner) {
-  const results = new Array(jobs.length);
-  let cursor = 0;
-  const workerCount = Math.min(Math.max(workers, 1), jobs.length || 1);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (cursor < jobs.length) {
-        const currentIndex = cursor;
-        cursor += 1;
-        results[currentIndex] = await runner(jobs[currentIndex]);
-      }
-    }),
-  );
-
-  return results;
 }
 
 function resolveBrowserProject(project) {
@@ -935,8 +980,12 @@ async function writeLatestRunIndex({
       status: entry.failed ? 'FAILED' : 'PASSED',
       comparisonStatus: entry.comparisonFailed ? 'FAILED' : 'PASSED',
       error: entry.error || '',
+      tracePath: entry.tracePath || '',
+      screenshotPath: entry.screenshotPath || '',
+      phase: entry.phase || '',
       durationMs: entry.durationMs || 0,
       timings: entry.timings || {},
+      runtimeAttempts: entry.runtimeAttempts || [],
       excelPath: entry.report?.excelPath || '',
       jsonPath: entry.report?.jsonPath || '',
       htmlReportPath: entry.report?.htmlReportPath || '',

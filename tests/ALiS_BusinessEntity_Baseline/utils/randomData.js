@@ -1,4 +1,15 @@
+import { randomUUID } from 'node:crypto';
+
 const usedPersonNames = new Set();
+
+export function buildEntityName(prefix = 'ENTITY', now = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  const hours24 = now.getHours();
+  const hours12 = hours24 % 12 || 12;
+  const date = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}`;
+  const time = `${pad(hours12)}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${hours24 >= 12 ? 'PM' : 'AM'}`;
+  return `${prefix}_${date}_${time}_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+}
 
 export function pick(items) {
   return items[Math.floor(Math.random() * items.length)];

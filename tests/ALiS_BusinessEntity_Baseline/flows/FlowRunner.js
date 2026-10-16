@@ -8,12 +8,14 @@ import { CaptureEngine } from '../core/CaptureEngine.js';
 import { getSupportedFlowText } from '../utils/flowLabels.js';
 import { logger } from '../utils/logger.js';
 
-export async function executeFlow(page, { flow, environment, businessUnit, credentials, entityName }) {
+export async function executeFlow(page, {
+  flow, environment, businessUnit, credentials, entityName, createdEntity, onEntityCheckpoint,
+}) {
   const selectedFlow = String(flow);
   await login(page, { environment, credentials });
 
   if (selectedFlow === '1' || selectedFlow === '3') {
-    const created = await createEntity(page, { businessUnit });
+    const created = createdEntity || await createEntity(page, { businessUnit, onEntityCheckpoint });
     logger.info(`Stored created facility/entity name: ${created.entityName}`);
     if (created.entityId) {
       logger.info(`Captured created Entity ID: ${created.entityId}`);
@@ -37,7 +39,9 @@ export async function executeFlow(page, { flow, environment, businessUnit, crede
       entityName: created.entityName,
       entityId: created.entityId,
       searchFallbacks: created.searchFallbacks,
+      strictEntityMatch: Boolean(createdEntity),
     });
+    page = openedInModify.page || page;
 
     if (selectedFlow === '1') {
       return openedInModify;
@@ -53,6 +57,7 @@ export async function executeFlow(page, { flow, environment, businessUnit, crede
       entityName: created.entityName,
       entityId: created.entityId,
       searchFallbacks: created.searchFallbacks,
+      strictEntityMatch: Boolean(createdEntity),
     });
   }
 

@@ -23,6 +23,7 @@ export async function openEntityFromBusinessEntitySearch(page, {
   entityId,
   searchFallbacks = [],
   actionName = 'Modify',
+  strictEntityMatch = false,
 }) {
   const searchAction = normalizeActionName(actionName);
 
@@ -40,9 +41,13 @@ export async function openEntityFromBusinessEntitySearch(page, {
     entityId,
     searchFallbacks,
     actionName: searchAction,
+    strictEntityMatch,
   });
   await waitForAppIdle(openedPage);
   await waitForEntityWorkspace(openedPage, entityName);
+  if (strictEntityMatch) {
+    await assertOpenedEntityIdentity(openedPage, { entityName, entityId });
+  }
 
   return {
     entityName,
@@ -72,6 +77,23 @@ async function openVerifiedBusinessEntitySearchPage(page, businessUnit, actionNa
   }
 
   throw new Error(`Could not open the expected ${actionName} search page for ${businessUnit.id}. ${lastDiagnostics}`);
+}
+
+async function assertOpenedEntityIdentity(page, { entityName, entityId }) {
+  const matched = await page.waitForFunction(({ name, id }) => {
+    const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+      .replace(/_0([1-9]:\d{2}:\d{2}\s[ap]m)(?=_|$)/g, '_$1');
+    const text = clean(document.body?.innerText);
+    const values = Array.from(document.querySelectorAll('input, textarea'))
+      .map((element) => clean(element.value));
+    const nameMatches = name && (text.includes(clean(name)) || values.includes(clean(name)));
+    const idMatch = text.match(/(?:entity|licensee)\s+i[d]\s*:?\s*(\d+)/i);
+    return nameMatches || (id && idMatch?.[1] === String(id));
+  }, { name: entityName, id: entityId }, { timeout: 10_000 }).then(() => true).catch(() => false);
+
+  if (!matched) {
+    throw new Error(`Retry did not open the checkpointed entity "${entityName}"${entityId ? ` (ID ${entityId})` : ''}. Refusing to capture a different profile.`);
+  }
 }
 
 function needsVerifiedBusinessEntitySearchPage(businessUnit, actionName = 'Modify') {
@@ -956,6 +978,7 @@ async function runModifySearchAttempts(page, {
   entityId,
   searchFallbacks = [],
   actionName = 'Modify',
+  strictEntityMatch = false,
 }) {
   const attempts = buildSearchAttempts({
     businessUnit,
@@ -963,6 +986,7 @@ async function runModifySearchAttempts(page, {
     entityId,
     searchFallbacks,
     actionName,
+    strictEntityMatch,
   });
   const retryDelayMs = Number(businessUnit.modifySearchRetryDelayMs || 5_000);
   let lastSearchSummary = '';
@@ -1061,9 +1085,11 @@ export function buildSearchAttempts({
   entityId,
   searchFallbacks = [],
   actionName = 'Modify',
+  strictEntityMatch = false,
 }) {
   const attempts = [];
   const useViewPrefixFallback = normalizeActionName(actionName) === 'View'
+    && !strictEntityMatch
     && businessUnit.viewExistingEntityFallbackToPrefix
     && Boolean(businessUnit.entityPrefix);
   const nameRetries = Math.max(1, Number(
@@ -1124,7 +1150,7 @@ export function buildSearchAttempts({
     });
   }
 
-  for (const fallback of searchFallbacks) {
+  for (const fallback of strictEntityMatch ? [] : searchFallbacks) {
     const value = resolveSearchFallbackValue(fallback?.value, {
       entityName,
       entityId,
@@ -1170,8 +1196,8 @@ function entityNameSearchVariants(entityName) {
 
   return [
     entityName,
-    entityName.replace(/_0([1-9]:\d{2}:\d{2}\s[AP]M)$/i, '_$1'),
-    entityName.replace(/_([1-9]:\d{2}:\d{2}\s[AP]M)$/i, '_0$1'),
+    entityName.replace(/_0([1-9]:\d{2}:\d{2}\s[AP]M)(?=_|$)/i, '_$1'),
+    entityName.replace(/_([1-9]:\d{2}:\d{2}\s[AP]M)(?=_|$)/i, '_0$1'),
   ];
 }
 

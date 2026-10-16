@@ -1,5 +1,5 @@
 import { baselineConfig } from '../config/baseline.config.js';
-import { ensurePageOpen, waitForPageTimeout } from '../utils/pageGuards.js';
+import { assertPageAccess, ensurePageOpen, waitForPageTimeout } from '../utils/pageGuards.js';
 
 export async function waitForAppIdle(page) {
   ensurePageOpen(page, 'waiting for app idle');
@@ -7,6 +7,8 @@ export async function waitForAppIdle(page) {
   await page.waitForLoadState('domcontentloaded', {
     timeout: baselineConfig.timeouts.navigationMs,
   }).catch(() => {});
+
+  await assertPageAccess(page, 'waiting for app idle');
 
   await waitForBusyIndicators(page);
 

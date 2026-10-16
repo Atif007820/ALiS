@@ -9,8 +9,9 @@ import { baselineConfig } from '../config/baseline.config.js';
 import { waitForEntityWorkspace } from './ModifySearchFlow.js';
 import { logger } from '../utils/logger.js';
 import { waitForPageTimeout } from '../utils/pageGuards.js';
+import { buildEntityName } from '../utils/randomData.js';
 
-export async function createEntity(page, { businessUnit, entityName }) {
+export async function createEntity(page, { businessUnit, entityName, onEntityCheckpoint }) {
   const resolvedEntityName = entityName || buildEntityName(businessUnit.entityPrefix);
   const actionContext = {
     businessUnit,
@@ -53,6 +54,11 @@ export async function createEntity(page, { businessUnit, entityName }) {
   await prepareCreateFormForSave();
 
   await saveCreatedEntity(page, businessUnit, {
+    onSaveAttempt: () => onEntityCheckpoint?.({
+      entityName: resolvedEntityName,
+      searchFallbacks: businessUnit.modifySearchFallbacks || [],
+      persistenceUnknown: true,
+    }),
     repairForm: prepareCreateFormForSave,
     recoverValidation: async (message) => {
       const recoveryRule = findCreateValidationRecoveryRule(
@@ -73,9 +79,19 @@ export async function createEntity(page, { businessUnit, entityName }) {
       return true;
     },
   });
+  onEntityCheckpoint?.({
+    entityName: resolvedEntityName,
+    searchFallbacks: businessUnit.modifySearchFallbacks || [],
+    persistenceUnknown: false,
+  });
   await waitForAppIdle(page);
   await assertCreateSaveDidNotShowValidationErrors(page);
   const createdReference = await captureCreatedEntityReference(page, businessUnit, resolvedEntityName);
+  onEntityCheckpoint?.({
+    ...createdReference,
+    searchFallbacks: businessUnit.modifySearchFallbacks || [],
+    persistenceUnknown: false,
+  });
   const openedFromSuccessPage = businessUnit.preferPostCreateEditLink
     ? await openCreatedProfileFromSuccessPage(page, createdReference.entityName || resolvedEntityName)
     : false;
@@ -265,6 +281,7 @@ async function fillEntityName(page, businessUnit, entityName) {
 export async function saveCreatedEntity(page, businessUnit, {
   repairForm,
   recoverValidation,
+  onSaveAttempt,
 } = {}) {
   const saveNames = businessUnit.createSaveNames?.length ? businessUnit.createSaveNames : ['Save'];
   const candidates = saveNames.flatMap((name) => [
@@ -279,7 +296,11 @@ export async function saveCreatedEntity(page, businessUnit, {
     if (lastState.status === 'saved') {
       return;
     }
+    if (lastState.status === 'access-denied') {
+      throw new Error(`ALiS denied access while saving the entity. ${lastState.message}`);
+    }
 
+    onSaveAttempt?.();
     const clicked = await clickFirstVisible(page, candidates)
       || await clickCreateSaveControlByDom(page, saveNames);
 
@@ -287,6 +308,9 @@ export async function saveCreatedEntity(page, businessUnit, {
       lastState = await waitForCreateSaveOutcome(page);
       if (lastState.status === 'saved') {
         return;
+      }
+      if (lastState.status === 'access-denied') {
+        throw new Error(`ALiS denied access after entity Save. ${lastState.message}`);
       }
       if (lastState.status === 'validation') {
         if (await recoverCreateValidation(lastState.message, attempt, attempts, {
@@ -307,6 +331,9 @@ export async function saveCreatedEntity(page, businessUnit, {
 
     if (lastState.status === 'saved') {
       return;
+    }
+    if (lastState.status === 'access-denied') {
+      throw new Error(`ALiS denied access after entity Save. ${lastState.message}`);
     }
 
     if (lastState.status === 'validation') {
@@ -444,6 +471,9 @@ async function readCreateSaveState(page) {
     const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
     const bodyText = clean(document.body?.innerText);
     const path = location.pathname;
+    if (/\bAccess Denied\b|You do not have permissions to access this functionality/i.test(bodyText)) {
+      return { status: 'access-denied', message: `URL=${location.href}` };
+    }
     const saved = (
       /\/SuccessPage\.aspx$/i.test(path)
       || /Business Entity has been saved successfully/i.test(bodyText)
@@ -585,16 +615,4 @@ async function readCreatedEntityId(page) {
     const inlineMatch = joined.match(/(?:Entity|Licensee)\s+I[Dd]\s*:?\s+(\d+)/i);
     return inlineMatch?.[1] || '';
   }).catch(() => '');
-}
-
-function buildEntityName(prefix) {
-  const now = new Date();
-  const pad = (value) => String(value).padStart(2, '0');
-  const hours24 = now.getHours();
-  const hours12 = hours24 % 12 || 12;
-  const ampm = hours24 >= 12 ? 'PM' : 'AM';
-  const date = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}`;
-  const time = `${pad(hours12)}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${ampm}`;
-
-  return `${prefix}_${date}_${time}`;
 }

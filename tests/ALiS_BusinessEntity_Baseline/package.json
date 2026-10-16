@@ -12,7 +12,7 @@
     "baseline:edge": "node ./scripts/run.js --project=msedge",
     "run": "node ./scripts/run.js",
     "validate": "node ./scripts/validate.js",
-    "test:runtime": "node --test ./tests/framework/runtime-regression.test.js",
+    "test:runtime": "node --test ./tests/framework/*.test.js",
     "list": "node ./scripts/run.js --list",
     "browsers:install": "playwright install chromium firefox msedge ffmpeg"
   },

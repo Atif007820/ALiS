@@ -69,6 +69,9 @@ Browser:
   --project=all
 
 Useful Flags:
+  --parallel=4       Four independent combinations (also accepts --parallel 4)
+  --workers=4        Equivalent explicit worker count
+  --output-dir=NAME  Separate empty verification folder under test-results
   --headed
   --dry-run
   --entity="YOUR_ENTITY_NAME"
@@ -123,7 +126,7 @@ All configured BUs, all four flows, all test cases:
   npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium
 
 All configured BUs, all four flows, parallel:
-  npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium --parallel=3
+  npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium --parallel=4
 
 
 Current DPBH Business Units

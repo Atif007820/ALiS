@@ -62,6 +62,22 @@ npm run baseline -- --flow=2 --bu=MAMMO --url=NVRCP --entity="YOUR_FACILITY_NAME
 
 Use `--login-url="http://..."` only when you need to override the configured profile URL directly.
 
+## Four-worker runs
+
+Both `--parallel=4` and `--parallel 4` run up to four independent BU/flow/browser combinations:
+
+```bash
+npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium --parallel=4
+```
+
+Each browser combination generates its own create data and a unique entity name. Jobs opening the same existing entity on the same portal wait for each other, because capture preconditions can add rows to that profile. Other jobs continue filling the available worker slots.
+
+The credential popup waits for its parent ASP.NET callback before the create form continues. If a retry follows a browser closure after Save was attempted, the framework searches the same generated entity instead of creating a second one. A Save whose persistence cannot be confirmed remains a runtime failure.
+
+Runtime failures retain `runtime-trace.zip`, `runtime-error.json`, and a screenshot in the combination folder. Retries use a separate `retry-2` folder and are listed in `runtimeAttempts` in the run summary. Comparison results remain independent of runtime status.
+
+Use `--output-dir=my-verification` to save a verification run under `test-results/my-verification` while preserving `latest-run`. The named output folder must be empty. Only one command should own a given output directory.
+
 ## Folder Map
 
 ```text
@@ -139,6 +155,7 @@ New BUs use this structure:
 
 ```bash
 npm run validate
+npm run test:runtime
 npm run list
 ```
 

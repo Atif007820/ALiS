@@ -675,9 +675,16 @@ async function runPopupFromLink(page, action, context) {
       await targetPage.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
       await runUiActions(targetPage, action.actions || [], context);
 
-      if (targetPage !== page) {
-        await targetPage.waitForEvent('close', { timeout: 5_000 }).catch(() => {});
+      if (targetPage !== page && !targetPage.isClosed()) {
+        await targetPage.waitForEvent('close', { timeout: Number(action.closeTimeoutMs || 15_000) });
       }
+
+      // Popup OK may close before the opener's ASP.NET callback finishes.
+      // Do not start filling or saving the parent during that postback.
+      await waitForAspNetPostback(page, {
+        minimumWaitMs: Number(action.parentPostbackWaitMs || 750),
+        timeoutMs: Number(action.parentPostbackTimeoutMs || 30_000),
+      });
 
       return;
     } catch (error) {

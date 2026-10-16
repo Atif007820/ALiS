@@ -1,7 +1,7 @@
 import { waitForAppIdle } from './navigation.js';
 import { clickFirstVisible } from '../utils/uiActions.js';
 import { baselineConfig } from '../config/baseline.config.js';
-import { waitForPageTimeout } from '../utils/pageGuards.js';
+import { assertPageAccess, waitForPageTimeout } from '../utils/pageGuards.js';
 
 export async function login(page, { environment, credentials }) {
   await gotoLogin(page, environment.loginUrl);
@@ -15,6 +15,7 @@ export async function login(page, { environment, credentials }) {
 
   if (!loginVisible) {
     await waitForAppIdle(page);
+    await assertPageAccess(page, 'login');
     return;
   }
 
@@ -32,6 +33,7 @@ export async function login(page, { environment, credentials }) {
   }
 
   await waitForAppIdle(page);
+  await assertPageAccess(page, 'login');
 }
 
 async function gotoLogin(page, loginUrl) {
