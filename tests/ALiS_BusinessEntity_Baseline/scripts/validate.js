@@ -6,7 +6,7 @@ import { ExcelManager } from '../core/ExcelManager.js';
 import { CompareEngine } from '../core/CompareEngine.js';
 import { CaptureEngine } from '../core/CaptureEngine.js';
 import { testCaseRegistry } from '../test-cases/registry.js';
-import { availableUrlKeys, normalizeUrlKey } from '../config/urls.js';
+import { availableUrlKeys, normalizeUrlKey, resolveEnvironment } from '../config/urls.js';
 import { flow2EntityNames } from '../config/flow2EntityNames.js';
 import { flow4EntityNames } from '../config/flow4EntityNames.js';
 import { getAvailableFlows, getFlowInfo } from '../utils/flowLabels.js';
@@ -25,6 +25,11 @@ const runSettings = JSON.parse(await fs.readFile(new URL('../config/runSettings.
 const excelManager = new ExcelManager();
 const compareEngine = new CompareEngine();
 const captureEngine = new CaptureEngine();
+
+for (const urlKey of availableUrlKeys()) {
+  const environment = resolveEnvironment({ urlKey, settings: runSettings });
+  assert.ok(environment.loginUrl, `${urlKey} should resolve to a validated login URL`);
+}
 
 assert.equal(
   Number(baselineConfig.timeouts.searchResultOpenMs || 0) >= 15_000,

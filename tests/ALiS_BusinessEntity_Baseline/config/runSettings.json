@@ -1,6 +1,10 @@
 {
   "defaultBusinessUnit": ["RPM", "MAMMO"],
   "defaultUrl": "NVRCP",
+  "globalVersionOverride": {
+    "enabled": true,
+    "version": "11.4.42.04"
+  },
   "defaultFlow": "3",
   "defaultTestCases": ["TC01", "TC02", "TC03", "TC04", "TC05"],
   "defaultProject": "chromium",

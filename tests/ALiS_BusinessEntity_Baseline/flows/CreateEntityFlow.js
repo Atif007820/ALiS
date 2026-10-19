@@ -8,11 +8,11 @@ import {
 import { baselineConfig } from '../config/baseline.config.js';
 import { waitForEntityWorkspace } from './ModifySearchFlow.js';
 import { logger } from '../utils/logger.js';
-import { waitForPageTimeout } from '../utils/pageGuards.js';
+import { assertPageAccess, waitForPageTimeout } from '../utils/pageGuards.js';
 import { buildEntityName } from '../utils/randomData.js';
 
 export async function createEntity(page, { businessUnit, entityName, onEntityCheckpoint }) {
-  const resolvedEntityName = entityName || buildEntityName(businessUnit.entityPrefix);
+  const resolvedEntityName = entityName || await buildEntityName(businessUnit.entityPrefix);
   const actionContext = {
     businessUnit,
     entityName: resolvedEntityName,
@@ -250,6 +250,7 @@ async function selectCreateBusinessUnit(page, businessUnit, entityName) {
 }
 
 async function fillEntityName(page, businessUnit, entityName) {
+  await assertPageAccess(page, 'filling the create entity name');
   const fieldSelectors = businessUnit.createEntityNameSelectors || [];
 
   for (const selector of fieldSelectors) {

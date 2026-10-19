@@ -261,6 +261,8 @@ export class Reporter {
         <div>Entity Name</div><div>${escapeHtml(context.entityName)}</div>
         <div>Execution Time</div><div>${escapeHtml(formatDuration(context.timings?.totalMs))}</div>
         <div>Login URL</div><div>${escapeHtml(context.environment.loginUrl)}</div>
+        <div>URL Version</div><div>${escapeHtml(context.environment.urlVersion || 'Not versioned')}</div>
+        <div>Version Source</div><div>${escapeHtml(context.environment.versionSource || 'Original URL')}</div>
       </div>
       <div class="links">
         <a href="${pathToHref(excelPath)}">Open Excel Result</a>
@@ -370,6 +372,8 @@ export class Reporter {
       ['Client', formatEnvironment(context.environment)],
       ['Browser', formatBrowserProject(context.browserProject)],
       ['Login URL', context.environment.loginUrl],
+      ['URL Version', context.environment.urlVersion || 'Not versioned'],
+      ['Version Source', context.environment.versionSource || 'Original URL'],
       ['Flow', context.flowLabel || `Flow ${context.flow}`],
       ['Entity Name', context.entityName],
       ['Execution Time', formatDuration(context.timings?.totalMs)],

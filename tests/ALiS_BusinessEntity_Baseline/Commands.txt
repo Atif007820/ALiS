@@ -13,6 +13,48 @@ npm run browsers:install
 npm run validate
 npm run list
 
+Global Version Override
+-----------------------
+Edit only config/runSettings.json:
+"globalVersionOverride": {
+  "enabled": true,
+  "version": "11.4.42.03"
+}
+
+enabled:true applies one deployment version to every configured URL key:
+LNI, NVRCP, NJ and DPBH, including all flows, BUs, browsers and parallel runs.
+enabled:false (or omitting this setting) restores the saved config/urls.js URLs.
+Saved URLs are never rewritten. Only the version in an ALiS application folder
+changes; the server, protocol, port, login path, query and fragment are preserved.
+Versions support three or more numeric parts, including leading zeroes.
+Malformed enabled settings fail before browsers start. Non-versioned URLs stay
+unchanged and show NOT VERSIONED. Ambiguous application folders fail clearly.
+Explicit --login-url or a full URL supplied to --url takes precedence and is
+used exactly as provided. Credentials, entity names and baselines do not change.
+There are no per-site or per-environment version override settings.
+
+Preview the effective URL, version and source without logging in:
+npm run list
+npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=all --parallel=3 --dry-run
+
+Run all flows for the default business units using the selected version:
+npm run baseline -- --flow=all --tc=all --project=chromium --parallel=2
+Run all configured business units and flows:
+npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium --parallel=3
+Flows 1 and 3 create test entities. Flows 2 and 4 use the configured existing names.
+Generated entity names for every BU use PREFIX_DD-MM-YYYY_hh:mm:ss AM/PM only
+(example: HLS_19-10-2026_01:20:31 PM), with no random suffix. Same-prefix creates
+in one runner wait for an unused real clock second to avoid parallel duplicates;
+different prefixes do not wait for each other. Separate runners are not coordinated.
+Existing entity names and explicit name overrides are not changed.
+Runtime errors and genuine baseline comparison differences remain separate.
+Credential popups verify their configured inputs after dynamic refreshes before
+final OK/Save. Persistent validation errors stop with their actual message.
+Known transient document-network failures use the existing bounded runtimeRetries
+setting and preserve any created-entity checkpoint to avoid duplicate creates.
+HTML, Excel and JSON reports record the effective version and its source.
+Run npm run test:runtime for URL resolution, local browser and runtime regression checks.
+
 
 Run Syntax
 ----------

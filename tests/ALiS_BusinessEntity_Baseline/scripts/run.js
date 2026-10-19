@@ -21,7 +21,7 @@ import { logger } from '../utils/logger.js';
 import { openFile, openReportArtifacts } from '../utils/openArtifacts.js';
 import { ensurePlaywrightBrowsers } from '../utils/browserPreflight.js';
 import { getAvailableFlows, getFlowInfo } from '../utils/flowLabels.js';
-import { isClosedPageError } from '../utils/pageGuards.js';
+import { isClosedPageError, isTransientNavigationError, trackNavigationFailures } from '../utils/pageGuards.js';
 import { runJobsWithWorkers } from '../utils/parallelRuntime.js';
 
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,6 +65,7 @@ const urlKeySelection = resolveUrlSelection(args, runSettings);
 const environment = summarizeEnvironmentSelection(urlKeySelection, {
   loginUrlOverride: args.loginUrl,
   urlValue: args.url,
+  settings: runSettings,
 });
 const businessUnitIds = resolveBusinessUnitSelection(args.bu ?? runSettings.defaultBusinessUnit ?? 'HLS', {
   urlKeySelection,
@@ -168,6 +169,7 @@ async function runCombination(options) {
     attempts.push({ attempt, error: result.error || '', tracePath: result.tracePath || '', durationMs: result.durationMs });
 
     const retryable = isClosedPageError(result.error)
+      || isTransientNavigationError(result.error)
       || /ALiS denied access/i.test(result.error);
     if (!result.failed || !retryable || attempt > runtimeRetries) {
       return { ...result, runtimeAttempts: attempts };
@@ -213,6 +215,7 @@ async function runCombinationOnce({
   let tracePath = '';
   let phase = 'setup';
   let entityCheckpoint = createdEntity;
+  let navigationFailureForPage = () => undefined;
 
   try {
     const setupStart = Date.now();
@@ -225,6 +228,7 @@ async function runCombinationOnce({
     });
 
     browserContext = await browser.newContext(browserContextOptions(settings));
+    navigationFailureForPage = trackNavigationFailures(browserContext);
     browserContext.setDefaultTimeout(Math.max(30_000, baselineConfig.timeouts.actionMs));
     browserContext.setDefaultNavigationTimeout(baselineConfig.timeouts.navigationMs);
     await browserContext.tracing.start({ screenshots: true, snapshots: true, sources: true });
@@ -243,6 +247,7 @@ async function runCombinationOnce({
     });
 
     logger.section(`${flowInfo.label} | ${businessUnit.id} | ${runEnvironment.id} | ${browserProject.name}`);
+    logger.info(`Login URL: ${runEnvironment.loginUrl} | Version: ${runEnvironment.urlVersion || 'Not versioned'} | Source: ${runEnvironment.versionSource}`);
     logger.info(flowInfo.description);
     const flowStart = Date.now();
     phase = 'open-profile';
@@ -381,6 +386,10 @@ async function runCombinationOnce({
       })),
     };
   } catch (error) {
+    const navigationFailure = navigationFailureForPage(page);
+    if (navigationFailure && page?.url().startsWith('chrome-error://')) {
+      error = new Error(`Transient navigation failure during ${phase}: ${navigationFailure.error} (${navigationFailure.method} ${navigationFailure.url}). ${error.message}`, { cause: error });
+    }
     tracePath = path.join(reporter.reportDir, 'runtime-trace.zip');
     await browserContext?.tracing.stop({ path: tracePath }).catch(() => { tracePath = ''; });
     const screenshotPath = page ? await saveFailureScreenshot(page, reporter.reportDir) : '';
@@ -398,6 +407,7 @@ async function runCombinationOnce({
     logger.error(error.stack);
     await fs.writeFile(path.join(reporter.reportDir, 'runtime-error.json'), JSON.stringify({
       phase, error: error.message, stack: error.stack, url: page?.url(), tracePath, screenshotPath,
+      navigationFailure,
       businessUnit: businessUnit.id, flow, project: browserProject.id, createdEntity: entityCheckpoint,
     }, null, 2)).catch(() => {});
     return {
@@ -513,7 +523,7 @@ function resolveUrlSelection(parsedArgs, settings) {
   return normalizeKnownUrlKey(value);
 }
 
-function summarizeEnvironmentSelection(urlKeySelection, { loginUrlOverride, urlValue } = {}) {
+function summarizeEnvironmentSelection(urlKeySelection, { loginUrlOverride, urlValue, settings = runSettings } = {}) {
   if (urlKeySelection === BY_BUSINESS_UNIT_URL) {
     return {
       id: 'ALL',
@@ -533,13 +543,11 @@ function summarizeEnvironmentSelection(urlKeySelection, { loginUrlOverride, urlV
   const id = normalizeUrlKey(urlKeySelection);
   const environment = resolveEnvironment({
     urlKey: id,
-    loginUrlOverride,
+    loginUrlOverride: isRawHttpUrl(urlValue) ? urlValue : loginUrlOverride,
+    settings,
   });
 
-  return {
-    ...environment,
-    loginUrl: isRawHttpUrl(urlValue) ? urlValue : environment.loginUrl,
-  };
+  return environment;
 }
 
 function isRawHttpUrl(value) {
@@ -962,6 +970,8 @@ async function writeLatestRunIndex({
     environment: {
       id: environment.id,
       loginUrl: environment.loginUrl,
+      urlVersion: environment.urlVersion || '',
+      versionSource: environment.versionSource || '',
     },
     businessUnits: businessUnitIds,
     flows,
@@ -977,6 +987,9 @@ async function writeLatestRunIndex({
       browserName: entry.browserProject?.name || '',
       urlKey: entry.environment?.id || '',
       loginUrl: entry.environment?.loginUrl || '',
+      configuredLoginUrl: entry.environment?.configuredLoginUrl || '',
+      urlVersion: entry.environment?.urlVersion || '',
+      versionSource: entry.environment?.versionSource || '',
       status: entry.failed ? 'FAILED' : 'PASSED',
       comparisonStatus: entry.comparisonFailed ? 'FAILED' : 'PASSED',
       error: entry.error || '',
@@ -1027,7 +1040,7 @@ function buildLatestRunHtml({ summary, htmlPath }) {
       <td>${escapeHtml(report.businessUnit)}</td>
       <td>${escapeHtml(report.flowLabel)}</td>
       <td>${escapeHtml(report.browserName || report.browserProject || '')}</td>
-      <td>${escapeHtml(report.urlKey || '')}</td>
+      <td>${escapeHtml(report.urlKey || '')}<br>${escapeHtml(report.urlVersion || 'Not versioned')}<br>${escapeHtml(report.versionSource || '')}</td>
       <td><span class="${report.status === 'PASSED' ? 'pass' : 'fail'}">${escapeHtml(report.status)}</span></td>
       <td><span class="${report.comparisonStatus === 'PASSED' ? 'pass' : 'fail'}">${escapeHtml(report.comparisonStatus || '')}</span></td>
       <td>${escapeHtml(formatDuration(report.durationMs))}</td>
@@ -1290,7 +1303,7 @@ function playwrightStyleTitle(row) {
 }
 
 function playwrightStyleMetaLine(row) {
-  return `${row.businessUnitName} | ${row.urlKey} | ${row.browserName}`;
+  return `${row.businessUnitName} | ${row.urlKey} | ${row.browserName} | Version: ${row.urlVersion || 'Not versioned'} (${row.versionSource || 'Original URL'}) | ${row.loginUrl || ''}`;
 }
 
 function playwrightStyleStats(row) {
@@ -1495,6 +1508,7 @@ function resolveRunEnvironment({ parsedArgs, runSettings: settings, businessUnit
   return resolveEnvironment({
     urlKey,
     loginUrlOverride,
+    settings,
   });
 }
 
@@ -1526,8 +1540,8 @@ function printAvailableOptions() {
   logger.info('');
   logger.info('Available URLs:');
   for (const urlKey of availableUrlKeys()) {
-    const environment = resolveEnvironment({ urlKey });
-    logger.info(`  --url=${urlKey}: ${environment.loginUrl}`);
+    const environment = resolveEnvironment({ urlKey, settings: runSettings });
+    logger.info(`  --url=${urlKey}: ${environment.loginUrl} | Version: ${environment.urlVersion || 'Not versioned'} | Source: ${environment.versionSource}`);
   }
   logger.info('  --url=all: use each configured BU URL key from config/BusinessUnit.js');
   logger.info('  --login-url=<full URL>: override the selected profile login URL directly');
@@ -1583,7 +1597,7 @@ function printRunPlan({ businessUnitIds, flows, testCases, environment, projectI
           runSettings,
           businessUnit,
         });
-        logger.info(`- ${businessUnitId} | ${getFlowInfo(flow).label} | ${project.name} | ${runEnvironment.id} | ${runEnvironment.loginUrl} | ${applicableTestCases.map((testCase) => testCase.id).join(', ')}`);
+        logger.info(`- ${businessUnitId} | ${getFlowInfo(flow).label} | ${project.name} | ${runEnvironment.id} | ${runEnvironment.loginUrl} | Version: ${runEnvironment.urlVersion || 'Not versioned'} | Source: ${runEnvironment.versionSource} | ${applicableTestCases.map((testCase) => testCase.id).join(', ')}`);
       }
     }
   }

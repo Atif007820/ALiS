@@ -60,7 +60,30 @@ npm run baseline -- --flow=2 --bu=RM --url=NVRCP --entity="YOUR_FACILITY_NAME" -
 npm run baseline -- --flow=2 --bu=MAMMO --url=NVRCP --entity="YOUR_FACILITY_NAME" --tc=all --headed
 ```
 
+## Global Version Override
+
+Set `globalVersionOverride` in `config/runSettings.json`:
+
+```json
+"globalVersionOverride": {
+  "enabled": true,
+  "version": "11.4.42.03"
+}
+```
+
+This applies one version to all configured site URLs, business units, flows and
+browser combinations. Set `enabled` to `false` to use the original saved URLs.
+Only the version in the ALiS application folder changes; hosts, ports, protocol,
+login paths, queries and fragments are retained. Non-versioned portals stay
+unchanged. Invalid active versions fail before browsers start.
+
+`npm run list` and `--dry-run` preview effective URLs and version sources without
+logging in. HTML, Excel and JSON reports record the effective deployment version.
+Run `npm run test:runtime` for version resolution and local browser regressions.
+
 Use `--login-url="http://..."` only when you need to override the configured profile URL directly.
+An explicit command-line URL takes precedence over the global version and is
+used exactly as supplied. Saved URL profiles and baseline workbooks are not rewritten.
 
 ## Four-worker runs
 
@@ -72,7 +95,26 @@ npm run baseline -- --flow=all --bu=all --url=all --tc=all --project=chromium --
 
 Each browser combination generates its own create data and a unique entity name. Jobs opening the same existing entity on the same portal wait for each other, because capture preconditions can add rows to that profile. Other jobs continue filling the available worker slots.
 
+For every BU, generated names end at the local timestamp:
+`HLS_19-10-2026_01:20:31 PM`. No random suffix or milliseconds are added.
+Parallel creates using the same prefix wait for the next unused real clock second
+within the runner; different prefixes do not block each other. The clock is not
+artificially advanced. Name allocation fails clearly after 60 collision checks
+instead of waiting indefinitely. Separate runner processes are not coordinated.
+Existing entity names and explicit name overrides remain unchanged.
+
 The credential popup waits for its parent ASP.NET callback before the create form continues. If a retry follows a browser closure after Save was attempted, the framework searches the same generated entity instead of creating a second one. A Save whose persistence cannot be confirmed remains a runtime failure.
+
+Before a popup's final OK/Save, configured input values are checked again after
+its own ASP.NET refresh finishes. Cleared values are restored with bounded
+verification. Persistent popup validation errors are reported directly instead
+of repeatedly reopening the same rejected form.
+
+Transient document-network failures (such as `ERR_NETWORK_IO_SUSPENDED`) retain
+their request diagnostics and use the existing bounded `runtimeRetries` setting.
+Retries preserve the created-entity checkpoint; a Save is not blindly replayed.
+HTTP errors, invalid credentials and persistent form validation are not classified
+as transient network failures.
 
 Runtime failures retain `runtime-trace.zip`, `runtime-error.json`, and a screenshot in the combination folder. Retries use a separate `retry-2` folder and are listed in `runtimeAttempts` in the run summary. Comparison results remain independent of runtime status.
 

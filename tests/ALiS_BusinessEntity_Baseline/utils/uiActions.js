@@ -673,7 +673,7 @@ async function runPopupFromLink(page, action, context) {
       }
 
       await targetPage.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
-      await runUiActions(targetPage, action.actions || [], context);
+      await runPopupActions(targetPage, action.actions || [], context);
 
       if (targetPage !== page && !targetPage.isClosed()) {
         await targetPage.waitForEvent('close', { timeout: Number(action.closeTimeoutMs || 15_000) });
@@ -689,9 +689,15 @@ async function runPopupFromLink(page, action, context) {
       return;
     } catch (error) {
       lastError = error;
+      const validation = targetPage && !targetPage.isClosed()
+        ? await popupValidationMessage(targetPage) : '';
 
       if (targetPage && targetPage !== page && !targetPage.isClosed()) {
         await targetPage.close().catch(() => {});
+      }
+
+      if (validation) {
+        throw new Error(`Popup action "${action.name}" was rejected: ${validation}`);
       }
 
       if (attempt < attempts) {
@@ -701,6 +707,31 @@ async function runPopupFromLink(page, action, context) {
   }
 
   throw new Error(`Popup action "${action.name}" failed after ${attempts} attempt(s): ${lastError?.message || lastError}`);
+}
+
+async function runPopupActions(page, actions, context) {
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    const preceding = actions.slice(0, index);
+    if (index === actions.length - 1
+        && ['clickLink', 'clickButton'].includes(action.type)
+        && /^(OK|Save|Submit)$/i.test(String(action.name || '').trim())
+        && preceding.some(isVerifiableValueAction)) {
+      // Radio/checkbox callbacks can replace popup inputs after they were filled.
+      await waitForAspNetPostback(page, { minimumWaitMs: 750, timeoutMs: 30_000 });
+      await ensureUiActionValues(page, preceding, context);
+    }
+    await runUiAction(page, action, context);
+  }
+}
+
+async function popupValidationMessage(page) {
+  return page.locator('[data-valsummary], [id*="ValidationSummary"], .validation-summary-errors')
+    .evaluateAll((elements) => elements.filter((element) => {
+      const style = getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length;
+    }).map((element) => element.innerText || '').join(' ').replace(/\s+/g, ' ').trim().slice(0, 1000))
+    .catch(() => '');
 }
 
 async function openFormFromLink(page, action) {
