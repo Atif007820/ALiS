@@ -32,14 +32,17 @@ export async function ensureUiActionValues(page, actions = [], context = {}, {
       }
 
       const expected = await expectedValueForAction(locator, action, context);
-      const actual = await locator.inputValue({ timeout: 3_000 }).catch(() => '');
+      const actual = await readActionValue(locator, action);
 
       if (String(actual) === String(expected)) {
         continue;
       }
 
       await runUiAction(page, action, context);
-      const restored = await locator.inputValue({ timeout: 3_000 }).catch(() => '');
+      if (['radio', 'checkbox'].includes(action.type)) {
+        await waitForAspNetPostback(page, { minimumWaitMs: 750, timeoutMs: 30_000, strict: true });
+      }
+      const restored = await readActionValue(locator, action);
       if (String(restored) !== String(expected)) {
         mismatches.push(actionDescription(action));
       }
@@ -60,7 +63,7 @@ export async function ensureUiActionValues(page, actions = [], context = {}, {
       }
 
       const expected = await expectedValueForAction(locator, action, context);
-      const actual = await locator.inputValue({ timeout: 3_000 }).catch(() => '');
+      const actual = await readActionValue(locator, action);
       if (String(actual) !== String(expected)) {
         unstable.push(actionDescription(action));
       }
@@ -645,8 +648,20 @@ async function runPopupFromLink(page, action, context) {
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     let targetPage = null;
+    let parentPostbackCompleted = false;
+    const onParentResponse = (response) => {
+      const request = response.request();
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()
+          && request.method() === 'POST' && response.ok()) {
+        parentPostbackCompleted = true;
+      }
+    };
+    page.on('response', onParentResponse);
 
     try {
+      if (action.parentResult) {
+        await page.evaluate((name) => { window[name] = ''; }, action.parentResult.name);
+      }
       targetPage = await openPopupTargetFromLink(page, action, timeoutMs);
 
       if (!targetPage) {
@@ -654,33 +669,71 @@ async function runPopupFromLink(page, action, context) {
       }
 
       await targetPage.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
-      await runUiActions(targetPage, action.actions || [], context);
+      await runPopupActions(targetPage, action.actions || [], context);
 
-      if (targetPage !== page) {
-        await targetPage.waitForEvent('close', { timeout: 5_000 }).catch(() => {});
+      if (targetPage !== page && !targetPage.isClosed()) {
+        await targetPage.waitForEvent('close', { timeout: Number(action.closeTimeoutMs || 15_000) });
       }
 
       await waitForAspNetPostback(page, {
         minimumWaitMs: Number(action.parentPostbackWaitMs || action.settleMs || 750),
-        timeoutMs: Number(action.parentPostbackTimeoutMs || 15_000),
-      }).catch(() => {});
-      await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
+        timeoutMs: Number(action.parentPostbackTimeoutMs || 30_000),
+        strict: true,
+      });
+
+      // A full parent postback replaces window globals, including returnValue.
+      if (action.parentResult && !parentPostbackCompleted) {
+        await page.waitForFunction(({ name, value }) => window[name] === value, action.parentResult,
+          { timeout: Number(action.parentPostbackTimeoutMs || 30_000) });
+      }
 
       return;
     } catch (error) {
       lastError = error;
+      const validation = targetPage && !targetPage.isClosed()
+        ? await popupValidationMessage(targetPage) : '';
 
       if (targetPage && targetPage !== page && !targetPage.isClosed()) {
         await targetPage.close().catch(() => {});
       }
 
+      if (validation) {
+        throw new Error(`Popup action "${action.name}" was rejected: ${validation}`);
+      }
+
       if (attempt < attempts) {
         await wait(retryDelayMs);
       }
+    } finally {
+      page.off('response', onParentResponse);
     }
   }
 
   throw new Error(`Popup action "${action.name}" failed after ${attempts} attempt(s): ${lastError?.message || lastError}`);
+}
+
+async function runPopupActions(page, actions, context) {
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    const preceding = actions.slice(0, index);
+    if (index === actions.length - 1
+        && ['clickLink', 'clickButton'].includes(action.type)
+        && /^(OK|Save|Submit)$/i.test(String(action.name || '').trim())
+        && preceding.some(isVerifiableValueAction)) {
+      await waitForAspNetPostback(page, { minimumWaitMs: 750, timeoutMs: 30_000, strict: true });
+      await ensureUiActionValues(page, preceding, context);
+    }
+    await runUiAction(page, action, context);
+  }
+}
+
+async function popupValidationMessage(page) {
+  return page.locator('[data-valsummary], [id*="ValidationSummary"], .validation-summary-errors')
+    .evaluateAll((elements) => elements.filter((element) => {
+      const style = getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length;
+    }).map((element) => element.innerText || '').join(' ').replace(/\s+/g, ' ').trim().slice(0, 1000))
+    .catch(() => '');
 }
 
 async function openFormFromLink(page, action) {
@@ -1903,8 +1956,8 @@ async function syncSelectedAttribute(locator, selectedValue, { dispatchEvents = 
   }, { value: selectedValue, shouldDispatch: dispatchEvents });
 }
 
-async function waitForAspNetPostback(page, { minimumWaitMs = 500, timeoutMs = 15_000 } = {}) {
-  await page.evaluate(({ minimumWaitMs, timeoutMs }) => new Promise((resolve) => {
+async function waitForAspNetPostback(page, { minimumWaitMs = 500, timeoutMs = 15_000, strict = false } = {}) {
+  const completed = await page.evaluate(({ minimumWaitMs, timeoutMs }) => new Promise((resolve) => {
     const startedAt = Date.now();
     let sawBusy = false;
     let lastActivityAt = startedAt;
@@ -1943,13 +1996,24 @@ async function waitForAspNetPostback(page, { minimumWaitMs = 500, timeoutMs = 15
       if (noPostbackObserved || postbackCompleted || timedOut) {
         clearInterval(interval);
         observer.disconnect();
-        resolve();
+        resolve(noPostbackObserved || postbackCompleted);
       }
     }, 50);
-  }), { minimumWaitMs: Math.max(0, minimumWaitMs), timeoutMs }).catch(() => {});
+  }), { minimumWaitMs: Math.max(0, minimumWaitMs), timeoutMs }).catch((error) => {
+    if (strict && !/Execution context was destroyed|Cannot find context/i.test(error.message)) throw error;
+    return undefined;
+  });
+
+  if (strict && completed === false) {
+    throw new Error(`ASP.NET postback did not settle within ${timeoutMs} ms.`);
+  }
 
   await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
   await page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => {});
+  if (strict) {
+    await page.waitForFunction(() => !window.Sys?.WebForms?.PageRequestManager?.getInstance?.()?.get_isInAsyncPostBack?.(),
+      undefined, { timeout: timeoutMs });
+  }
 }
 
 function isVerifiableValueAction(action) {
@@ -1965,10 +2029,16 @@ function isVerifiableValueAction(action) {
     'locatorFill',
     'locatorSetValue',
     'locatorSelect',
+    'radio',
+    'checkbox',
   ].includes(action.type);
 }
 
 function locatorForValueAction(page, action) {
+  if (['radio', 'checkbox'].includes(action.type)) {
+    return action.selector ? page.locator(action.selector).first()
+      : page.getByRole(action.type, { name: action.name, exact: action.exact ?? false }).first();
+  }
   if (action.type === 'textbox') {
     return page.getByRole('textbox', {
       name: action.name,
@@ -1992,6 +2062,7 @@ function locatorForValueAction(page, action) {
 }
 
 async function expectedValueForAction(locator, action, context) {
+  if (['radio', 'checkbox'].includes(action.type)) return true;
   const value = resolveValue(action.value, context);
 
   if (['selectByLabel', 'labelNthSelect', 'locatorSelect'].includes(action.type)) {
@@ -2017,6 +2088,12 @@ async function expectedValueForAction(locator, action, context) {
   }
 
   return value;
+}
+
+async function readActionValue(locator, action) {
+  return ['radio', 'checkbox'].includes(action.type)
+    ? locator.isChecked({ timeout: 3_000 }).catch(() => false)
+    : locator.inputValue({ timeout: 3_000 }).catch(() => '');
 }
 
 function actionDescription(action) {

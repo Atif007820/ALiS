@@ -2,6 +2,7 @@ import {
   buildIndividualProfileName,
   phone,
   randomSsn,
+  uniqueCredentialNumber,
   zip,
 } from '../utils/randomData.js';
 
@@ -22,11 +23,11 @@ export function buildMammoRunData(testData) {
       samePageFallbackTimeoutMs: 15_000,
       parentPostbackWaitMs: 1_500,
       parentPostbackTimeoutMs: 30_000,
+      parentResult: { name: 'returnValue', value: 'X' },
       attempts: 5,
       retryDelayMs: 1_500,
       actions: [
         { type: 'radio', name: 'RADIATION THERAPIST RRT', exact: true },
-        { type: 'wait', ms: 500 },
         { type: 'clickLink', name: 'OK' },
       ],
     },
@@ -60,8 +61,8 @@ export function buildMammoRunData(testData) {
       { type: 'textbox', name: 'First Name', value: '$FIRST_NAME' },
       { type: 'textbox', name: 'Name on Radiographer', value: '$FIRST_NAME' },
       { type: 'textbox', name: 'SSN', value: randomSsn(), verifyBeforeSave: false },
-      { type: 'textbox', name: 'API#', value: `API${Date.now()}`, verifyBeforeSave: false },
-      { type: 'textbox', name: 'ARRT, NMTCB, and/or CMA', value: String(Date.now()).slice(-12), verifyBeforeSave: false },
+      { type: 'textbox', name: 'API#', value: `API${uniqueCredentialNumber()}` },
+      { type: 'textbox', name: 'ARRT, NMTCB, and/or CMA', value: uniqueCredentialNumber() },
 
       { type: 'labelNthFill', label: 'Street One', index: 0, value: 'ADE Building' },
       { type: 'labelNthFill', label: 'City', index: 0, value: 'Newark' },

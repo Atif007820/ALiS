@@ -6,8 +6,8 @@
   "defaultProject": "chromium",
   "fullyParallel": true,
   "workers": 1,
-  "parallelWorkers": 3,
-  "ciWorkers": 3,
+  "parallelWorkers": 4,
+  "ciWorkers": 4,
   "runtimeRetries": 1,
   "headless": true,
   "slowMo": 0,
@@ -17,6 +17,7 @@
     "height": 1080
   },
   "openHtmlReport": false,
+  "openPlaywrightReport": true,
   "openExcelReport": false,
   "logLevel": "info"
 }

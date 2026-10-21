@@ -5,7 +5,7 @@ import { logger } from '../utils/logger.js';
 import { waitForPageTimeout } from '../utils/pageGuards.js';
 import { waitForProfileWorkspace } from './ModifySearchFlow.js';
 
-export function classifyCreateSaveState(bodyText, path, saveVisible = false) {
+export function classifyCreateSaveState(bodyText, path, saveVisible = false, validationMessage = '') {
   const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const normalizedBodyText = clean(bodyText);
   const normalizedPath = clean(path);
@@ -29,9 +29,14 @@ export function classifyCreateSaveState(bodyText, path, saveVisible = false) {
     return { status: 'validation', message: 'License/Credential information details' };
   }
 
+  if (clean(validationMessage)) {
+    return { status: 'validation', message: clean(validationMessage) };
+  }
+
   const validationPatterns = [
     /Please review following errors and correct them\.?\s*(.*?)(?:Application Details|Mailing Address|$)/i,
     /(The following field contains invalid characters:[^.]*\.?)/i,
+    /(Provided (?:API#?|SSN) already exists[^.]*\.?)/i,
     /(?:^|\s)((?:[A-Za-z][A-Za-z0-9 #/().'-]*\s+)?is a required field\.?)/i,
     /(?:^|\s)(Please (?:enter|select|provide)[^.]*\.)/i,
   ];
@@ -52,7 +57,14 @@ export function classifyCreateSaveState(bodyText, path, saveVisible = false) {
   };
 }
 
-export async function createProfile(page, { businessUnit }) {
+export async function createProfile(page, { businessUnit, onProfileCheckpoint }) {
+  const profileReference = {
+    firstName: businessUnit.firstName,
+    lastName: businessUnit.lastName,
+    fullName: businessUnit.fullName,
+    entityName: businessUnit.fullName,
+    profileName: { firstName: businessUnit.firstName, lastName: businessUnit.lastName },
+  };
   const actionContext = {
     businessUnit,
     firstName: businessUnit.firstName,
@@ -83,6 +95,7 @@ export async function createProfile(page, { businessUnit }) {
   await prepareCreateFormForSave();
 
   await saveCreatedProfile(page, {
+    onSaveAttempt: () => onProfileCheckpoint?.({ ...profileReference, persistenceUnknown: true }),
     repairForm: prepareCreateFormForSave,
     recoverValidation: async (message) => {
       const recoveryRule = findCreateValidationRecoveryRule(
@@ -103,6 +116,8 @@ export async function createProfile(page, { businessUnit }) {
       return true;
     },
   });
+
+  onProfileCheckpoint?.({ ...profileReference, persistenceUnknown: false });
 
   await waitForAppIdle(page);
 
@@ -130,7 +145,7 @@ export async function createProfile(page, { businessUnit }) {
 
 export const createEntity = createProfile;
 
-async function saveCreatedProfile(page, { repairForm, recoverValidation } = {}) {
+export async function saveCreatedProfile(page, { repairForm, recoverValidation, onSaveAttempt } = {}) {
   const attempts = 6;
   let lastState = null;
 
@@ -157,8 +172,10 @@ async function saveCreatedProfile(page, { repairForm, recoverValidation } = {}) 
         await repairForm();
         continue;
       }
+      throw new Error(`Create profile was not saved. Validation error: ${lastState.message}`);
     }
 
+    onSaveAttempt?.();
     const clicked = await clickSave(page);
     if (!clicked) {
       if (lastState.status === 'pending' && /Saved page:/i.test(lastState.message)) {
@@ -168,7 +185,7 @@ async function saveCreatedProfile(page, { repairForm, recoverValidation } = {}) 
     }
 
     await waitForAppIdle(page);
-    lastState = await readCreateSaveState(page);
+    lastState = await waitForCreateSaveResult(page);
 
     if (lastState.status === 'saved') {
       return;
@@ -194,14 +211,23 @@ async function saveCreatedProfile(page, { repairForm, recoverValidation } = {}) 
       throw new Error(`Create profile was not saved. Validation error: ${lastState.message}`);
     }
 
-    if (attempt < attempts) {
-      await waitForPageTimeout(page, 500, 'retrying ignored profile Save action');
-    }
+    throw new Error(`Profile Save persistence could not be confirmed; refusing to submit Save again. ${lastState.message}`);
   }
 
   throw new Error(
     `Create Save did not reach a persisted individual profile after ${attempts} attempts. ${lastState?.message || ''}`.trim(),
   );
+}
+
+async function waitForCreateSaveResult(page) {
+  const deadline = Date.now() + baselineConfig.timeouts.navigationMs;
+  let state;
+  do {
+    state = await readCreateSaveState(page);
+    if (state.status !== 'pending') return state;
+    await waitForPageTimeout(page, 250, 'confirming profile Save persistence');
+  } while (Date.now() < deadline);
+  return state;
 }
 
 async function clickSave(page) {
@@ -365,10 +391,15 @@ async function readCreateSaveState(page) {
         .filter(isVisible)
         .some((element) => /^save\b/i.test(labelFor(element)));
 
-      return { bodyText, path, saveVisible };
+      const validationMessage = Array.from(document.querySelectorAll(
+        '[id$="_pnlMessage"], [data-valsummary], .validation-summary-errors, [role="alert"]',
+      )).filter(isVisible).map((element) => element.innerText || '')
+        .join(' ').replace(/\s+/g, ' ').trim();
+
+      return { bodyText, path, saveVisible, validationMessage };
     });
 
-    return classifyCreateSaveState(state.bodyText, state.path, state.saveVisible);
+    return classifyCreateSaveState(state.bodyText, state.path, state.saveVisible, state.validationMessage);
   } catch {
     const fallbackState = await readCreateSaveStateWithLocators(page);
     if (fallbackState) {

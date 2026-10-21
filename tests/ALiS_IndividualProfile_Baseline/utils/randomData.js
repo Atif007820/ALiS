@@ -1,4 +1,19 @@
+import { randomInt } from 'node:crypto';
+
 const usedPersonNames = new Set();
+const usedProfileNumbers = new Map();
+const usedCredentialNumbers = new Set();
+
+export function uniqueCredentialNumber() {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const value = String(randomInt(100_000_000_000, 1_000_000_000_000));
+    if (!usedCredentialNumbers.has(value)) {
+      usedCredentialNumbers.add(value);
+      return value;
+    }
+  }
+  throw new Error('Could not generate an unused 12-digit credential number.');
+}
 
 export function pick(items) {
   return items[Math.floor(Math.random() * items.length)];
@@ -21,7 +36,13 @@ export function prioritizedNumber(maxPreferred = 9999) {
 }
 
 export function buildIndividualProfileName(lastPrefix, firstPrefix) {
-  const suffix = prioritizedNumber();
+  const key = JSON.stringify([lastPrefix, firstPrefix]);
+  const used = usedProfileNumbers.get(key) || new Set();
+  const firstCandidate = Number(prioritizedNumber());
+  let suffix = firstCandidate;
+  while (used.has(suffix)) suffix += 1;
+  used.add(suffix);
+  usedProfileNumbers.set(key, used);
 
   return {
     lastName: `${lastPrefix}_${suffix}`,

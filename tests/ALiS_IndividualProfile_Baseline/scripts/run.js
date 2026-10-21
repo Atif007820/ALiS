@@ -22,10 +22,10 @@ import { openFile, openReportArtifacts } from '../utils/openArtifacts.js';
 import { getAvailableFlows, getFlowInfo } from '../utils/flowLabels.js';
 import { isClosedPageError } from '../utils/pageGuards.js';
 import { runJobsWithWorkers } from '../utils/jobScheduler.js';
+import { profileRuntimeKey } from '../utils/profileIdentity.js';
 
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testResultsDir = path.join(frameworkRoot, 'test-results');
-const latestRunDir = path.join(testResultsDir, 'latest-run');
 const BY_BUSINESS_UNIT_URL = 'ALL';
 const browserProjects = {
   chromium: {
@@ -48,6 +48,9 @@ const browserProjects = {
 
 const args = parseArgs(process.argv.slice(2));
 const runSettings = await loadRunSettings();
+const latestRunDir = args.outputDir
+  ? path.resolve(frameworkRoot, String(args.outputDir))
+  : path.join(testResultsDir, 'latest-run');
 
 if (args.list) {
   printAvailableOptions();
@@ -137,7 +140,11 @@ logger.info(`\nLatest run index: ${runIndex.htmlPath}`);
 logger.info(`Latest run summary: ${runIndex.jsonPath}`);
 logger.info(`Playwright test report: ${runIndex.playwrightTestReportPath}`);
 
-await openFile('Playwright Test Report', runIndex.playwrightTestReportPath, logger, { cacheBust: true });
+const openPlaywrightReport = args.openPlaywrightReport !== undefined
+  ? asBoolean(args.openPlaywrightReport, true) : asBoolean(runSettings.openPlaywrightReport, true);
+if (openPlaywrightReport) {
+  await openFile('Playwright Test Report', runIndex.playwrightTestReportPath, logger, { cacheBust: true });
+}
 
 if (hasFailure) {
   process.exitCode = 1;
@@ -146,17 +153,25 @@ if (hasFailure) {
 async function runCombination(options) {
   const runtimeRetries = Math.max(0, Number(options.runSettings.runtimeRetries ?? 1));
   let lastResult = null;
+  let createdProfile;
+  const runtimeAttempts = [];
 
   for (let attempt = 1; attempt <= runtimeRetries + 1; attempt += 1) {
-    const result = await runCombinationOnce(options);
+    const result = await runCombinationOnce({
+      ...options,
+      reportDir: attempt === 1 ? options.reportDir : path.join(options.reportDir, `retry-${attempt}`),
+      createdProfile,
+    });
     lastResult = result;
+    createdProfile = result.createdProfile || createdProfile;
+    runtimeAttempts.push({ attempt, error: result.error || '', tracePath: result.tracePath || '', durationMs: result.durationMs });
 
     if (!result.failed || !isClosedPageError(result.error) || attempt > runtimeRetries) {
-      return result;
+      return { ...result, runtimeAttempts };
     }
 
     logger.info(
-      `Transient page/browser close detected for ${options.businessUnit.id} ${getFlowInfo(options.flow).label}; retrying clean run ${attempt}/${runtimeRetries}.`,
+      `Transient page/browser close detected for ${options.businessUnit.id} ${getFlowInfo(options.flow).label}; ${createdProfile ? 'reopening the same saved profile' : 'retrying before profile Save'} ${attempt}/${runtimeRetries}.`,
     );
   }
 
@@ -173,6 +188,7 @@ async function runCombinationOnce({
   credentials,
   headless,
   reportDir,
+  createdProfile,
 }) {
   const flowInfo = getFlowInfo(flow);
   const browserProject = resolveBrowserProject(project);
@@ -189,6 +205,9 @@ async function runCombinationOnce({
   let browser;
   let page;
   let runEnvironment;
+  let browserContext;
+  let profileCheckpoint = createdProfile;
+  let tracePath = '';
 
   try {
     const setupStart = Date.now();
@@ -200,7 +219,10 @@ async function runCombinationOnce({
       runSettings: settings,
     });
 
-    const browserContext = await browser.newContext(browserContextOptions(settings));
+    browserContext = await browser.newContext(browserContextOptions(settings));
+    browserContext.setDefaultTimeout(Math.max(30_000, baselineConfig.timeouts.actionMs));
+    browserContext.setDefaultNavigationTimeout(baselineConfig.timeouts.navigationMs);
+    await browserContext.tracing.start({ screenshots: true, snapshots: true, sources: true });
     page = await browserContext.newPage();
     timings.setupMs = elapsedMs(setupStart);
 
@@ -224,6 +246,8 @@ async function runCombinationOnce({
       businessUnit,
       credentials,
       entityName: parsedArgs.entity,
+      createdProfile,
+      onProfileCheckpoint: (checkpoint) => { profileCheckpoint = checkpoint; },
     });
     timings.flowMs = elapsedMs(flowStart);
     logger.info(`Flow setup/open duration: ${formatDuration(timings.flowMs)}`);
@@ -337,6 +361,8 @@ async function runCombinationOnce({
       error: '',
       durationMs: timings.totalMs,
       timings: { ...timings },
+      createdProfile: profileCheckpoint,
+      tracePath,
       testResults: results.map((result) => ({
         id: result.id,
         name: result.name,
@@ -346,6 +372,15 @@ async function runCombinationOnce({
       })),
     };
   } catch (error) {
+    if (browserContext) {
+      const targetTracePath = path.join(reporter.reportDir, 'runtime-trace.zip');
+      try {
+        await browserContext.tracing.stop({ path: targetTracePath });
+        tracePath = targetTracePath;
+      } catch {
+        tracePath = '';
+      }
+    }
     const screenshotPath = page ? await saveFailureScreenshot(page, reporter.reportDir) : '';
     timings.totalMs = elapsedMs(combinationStart);
     logger.error(`\nRun failed (${flowInfo.label} | ${businessUnit.id} | ${browserProject.name}): ${error.message}`);
@@ -368,6 +403,8 @@ async function runCombinationOnce({
       error: error.message,
       durationMs: timings.totalMs,
       timings: { ...timings },
+      createdProfile: profileCheckpoint,
+      tracePath,
       testResults: [],
     };
   } finally {
@@ -722,6 +759,14 @@ async function prepareLatestRunOutputDir() {
   ensureInsideFramework(latestRunDir);
   await fs.mkdir(testResultsDir, { recursive: true });
 
+  if (args.outputDir) {
+    await fs.mkdir(latestRunDir, { recursive: true });
+    if ((await fs.readdir(latestRunDir)).length) {
+      throw new Error(`Output directory already contains artifacts: ${latestRunDir}. Choose a new --output-dir.`);
+    }
+    return;
+  }
+
   await Promise.all([
     removeIfUnlocked(latestRunDir),
     removeIfUnlocked(path.join(testResultsDir, 'latest-results.json')),
@@ -768,19 +813,21 @@ function buildRunJobs({ businessUnitIds, flows, projectIds, testCases }) {
 
   for (const flow of flows) {
     for (const businessUnitId of businessUnitIds) {
-      const businessUnit = resolveBusinessUnit(businessUnitId);
+      const businessUnitConfig = businessUnits[normalizeId(businessUnitId)];
       const applicableTestCases = testCases.filter((testCase) => (
-        testCaseSupportsBusinessUnit(testCase, businessUnit)
+        testCaseSupportsBusinessUnit(testCase, businessUnitConfig)
       ));
 
       if (!applicableTestCases.length) {
         logger.info(
-          `Skipped ${businessUnit.id} ${getFlowInfo(flow).label}: selected test cases are not configured for this BU.`,
+          `Skipped ${businessUnitConfig.id} ${getFlowInfo(flow).label}: selected test cases are not configured for this BU.`,
         );
         continue;
       }
 
       for (const projectId of projectIds) {
+        const businessUnit = resolveBusinessUnit(businessUnitId);
+        const environment = resolveRunEnvironment({ parsedArgs: args, runSettings, businessUnit });
         const project = resolveBrowserProject(projectId);
         const reportDir = path.join(
           latestRunDir,
@@ -798,6 +845,7 @@ function buildRunJobs({ businessUnitIds, flows, projectIds, testCases }) {
           project,
           testCases: applicableTestCases,
           reportDir,
+          exclusiveResourceKey: profileRuntimeKey({ flow, environment, businessUnit, credentials, entityName: args.entity }),
         });
       }
     }
@@ -929,6 +977,9 @@ async function writeLatestRunIndex({
       error: entry.error || '',
       durationMs: entry.durationMs || 0,
       timings: entry.timings || {},
+      runtimeAttempts: entry.runtimeAttempts || [],
+      tracePath: entry.tracePath || '',
+      createdProfile: entry.createdProfile || null,
       excelPath: entry.report?.excelPath || '',
       jsonPath: entry.report?.jsonPath || '',
       htmlReportPath: entry.report?.htmlReportPath || '',
@@ -1252,8 +1303,10 @@ function playwrightStyleLinks(row, htmlPath) {
   const jsonLink = row.jsonPath
     ? `<a href="${relativeHref(htmlPath, row.jsonPath)}">JSON</a>`
     : '';
+  const traceLink = row.tracePath
+    ? `<a href="${relativeHref(htmlPath, row.tracePath)}">Runtime Trace</a>` : '';
 
-  return [htmlLink, excelLink, jsonLink].filter(Boolean).join(' | ');
+  return [htmlLink, excelLink, jsonLink, traceLink].filter(Boolean).join(' | ');
 }
 
 function flattenPlaywrightStyleRows(summary) {

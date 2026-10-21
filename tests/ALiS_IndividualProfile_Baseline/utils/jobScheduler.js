@@ -3,6 +3,9 @@ function isCreateProfileFlow(flow) {
 }
 
 export function exclusiveRuntimeKeyForJob(job) {
+  if (job?.exclusiveResourceKey !== undefined) {
+    return job.exclusiveResourceKey;
+  }
   if (!isCreateProfileFlow(job?.flow)) {
     return '';
   }
@@ -16,40 +19,42 @@ export function exclusiveRuntimeKeyForJob(job) {
 export async function runJobsWithWorkers(jobs, workers, runner, {
   exclusiveKeyForJob = exclusiveRuntimeKeyForJob,
 } = {}) {
+  const requestedWorkers = Number(workers);
+  const workerCount = Number.isFinite(requestedWorkers) ? Math.max(1, Math.floor(requestedWorkers)) : 1;
+  const pending = jobs.map((job, index) => ({ job, index, key: exclusiveKeyForJob(job) }));
   const results = new Array(jobs.length);
-  const lockTails = new Map();
-  let cursor = 0;
-  const workerCount = Math.min(Math.max(workers, 1), jobs.length || 1);
+  const active = new Set();
+  const locked = new Set();
+  let failed = false;
+  let failure;
 
-  const runJob = (job) => {
-    const lockKey = exclusiveKeyForJob(job);
-    if (!lockKey) {
-      return runner(job);
-    }
-
-    const previous = lockTails.get(lockKey) || Promise.resolve();
-    const execution = previous.catch(() => {}).then(() => runner(job));
-    const tail = execution.catch(() => {});
-    lockTails.set(lockKey, tail);
-
-    tail.finally(() => {
-      if (lockTails.get(lockKey) === tail) {
-        lockTails.delete(lockKey);
-      }
-    }).catch(() => {});
-
-    return execution;
+  const start = ({ job, index, key }) => {
+    if (key) locked.add(key);
+    const task = Promise.resolve().then(() => runner(job)).then(
+      (result) => { results[index] = result; },
+      (error) => {
+        if (!failed) { failed = true; failure = error; }
+      },
+    ).finally(() => {
+      active.delete(task);
+      if (key) locked.delete(key);
+    });
+    active.add(task);
   };
 
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (cursor < jobs.length) {
-        const currentIndex = cursor;
-        cursor += 1;
-        results[currentIndex] = await runJob(jobs[currentIndex]);
-      }
-    }),
-  );
-
+  while (pending.length || active.size) {
+    while (!failed && active.size < workerCount && pending.length) {
+      const nextIndex = pending.findIndex(({ key }) => !key || !locked.has(key));
+      if (nextIndex < 0) break;
+      start(pending.splice(nextIndex, 1)[0]);
+    }
+    if (failed) {
+      // Let active jobs release their browsers before reporting a fatal failure.
+      await Promise.all(active);
+      throw failure;
+    }
+    if (active.size) await Promise.race(active);
+  }
+  if (failed) throw failure;
   return results;
 }

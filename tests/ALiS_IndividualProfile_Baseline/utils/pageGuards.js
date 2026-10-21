@@ -1,5 +1,5 @@
 export function isClosedPageError(error) {
-  return /target page, context or browser has been closed|target closed|browser has been closed|context has been closed|page has been closed/i
+  return /target page, context or browser has been closed|target page was closed|target closed|browser has been closed|context has been closed|page has been closed/i
     .test(String(error?.message || error || ''));
 }
 

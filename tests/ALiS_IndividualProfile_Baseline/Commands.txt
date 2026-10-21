@@ -11,6 +11,7 @@ Setup / Validation
 npm install
 npm run browsers:install
 npm run validate
+npm run test:runtime
 npm run list
 
 
@@ -55,6 +56,43 @@ Useful Flags:
   --entity="FIRST_NAME LAST_NAME"
   --entity="LAST_NAME,FIRST_NAME"
   --login-url="FULL_LOGIN_URL"
+  --parallel=4
+  --parallel 4
+  --workers=4
+  --serial
+  --output-dir=test-results/<NEW_EMPTY_FOLDER>
+  --open-playwright-report=false
+
+Four-worker Execution
+---------------------
+All flows and test cases with up to four independent jobs:
+  npm run baseline -- --flow=all --bu=MAMMO --url=NVRCP --tc=all --project=chromium --parallel=4
+
+Multiple browsers with four workers:
+  npm run baseline -- --flow=all --bu=MAMMO --url=NVRCP --tc=all --project=chromium,msedge --parallel 4
+
+Preserve previous results while verifying:
+  npm run baseline -- --flow=all --bu=MAMMO --url=NVRCP --tc=all --project=chromium --parallel=4 --output-dir=test-results/my-verification --open-playwright-report=false
+
+Bare --parallel uses parallelWorkers in config/runSettings.json (default 4).
+--serial uses one worker. Existing-profile jobs sharing the same portal/name
+are protected from concurrent modification across browsers and flows.
+New-profile jobs on the same portal/account are serialized to protect credential
+session state. Other jobs fill available slots; this does not force unsafe work
+to overlap. Each browser job gets independent generated profile data.
+API numbers use API plus 12 random digits (15 characters), and credential numbers
+use 12 random digits. Both are reserved within a run and verified before Save;
+they do not depend on timestamps or get truncated like the previous API values.
+Locks and generated-name reservations apply within one runner, not separate CLI runs.
+
+Credential selections are rechecked after postbacks before popup OK. The popup
+and parent callback must finish before proceeding. Runtime retries reuse the
+created profile after Save, with separate retry folders and failure traces.
+Open a failure trace with:
+  npx playwright show-trace "FULL_PATH_TO_runtime-trace.zip"
+openPlaywrightReport in config/runSettings.json controls aggregate report opening.
+UI wording/required-field differences remain comparison failures; baselines are
+not automatically changed to make tests pass.
 
 
 Mammo Commands

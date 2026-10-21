@@ -7,17 +7,21 @@ import {
 import { CaptureEngine } from '../core/CaptureEngine.js';
 import { getSupportedFlowText } from '../utils/flowLabels.js';
 import { logger } from '../utils/logger.js';
+import { resolveExistingProfileName } from '../utils/profileIdentity.js';
 
-export async function executeFlow(page, { flow, environment, businessUnit, credentials, entityName }) {
+export async function executeFlow(page, {
+  flow, environment, businessUnit, credentials, entityName, createdProfile, onProfileCheckpoint,
+}) {
   const selectedFlow = String(flow);
   await login(page, { environment, credentials });
 
   if (selectedFlow === '1' || selectedFlow === '3') {
-    const created = await createProfile(page, { businessUnit });
+    const created = createdProfile || await createProfile(page, { businessUnit, onProfileCheckpoint });
     logger.info(`Stored created individual profile: ${created.fullName}`);
 
     if (
       selectedFlow === '1'
+      && !createdProfile
       && created.workspaceReady
       && !businessUnit.alwaysSearchAfterCreate
     ) {
@@ -28,10 +32,18 @@ export async function executeFlow(page, { flow, environment, businessUnit, crede
     await login(page, { environment, credentials });
     logger.info(`Searching stored individual profile in Modify: ${created.fullName}`);
 
-    const openedInModify = await openProfileFromModifySearch(page, {
-      businessUnit,
-      profileName: created.profileName,
-    });
+    let openedInModify;
+    try {
+      openedInModify = await openProfileFromModifySearch(page, {
+        businessUnit,
+        profileName: created.profileName,
+      });
+    } catch (error) {
+      if (createdProfile?.persistenceUnknown) {
+        throw new Error(`Earlier profile Save persistence is unknown. Could not reopen "${created.fullName}"; refusing to create a duplicate. ${error.message}`, { cause: error });
+      }
+      throw error;
+    }
 
     if (selectedFlow === '1') {
       return openedInModify;
@@ -53,10 +65,7 @@ export async function executeFlow(page, { flow, environment, businessUnit, crede
     const openProfileFromSearch = selectedFlow === '4'
       ? openProfileFromViewSearch
       : openProfileFromModifySearch;
-    const configuredProfileName = selectedFlow === '4'
-      ? businessUnit.flow4ProfileName || businessUnit.flow2ProfileName
-      : businessUnit.flow2ProfileName;
-    const searchProfileName = parseProfileNameOverride(entityName) || configuredProfileName;
+    const searchProfileName = resolveExistingProfileName(businessUnit, { flow, entityName });
     logger.info(`Flow ${selectedFlow} ${searchAction} profile name: ${formatProfileName(searchProfileName)}`);
 
     return openProfileFromSearch(page, {
@@ -98,27 +107,6 @@ async function prepareCreatedProfileForViewComparison(page, businessUnit) {
   if (captureEngine.warnings.length) {
     captureEngine.warnings.forEach((warning) => logger.info(`Precondition warning: ${warning}`));
   }
-}
-
-function parseProfileNameOverride(value) {
-  const text = String(value || '').trim();
-  if (!text) {
-    return null;
-  }
-
-  const commaParts = text.split(',').map((item) => item.trim()).filter(Boolean);
-  if (commaParts.length >= 2) {
-    return {
-      lastName: commaParts[0],
-      firstName: commaParts[1],
-    };
-  }
-
-  const parts = text.split(/\s+/);
-  return {
-    firstName: parts[0] || '',
-    lastName: parts.slice(1).join(' ') || '',
-  };
 }
 
 function formatProfileName(profileName) {
