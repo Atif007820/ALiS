@@ -3,7 +3,7 @@
   "products": [],
   "globalVersionOverrides": {
     "enabled": false,
-    "versionA": "11.3.25.03",
+    "versionA": "11.3.25.04",
     "versionB": "11.4.42.04"
   },
   "businessUnits": {

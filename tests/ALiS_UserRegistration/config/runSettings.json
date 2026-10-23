@@ -7,7 +7,7 @@
     },
     "PROD": {
       "enabled": true,
-      "version": "11.3.25.03"
+      "version": "11.3.25.04"
     }
   },
   "defaultSite": "ALL",
