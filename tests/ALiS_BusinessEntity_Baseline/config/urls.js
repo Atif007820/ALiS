@@ -4,7 +4,7 @@ export const urlProfiles = {
   LNI: {
     id: 'LNI',
     name: 'LNI',
-    loginUrl: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.42.02/LoginCMS.aspx',
+    loginUrl: 'http://172.16.3.2/ALiSWADLNI2TESTING11.4.42.05/LoginCMS.aspx',
   },
   NVRCP: {
     id: 'NVRCP',
