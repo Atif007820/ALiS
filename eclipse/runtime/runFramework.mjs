@@ -20,7 +20,7 @@ console.log(`Eclipse ${plan.debug ? 'Debug' : 'Run'}: ${plan.framework} - ${plan
 if (options.validate === 'true') {
   console.log(JSON.stringify({ mode: plan.debug ? 'debug' : 'run', framework: plan.framework,
     flow: plan.flow, program: plan.program, args: plan.args, headed: plan.env.HEADLESS === 'false',
-    openCompletedReport: plan.debug }, null, 2));
+    openCompletedReport: plan.openReportAfterCompletion }, null, 2));
   process.exit(0);
 }
 const startedAt = Date.now();
@@ -30,7 +30,7 @@ const child = spawn(process.execPath, [plan.program, ...plan.args], {
 child.once('error', error => { console.error(error.message); process.exitCode = 1; });
 child.once('exit', (code, signal) => {
   process.exitCode = code ?? 1;
-  if (!plan.debug || signal) return;
+  if (signal) return;
   const reportPlan = createReportPlan(plan, startedAt, signal);
   if (!reportPlan) {
     console.warn('No HTML report was generated. Check the execution error above.');

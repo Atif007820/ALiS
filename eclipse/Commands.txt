@@ -6,10 +6,11 @@ Framework scripts, data, configuration and reports stay in the same place.
 The External Tools Program shortcuts and installation/demo launchers created
 during Eclipse setup have been removed. Neutral Node.js framework launchers
 remain; the same saved configuration supports both Run and Debug.
-Only HMB and Conveyance have saved Eclipse launchers, with E2E and Apply for
-each. E2E performs registration and then applies with that new account; Apply
-uses the configured/saved login. Other frameworks remain available in Terminal.
-All four Eclipse launchers run only the Chrome project with one Playwright
+Only HMB and Conveyance have saved Eclipse launchers, with E2E, Apply and
+Register for each. E2E registers then applies with that new account; Apply
+uses the configured/saved login; Register creates and saves a user without
+applying. Other frameworks remain available in Terminal.
+All six Eclipse launchers run only the Chrome project with one Playwright
 worker, regardless of the frameworks' normal worker or browser-matrix settings.
 
 TERMINAL: TYPE AND RUN COMMANDS
@@ -88,12 +89,13 @@ To run with output in Eclipse Console without External Tools:
 1. Select Playwright in Project Explorer and press F5 to refresh.
 2. Open Run > Run Configurations > Node.js application.
 3. Choose the matching <framework> - <flow> configuration and click Run.
-   Examples: HMB - E2E, HMB - Apply, Conveyance - E2E, Conveyance - Apply.
+   HMB: HMB - E2E, HMB - Apply, HMB - Register.
+   Conveyance: Conveyance - E2E, Conveyance - Apply, Conveyance - Register.
 4. Open Window > Show View > Console to see output.
-   Launch arguments match the existing normal npm commands. Browser, workers,
-   retries and timeouts come from the framework's normal settings/flow script.
+   Launch arguments use the existing flow scripts, pinned to Chrome and one
+   worker. Other Run settings come from the framework's normal configuration.
 
-All four flows are also favorites in the arrows beside the Run and Debug
+All six flows are also favorites in the arrows beside the Run and Debug
 toolbar buttons. Choose the named flow from that menu. The main Run/Debug
 button repeats the last launch in its own history; simply highlighting a row
 in Launch Configurations does not necessarily change that toolbar target.
@@ -126,15 +128,17 @@ Use targeted source breakpoints and the failure trace/logs for investigation.
 
 DEBUG LAUNCHERS AND USEFUL BREAKPOINT LOCATIONS
 ----------------------------------------------
-HMB - E2E / HMB - Apply
+HMB - E2E / HMB - Apply / HMB - Register
   E2E registers a new user and completes login/application. Apply uses
   configured credentials or the latest saved user; it does not register.
+  Register runs tests/01_Register.spec.js only and saves the new account.
   Set breakpoints in tests/ or pages/HmbRegistrationPage.js,
   pages/HmbLoginApplyPage.js and pages/DocumentUploadComponent.js.
 
-Conveyance - E2E / Conveyance - Apply
+Conveyance - E2E / Conveyance - Apply / Conveyance - Register
   E2E runs registration then application using the newly registered account.
   Apply runs only login/application using configured credentials or saved data.
+  Register runs testScripts/01_RegisterUser.spec.js only and saves the account.
   Runs scripts/run-env.mjs and the selected spec(s) in the correct flow order.
   Set breakpoints in scripts/run-env.mjs for matrix selection, or in
   testScripts/, pages/RegistrationPage.js and pages/PermitApplicationPage.js.
@@ -150,11 +154,11 @@ uses the Node debugger. The custom delegate passes an explicit mode argument,
 so Conveyance does not guess headed behavior from debugger environment state.
 No normal framework runsettings have been changed.
 
-After a completed Debug run, the generated HTML report opens automatically
-from a detached, debugger-free report process. This also applies to a failed
-test run that generated a report. Cancellation or a startup failure does not
-open a stale report from a previous execution. The report remains available
-after the test debugger exits. Normal Run report behavior remains unchanged.
+After a completed Run or Debug launch, the generated HTML report opens
+automatically from one detached, debugger-free report process. Failed test runs
+also open their report when one was generated. Cancellation or startup failure
+does not open a stale report from a previous execution. The report remains
+available after the test or debugger process exits.
 
 Existing site/product/BU/flow/environment choices are still read from the
 framework configuration. Debugging can submit the same forms as a normal run.
@@ -165,7 +169,7 @@ To change a launcher's selections without modifying normal runsettings:
 Open its Debug Adapter tab and edit args in the custom launch-parameters JSON.
 The two launcher options are framework and flow. Example:
 ["--framework=HMB", "--flow=Apply"]
-Framework values: HMB, Conveyance. Flow values: E2E, Apply.
+Framework values: HMB, Conveyance. Flow values: E2E, Apply, Register.
 Other execution choices stay in the framework's existing runsettings files.
 
 Use only options/values accepted by that framework; consult its Commands.txt.
@@ -177,7 +181,7 @@ Keep runtimeExecutable, sourceMaps and autoAttachChildProcesses unchanged.
 TOOLBAR TARGETS AND ECLIPSE INTEGRATION
 ---------------------------------------
 The main Run/Debug buttons repeat the previous launch, not the active JSON
-editor. Use each button's arrow to choose one of the four named flows first.
+editor. Use each button's arrow to choose one of the six named flows first.
 This behavior is controlled by Preferences > Run/Debug > Launching > Always
 launch the previously launched application. The same flow supports both modes.
 
@@ -193,7 +197,7 @@ The built integration is installed under the current Eclipse dropins folder.
 After changing Eclipse installations, rebuild/install it with PowerShell:
 & .\eclipse\integration\install.ps1 -EclipseHome "<your Eclipse folder>" -JdkHome "<your JDK folder>"
 Restart Eclipse after installation. Ordinary test edits do not require this.
-The four launch configurations select this delegate explicitly in both modes.
+The six launch configurations select this delegate explicitly in both modes.
 
 PLAYWRIGHT INSPECTOR FROM TERMINAL: NOT THE ECLIPSE DEBUGGER
 ----------------------------------------------------------
@@ -216,7 +220,7 @@ No universal --debug flag has been added to framework runtime code.
 
 PROJECT, WORKSPACE AND FUTURE FRAMEWORKS
 ----------------------------------------
-eclipse/launches/*.launch contains only four HMB/Conveyance Node.js launchers.
+eclipse/launches/*.launch contains only six HMB/Conveyance Node.js launchers.
 .project registers the existing Playwright folder as the Eclipse project.
 The project's UTF-8 setting, resource filters and framework files are unchanged.
 

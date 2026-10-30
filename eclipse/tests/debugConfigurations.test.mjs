@@ -37,7 +37,8 @@ test('only HMB and Conveyance have saved launchers and Run/Debug mode remains co
   const required = ['HMB', 'Conveyance'];
   for (const framework of required) assert.ok(configurations.some(c => c.name.includes(framework)), framework);
   assert.deepEqual(configurations.map(c => c.name).sort(), [
-    'Conveyance - Apply.launch', 'Conveyance - E2E.launch', 'HMB - Apply.launch', 'HMB - E2E.launch',
+    'Conveyance - Apply.launch', 'Conveyance - E2E.launch', 'Conveyance - Register.launch',
+    'HMB - Apply.launch', 'HMB - E2E.launch', 'HMB - Register.launch',
   ]);
   for (const { name, document, attributes, parameters } of configurations) {
     assert.equal(document.documentElement.getAttribute('type'), 'org.eclipse.wildwebdeveloper.launchConfiguration.nodeDebug', name);
@@ -59,8 +60,10 @@ test('Run mode resolves to normal npm commands without debugging overrides', () 
   const scripts = {
     'HMB - E2E.launch': 'hmb',
     'HMB - Apply.launch': 'hmb:apply',
+    'HMB - Register.launch': 'hmb:register',
     'Conveyance - E2E.launch': 'test',
     'Conveyance - Apply.launch': 'test:apply',
+    'Conveyance - Register.launch': 'test:register',
   };
   for (const { name, attributes, parameters } of configurations) {
     const cwd = resolve(attributes['org.eclipse.debug.core.ATTR_WORKING_DIRECTORY']);
@@ -83,7 +86,7 @@ test('Run mode resolves to normal npm commands without debugging overrides', () 
   }
 });
 
-test('all four flows are available in both Run and Debug favorites', () => {
+test('all six flow launchers are available in both Run and Debug favorites', () => {
   for (const { name, document } of configurations) {
     const entries = Array.from({ length: document.getElementsByTagName('listEntry').length }, (_, index) =>
       document.getElementsByTagName('listEntry').item(index).getAttribute('value'));
@@ -109,20 +112,31 @@ test('only real framework Node.js configurations remain in the shared launch fol
 test('standalone flows target their own specs rather than the complete end-to-end flow', () => {
   const expected = {
     'HMB - Apply.launch': 'tests/02_LoginApply.spec.js',
+    'HMB - Register.launch': 'tests/01_Register.spec.js',
     'Conveyance - Apply.launch': 'testScripts/02_LoginApply.spec.js',
+    'Conveyance - Register.launch': 'testScripts/01_RegisterUser.spec.js',
   };
   for (const [name, spec] of Object.entries(expected)) {
     const configuration = configurations.find(c => c.name === name);
     const selection = Object.fromEntries(configuration.parameters.args.map(arg => arg.slice(2).split('=')));
-    assert.ok(createLaunchPlan(selection.framework, selection.flow, {}).args.includes(spec), name);
+    const plan = createLaunchPlan(selection.framework, selection.flow, {});
+    assert.deepEqual(plan.args.filter(arg => arg.endsWith('.spec.js')), [spec], name);
+    assert.ok(fs.statSync(path.resolve(plan.cwd, spec)).isFile(), name);
   }
 });
 
-test('Debug mode is headed, serial and opens a managed report without changing Run defaults', () => {
+test('Run and Debug use one managed report opener while Debug keeps headed settings', () => {
   for (const framework of ['HMB', 'Conveyance']) {
-    for (const flow of ['E2E', 'Apply']) {
+    for (const flow of ['E2E', 'Apply', 'Register']) {
+      const run = createLaunchPlan(framework, flow, { ALIS_ECLIPSE_MODE: 'run', HEADLESS: 'true' });
+      assert.equal(run.openReportAfterCompletion, true);
+      assert.equal(run.env.HEADLESS, 'true');
+      assert.equal(run.env.PLAYWRIGHT_HTML_OPEN, 'never');
+      assert.equal(run.env.ALIS_ECLIPSE_MANAGED_REPORT, '1');
+
       const environment = { ALIS_ECLIPSE_MODE: 'debug', HEADLESS: 'true' };
       const debug = createLaunchPlan(framework, flow, environment);
+      assert.equal(debug.openReportAfterCompletion, true);
       assert.ok(debug.args.includes('--headed'));
       assert.ok(debug.args.includes('--workers=1'));
       assert.ok(debug.args.includes('--project=chromium'));
@@ -138,7 +152,7 @@ test('Debug mode is headed, serial and opens a managed report without changing R
 
 test('every Eclipse Run and Debug launch is restricted to one Chrome worker', () => {
   for (const framework of ['HMB', 'Conveyance']) {
-    for (const flow of ['E2E', 'Apply']) {
+    for (const flow of ['E2E', 'Apply', 'Register']) {
       for (const mode of ['run', 'debug']) {
         const plan = createLaunchPlan(framework, flow, { ALIS_ECLIPSE_MODE: mode });
         assert.equal(plan.args.filter(arg => arg.startsWith('--project=')).length, 1, `${framework} ${flow} ${mode}`);
@@ -151,23 +165,38 @@ test('every Eclipse Run and Debug launch is restricted to one Chrome worker', ()
   }
 });
 
-test('Eclipse mode argument controls headed behavior explicitly for Conveyance', () => {
+test('Eclipse mode argument controls headed behavior explicitly for all saved launchers', () => {
   const launcher = path.join(root, 'eclipse', 'runtime', 'runFramework.mjs');
-  for (const mode of ['run', 'debug']) {
-    const result = spawnSync(process.execPath, [launcher, '--framework=Conveyance', '--flow=E2E',
-      `--eclipse-mode=${mode}`, '--validate=true'], {
-      cwd: root,
-      encoding: 'utf8',
-      env: { ...process.env, HEADLESS: 'true' },
-      timeout: 10000,
-      windowsHide: true,
+  for (const configuration of configurations) {
+    for (const mode of ['run', 'debug']) {
+      const result = spawnSync(process.execPath, [launcher, ...configuration.parameters.args,
+        `--eclipse-mode=${mode}`, '--validate=true'], {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...process.env, HEADLESS: 'true' },
+        timeout: 10000,
+        windowsHide: true,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const outputStart = result.stdout.lastIndexOf('\n{');
+      const plan = JSON.parse(result.stdout.slice(outputStart + 1));
+      assert.equal(plan.mode, mode);
+      assert.equal(plan.headed, mode === 'debug');
+      assert.equal(plan.openCompletedReport, true);
+      assert.equal(plan.args.includes('--headed'), mode === 'debug');
+    }
+  }
+});
+
+test('Register launchers discover only the standalone registration test without executing it', () => {
+  for (const framework of ['HMB', 'Conveyance']) {
+    const plan = createLaunchPlan(framework, 'Register', { ...process.env, ALIS_ECLIPSE_MODE: 'run' });
+    const result = spawnSync(process.execPath, [plan.program, ...plan.args, '--list', '--reporter=line'], {
+      cwd: plan.cwd, env: plan.env, encoding: 'utf8', timeout: 30000, windowsHide: true,
     });
-    assert.equal(result.status, 0, result.stderr);
-    const outputStart = result.stdout.lastIndexOf('\n{');
-    const plan = JSON.parse(result.stdout.slice(outputStart + 1));
-    assert.equal(plan.mode, mode);
-    assert.equal(plan.headed, mode === 'debug');
-    assert.equal(plan.args.includes('--headed'), mode === 'debug');
+    assert.equal(result.status, 0, `${framework}: ${result.stderr}\n${result.stdout}`);
+    assert.match(result.stdout, /01_Register(?:User)?\.spec\.js/);
+    assert.doesNotMatch(result.stdout, /02_LoginApply\.spec\.js|03_E2E\.spec\.js/);
   }
 });
 
@@ -204,22 +233,27 @@ test('all configurations explicitly use the mode-aware Eclipse delegate', () => 
   }
 });
 
-test('completed debug reports open separately; normal, cancelled and stale runs do not open', t => {
+test('completed Run and Debug reports open separately; cancelled and stale reports do not', t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'alis-report-check-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const index = path.join(directory, 'index.html');
   fs.writeFileSync(index, '<html><body>Local report verification</body></html>');
-  const plan = { ...createLaunchPlan('HMB', 'E2E', { ALIS_ECLIPSE_MODE: 'debug' }), reportDir: directory };
-  const report = createReportPlan(plan, 0);
-  assert.ok(report.args.includes('show-report'));
-  assert.equal(report.options.detached, true);
-  assert.equal(report.options.env.PLAYWRIGHT_HTML_OPEN, 'always');
-  assert.equal(report.options.env.NODE_OPTIONS, undefined);
-  assert.equal(createReportPlan({ ...plan, debug: false }, 0), null);
-  assert.equal(createReportPlan(plan, 0, 'SIGTERM'), null);
-  assert.equal(createReportPlan(plan, Date.now() + 10000), null);
+  for (const mode of ['run', 'debug']) {
+    const plan = { ...createLaunchPlan('HMB', 'E2E', { ALIS_ECLIPSE_MODE: mode }), reportDir: directory };
+    const report = createReportPlan(plan, 0);
+    assert.ok(report.args.includes('show-report'), mode);
+    assert.equal(report.options.detached, true, mode);
+    assert.equal(report.options.env.PLAYWRIGHT_HTML_OPEN, 'always', mode);
+    assert.equal(report.options.env.NODE_OPTIONS, undefined, mode);
+    assert.equal(createReportPlan(plan, 0, 'SIGTERM'), null, mode);
+    assert.equal(createReportPlan(plan, Date.now() + 10000), null, mode);
+  }
+  const disabledPlan = { ...createLaunchPlan('HMB', 'E2E', { ALIS_ECLIPSE_MODE: 'run' }),
+    openReportAfterCompletion: false, reportDir: directory };
+  assert.equal(createReportPlan(disabledPlan, 0), null);
   fs.unlinkSync(index);
-  assert.equal(createReportPlan(plan, 0), null);
+  const missingReportPlan = { ...createLaunchPlan('HMB', 'E2E', { ALIS_ECLIPSE_MODE: 'run' }), reportDir: directory };
+  assert.equal(createReportPlan(missingReportPlan, 0), null);
 });
 
 test('documented terminal commands resolve to existing framework npm scripts', () => {
