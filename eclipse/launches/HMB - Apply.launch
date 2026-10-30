@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.wildwebdeveloper.launchConfiguration.nodeDebug">
+    <stringAttribute key="program" value="${workspace_loc:/Playwright}/eclipse/runtime/runFramework.mjs"/>
+    <stringAttribute key="org.eclipse.debug.core.ATTR_WORKING_DIRECTORY" value="${workspace_loc:/Playwright/tests/HMB}"/>
+    <stringAttribute key="args" value="--framework=HMB --flow=Apply"/>
+    <booleanAttribute key="org.eclipse.lsp4e.debug.model.ATTR_CUSTOM_LAUNCH_PARAMS" value="true"/>
+    <stringAttribute key="org.eclipse.lsp4e.debug.model.ATTR_DSP_PARAM" value="{&quot;runtimeExecutable&quot;:&quot;${env_var:ProgramFiles}/nodejs/node.exe&quot;,&quot;args&quot;:[&quot;--framework=HMB&quot;,&quot;--flow=Apply&quot;],&quot;env&quot;:{&quot;Path&quot;:&quot;${env_var:ProgramFiles}/nodejs;${env_var:Path}&quot;},&quot;autoAttachChildProcesses&quot;:true,&quot;stopOnEntry&quot;:false,&quot;sourceMaps&quot;:true,&quot;skipFiles&quot;:[&quot;&lt;node_internals&gt;/**&quot;,&quot;**/node_modules/**&quot;],&quot;timeout&quot;:60000}"/>
+    <mapAttribute key="org.eclipse.debug.core.preferred_launchers">
+        <mapEntry key="[run]" value="com.alis.eclipse.frameworkDelegate"/>
+        <mapEntry key="[debug]" value="com.alis.eclipse.frameworkDelegate"/>
+    </mapAttribute>
+    <booleanAttribute key="org.eclipse.debug.ui.ATTR_LAUNCH_IN_BACKGROUND" value="true"/>
+    <listAttribute key="org.eclipse.debug.ui.favoriteGroups">
+        <listEntry value="org.eclipse.debug.ui.launchGroup.run"/>
+        <listEntry value="org.eclipse.debug.ui.launchGroup.debug"/>
+    </listAttribute>
+</launchConfiguration>

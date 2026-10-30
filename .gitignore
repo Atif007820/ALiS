@@ -10,3 +10,9 @@ validation-runs/
 userData.json
 *.log
 *.tmp
+
+# Eclipse caches stay local. Shared project, encoding and launch files are tracked.
+/.metadata/
+/.settings/*
+!/.settings/org.eclipse.core.resources.prefs
+/eclipse/integration/.build/

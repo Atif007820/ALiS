@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+    <name>Playwright</name>
+    <comment>Existing Node.js and Playwright frameworks. No Java build or test execution is attached to project import.</comment>
+    <projects/>
+    <buildSpec/>
+    <natures/>
+    <filteredResources>
+        <filter>
+            <id>1793059200000</id>
+            <name/>
+            <type>30</type>
+            <matcher>
+                <id>org.eclipse.core.resources.regexFilterMatcher</id>
+                <arguments>(node_modules|\.git|\.metadata|test-results|playwright-report|allure-results|allure-report|validation-runs|results)</arguments>
+            </matcher>
+        </filter>
+    </filteredResources>
+</projectDescription>

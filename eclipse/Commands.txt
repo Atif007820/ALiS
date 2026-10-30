@@ -1,0 +1,268 @@
+ECLIPSE - TERMINAL, CONSOLE AND DEBUGGING
+========================================
+
+The original Playwright folder is shared by Eclipse and VS Code.
+Framework scripts, data, configuration and reports stay in the same place.
+The External Tools Program shortcuts and installation/demo launchers created
+during Eclipse setup have been removed. Neutral Node.js framework launchers
+remain; the same saved configuration supports both Run and Debug.
+Only HMB and Conveyance have saved Eclipse launchers, with E2E and Apply for
+each. E2E performs registration and then applies with that new account; Apply
+uses the configured/saved login. Other frameworks remain available in Terminal.
+All four Eclipse launchers run only the Chrome project with one Playwright
+worker, regardless of the frameworks' normal worker or browser-matrix settings.
+
+TERMINAL: TYPE AND RUN COMMANDS
+------------------------------
+1. Open Window > Show View > Other > Terminal > Terminal.
+2. Press Ctrl+Alt+Shift+T, select Local Terminal and connect.
+3. Change directory to the existing project:
+   cd "C:\Users\mohd.jamal\Downloads\Playwright"
+4. Run a command below. npm.cmd works in Command Prompt and PowerShell without
+   changing the PowerShell execution policy. Stop terminal runs with Ctrl+C.
+
+ALL COMMANDS BELOW START FROM THE PLAYWRIGHT ROOT FOLDER.
+Run one command at a time. Defaults come from each framework's existing
+configuration; normal runs have not been reconfigured by the Eclipse setup.
+
+ALiS_UserRegistration:
+npm.cmd --prefix tests/ALiS_UserRegistration run register
+
+ALiS_BusinessEntity_Baseline:
+npm.cmd --prefix tests/ALiS_BusinessEntity_Baseline run baseline
+
+ALiS_IndividualProfile_Baseline:
+npm.cmd --prefix tests/ALiS_IndividualProfile_Baseline run baseline
+
+SidebarComparison:
+npm.cmd --prefix tests/SidebarComparison run sidebar
+
+ContentComparison:
+npm.cmd --prefix tests/ContentComparison test
+
+HMB end-to-end:
+npm.cmd --prefix tests/HMB run hmb
+
+HMB register only:
+npm.cmd --prefix tests/HMB run hmb:register
+
+HMB login/apply only:
+npm.cmd --prefix tests/HMB run hmb:apply
+
+Conveyance (configured environment/license selections):
+npm.cmd --prefix tests/LNI/Conveyance test
+
+Conveyance register only:
+npm.cmd --prefix tests/LNI/Conveyance run test:register
+
+Conveyance login/apply only:
+npm.cmd --prefix tests/LNI/Conveyance run test:apply
+
+ALiS_Performance non-GUI:
+npm.cmd --prefix tests/ALiS_Performance run perf:non-gui -- --script="LNI/Inspection_Search.jmx"
+
+ALiS_Performance GUI:
+npm.cmd --prefix tests/ALiS_Performance run perf:gui -- --script="LNI/Inspection_Search.jmx"
+
+ALiS_Performance same script, two profiles in parallel:
+npm.cmd --prefix tests/ALiS_Performance run perf:non-gui -- --script="LNI_PREPROD.jmx" --profile=spike,stress --parallel=2
+
+Replace sample JMX names with your script's actual path relative to TestScripts.
+Omitting --profile preserves JMX load settings. GUI/non-GUI behavior and report
+opening still come from ALiS_Performance/config/runsettings.json.
+
+Add framework-specific options AFTER the -- separator. Example:
+npm.cmd --prefix tests/SidebarComparison run sidebar -- --project=chromium --headed --parallel=3
+
+Standalone Apply flows require their existing configured credentials/user data.
+Do not run the same framework simultaneously in both editors: cleanup/report
+paths and generated users may be shared. Commands can write application data,
+including in PROD when that environment is selected in your existing settings.
+
+CONSOLE: VIEW RUN/DEBUG OUTPUT, NOT A SHELL
+-----------------------------------------
+The standard Eclipse Process Console is not a command terminal. Typing npm
+into it does not start a framework; text is sent to the current process as input.
+
+To run with output in Eclipse Console without External Tools:
+1. Select Playwright in Project Explorer and press F5 to refresh.
+2. Open Run > Run Configurations > Node.js application.
+3. Choose the matching <framework> - <flow> configuration and click Run.
+   Examples: HMB - E2E, HMB - Apply, Conveyance - E2E, Conveyance - Apply.
+4. Open Window > Show View > Console to see output.
+   Launch arguments match the existing normal npm commands. Browser, workers,
+   retries and timeouts come from the framework's normal settings/flow script.
+
+All four flows are also favorites in the arrows beside the Run and Debug
+toolbar buttons. Choose the named flow from that menu. The main Run/Debug
+button repeats the last launch in its own history; simply highlighting a row
+in Launch Configurations does not necessarily change that toolbar target.
+Both histories default to HMB - E2E after the launch-history repair.
+
+For arbitrary npm command entry, use Terminal.
+For JavaScript breakpoints, use Debug Configurations as described next.
+
+ECLIPSE DEBUGGER: ACTUAL JAVASCRIPT BREAKPOINTS
+---------------------------------------------
+1. Set a breakpoint on an executable line in your own JavaScript file by
+   double-clicking its left gutter.
+2. Open Run > Debug Configurations > Node.js application.
+3. Choose the same <framework> - <flow> launcher and click Debug.
+4. Switch to the Debug perspective if prompted.
+5. Inspect Variables/Expressions when the breakpoint is reached.
+   F8 = resume; F6 = step over; F5 = step into; Ctrl+F2 = terminate selection.
+
+These configurations use Eclipse's Node.js debugger, NOT Playwright Inspector.
+They attach to child Node.js processes, including Playwright test workers.
+They do not stop at startup: set your breakpoint before starting. With no
+breakpoints, the selected flow runs normally. Node internals/dependencies are
+skipped when stepping; your source files remain debuggable with source maps.
+
+Run does not pause at breakpoints or debugger statements. Debug can pause at
+enabled breakpoints and debugger statements. It does not automatically pause
+on every failed assertion or timeout. Exception breakpoints, where supported,
+can pause on thrown errors; Playwright catches many failures internally.
+Use targeted source breakpoints and the failure trace/logs for investigation.
+
+DEBUG LAUNCHERS AND USEFUL BREAKPOINT LOCATIONS
+----------------------------------------------
+HMB - E2E / HMB - Apply
+  E2E registers a new user and completes login/application. Apply uses
+  configured credentials or the latest saved user; it does not register.
+  Set breakpoints in tests/ or pages/HmbRegistrationPage.js,
+  pages/HmbLoginApplyPage.js and pages/DocumentUploadComponent.js.
+
+Conveyance - E2E / Conveyance - Apply
+  E2E runs registration then application using the newly registered account.
+  Apply runs only login/application using configured credentials or saved data.
+  Runs scripts/run-env.mjs and the selected spec(s) in the correct flow order.
+  Set breakpoints in scripts/run-env.mjs for matrix selection, or in
+  testScripts/, pages/RegistrationPage.js and pages/PermitApplicationPage.js.
+
+DEBUG SELECTIONS AND LIMITATIONS
+--------------------------------
+Run uses the normal npm flow arguments and framework runsettings. Debug uses
+the same selected flow but forces a visible browser, one worker/combination,
+zero retries and no overall Playwright test timeout. Action/navigation
+deadlines and website sessions can still expire during a long pause.
+The Run launcher starts Node directly in the Eclipse Process Console. Debug
+uses the Node debugger. The custom delegate passes an explicit mode argument,
+so Conveyance does not guess headed behavior from debugger environment state.
+No normal framework runsettings have been changed.
+
+After a completed Debug run, the generated HTML report opens automatically
+from a detached, debugger-free report process. This also applies to a failed
+test run that generated a report. Cancellation or a startup failure does not
+open a stale report from a previous execution. The report remains available
+after the test debugger exits. Normal Run report behavior remains unchanged.
+
+Existing site/product/BU/flow/environment choices are still read from the
+framework configuration. Debugging can submit the same forms as a normal run.
+Select the intended target before starting; use a non-production target for
+development unless you explicitly intend otherwise.
+
+To change a launcher's selections without modifying normal runsettings:
+Open its Debug Adapter tab and edit args in the custom launch-parameters JSON.
+The two launcher options are framework and flow. Example:
+["--framework=HMB", "--flow=Apply"]
+Framework values: HMB, Conveyance. Flow values: E2E, Apply.
+Other execution choices stay in the framework's existing runsettings files.
+
+Use only options/values accepted by that framework; consult its Commands.txt.
+The custom JSON args array is authoritative. Main tab Arguments is a readable
+mirror and is not used to override the custom array. This avoids the installed
+Eclipse version's argument splitting issue with paths containing spaces.
+Keep runtimeExecutable, sourceMaps and autoAttachChildProcesses unchanged.
+
+TOOLBAR TARGETS AND ECLIPSE INTEGRATION
+---------------------------------------
+The main Run/Debug buttons repeat the previous launch, not the active JSON
+editor. Use each button's arrow to choose one of the four named flows first.
+This behavior is controlled by Preferences > Run/Debug > Launching > Always
+launch the previously launched application. The same flow supports both modes.
+
+The launcher program resolves from the project directory on disk. It does
+not ask Eclipse to resolve a hidden node_modules workspace resource, which
+previously caused "Variable references non-existent resource" on HMB launches.
+Playwright is resolved from each framework's installed dependencies at runtime.
+
+eclipse/integration contains the small Eclipse launch delegate that passes the
+actual Run/Debug mode to eclipse/runtime/runFramework.mjs. It delegates the
+debugger work to installed Wild Web Developer; no Java test framework is added.
+The built integration is installed under the current Eclipse dropins folder.
+After changing Eclipse installations, rebuild/install it with PowerShell:
+& .\eclipse\integration\install.ps1 -EclipseHome "<your Eclipse folder>" -JdkHome "<your JDK folder>"
+Restart Eclipse after installation. Ordinary test edits do not require this.
+The four launch configurations select this delegate explicitly in both modes.
+
+PLAYWRIGHT INSPECTOR FROM TERMINAL: NOT THE ECLIPSE DEBUGGER
+----------------------------------------------------------
+These commands open Playwright Inspector, not Eclipse breakpoint debugging:
+
+npm.cmd --prefix tests/ALiS_UserRegistration run register -- --project=chromium --debug
+npm.cmd --prefix tests/SidebarComparison run test:debug -- --project=chromium
+npm.cmd --prefix tests/ContentComparison run test:debug -- --project=chromium
+npm.cmd --prefix tests/HMB run hmb -- --project=chromium --debug
+npm.cmd --prefix tests/LNI/Conveyance run test:debug
+
+Sidebar's test:debug command reads its existing selection settings and bypasses
+the custom sidebar CLI wrapper. npm run sidebar -- --debug is NOT supported.
+
+The baseline custom runners and JMeter runners do NOT implement Playwright's
+--debug flag. Appending it does not enable Eclipse debugging (some custom
+parsers may silently ignore it). No saved Eclipse launchers for these runners
+remain in this project; a new Node.js configuration would be required for them.
+No universal --debug flag has been added to framework runtime code.
+
+PROJECT, WORKSPACE AND FUTURE FRAMEWORKS
+----------------------------------------
+eclipse/launches/*.launch contains only four HMB/Conveyance Node.js launchers.
+.project registers the existing Playwright folder as the Eclipse project.
+The project's UTF-8 setting, resource filters and framework files are unchanged.
+
+After edits outside Eclipse, select Playwright and press F5. Removed shared
+External Tools entries should disappear after refresh/reopening the dialog.
+If an old history entry persists, restart Eclipse. The invalid generic local
+New_configuration launch was removed: it tried to connect to a nonexistent
+debug adapter on 127.0.0.1:4711. Its file and the previous launch history were
+backed up outside the project under C:/Users/mohd.jamal/eclipse-launch-backups.
+Only Run/Debug launch history and favorites were repaired; framework runtime
+code, settings, workspace location and editor layouts were not changed.
+
+Existing code edits need no Eclipse reconfiguration. New frameworks run from
+Terminal using their own npm scripts immediately. A new framework needs its
+own Node.js Run/Debug configuration only if you want a saved Eclipse
+launcher; copy the closest shared launch file and update program, cwd and args.
+
+Downloads/.metadata is Eclipse's workspace state, not Playwright framework code.
+A separate workspace folder is fine. Switch through File > Switch Workspace >
+Other, then import this existing project with Copy projects into workspace
+UNCHECKED. Do not move/delete .metadata alone while Eclipse is using it.
+Layouts/local history/breakpoints may not transfer automatically. Keep the old
+workspace until the new one is checked. No workspace migration was performed.
+
+LOCAL DEBUGGER VALIDATION (NO APPLICATION OR LOAD TESTS)
+-------------------------------------------------------
+The shared Run delegate inherits the Windows environment by default. This keeps
+LOCALAPPDATA, ProgramFiles, USERPROFILE, TEMP and SystemRoot available to Chrome
+discovery. Do not hard-code a Chrome executable path to compensate for missing
+environment variables. The integration installer runs environment regression
+checks before packaging the delegate.
+
+Debug does not automatically pause on every Playwright assertion/timeout.
+It pauses on enabled source breakpoints or debugger statements. Exception
+breakpoints can pause on thrown exceptions, including expected internal ones.
+Resume: F8. Step Over: F6. Terminate: Ctrl+F2.
+
+From the Playwright root:
+node --test eclipse/tests/debugConfigurations.test.mjs
+
+Optional protocol checks against the installed Eclipse JavaScript adapter:
+node eclipse/tests/verifyDebugAdapter.mjs "<installed js-debug/src/dapDebugServer.js path>"
+node eclipse/tests/verifyDebugAdapter.mjs "<installed js-debug/src/dapDebugServer.js path>" --playwright-worker
+node eclipse/tests/verifyDebugAdapter.mjs "<installed js-debug/src/dapDebugServer.js path>" --run
+
+These check breakpoints, variables, expressions and stepping in local Node
+parent/child processes and a browser-free Playwright worker. The --run check
+confirms normal execution does not pause at breakpoints. Verification
+fixtures are not exposed as Eclipse Run/Debug shortcuts.

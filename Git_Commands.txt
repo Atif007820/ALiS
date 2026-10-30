@@ -30,10 +30,10 @@ git diff --name-only
 
 5. PUSH CHANGES FOR A PARTICULAR FRAMEWORK
 ------------------------------------------
-Example: Conv_E2E framework
+Example: Conveyance framework
 
-git add tests/LNI/Conv_E2E
-git commit -m "Update Conv_E2E framework"
+git add tests/LNI/Conveyance
+git commit -m "Update Conveyance framework"
 git push origin main
 
 
@@ -85,7 +85,7 @@ npm install
 npx playwright install
 
 
-9. RUN CONV_E2E FRAMEWORK
+9. RUN CONVEYANCE FRAMEWORK
 -------------------------
 TEST Commercial headed:
 npm run test --env=TEST --licenseType=COMMERCIAL --headed
@@ -115,7 +115,7 @@ npm run test --env=TEST --licenseType=RESIDENTIAL --headed
 
 Then push:
 
-git add tests/LNI/Conv_E2E
-git commit -m "Update Conv_E2E framework"
+git add tests/LNI/Conveyance
+git commit -m "Update Conveyance framework"
 git push origin main
 

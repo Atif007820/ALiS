@@ -1,0 +1,249 @@
+LNI Conveyance E2E Playwright Framework - Commands
+==================================================
+
+Recommended run location:
+  C:\Users\mohd.jamal\Downloads\Playwright
+
+You can also run from:
+  C:\Users\mohd.jamal\Downloads\Playwright\tests\LNI\Conveyance
+
+When you run "npm run test", the framework runs both scripts in serial order:
+  01_RegisterUser.spec.js -> 02_LoginApply.spec.js
+
+
+Main Serial Flow Commands
+=========================
+
+npm run test
+npm run test --env=TEST --headed --project=chromium --repeat-each=2
+npm run test --env=PROD --project=chromium --repeat-each=2
+npm run test --env=PREPROD --headed --licenseType=COMMERCIAL
+npm run test --env PREPROD --headed --licenseType COMMERCIAL
+npm run test --env=PRE PROD --headed --licenseType=COMMERCIAL --parallel 3
+npm run test --env=PRE PROD --headed --licenseType RESIDENTIAL --parallel=3
+
+Run selected environments concurrently with one license type:
+  npm run test --env=PREPROD,TEST,PROD --licenseType=RESIDENTIAL --parallel=3
+
+Run both license types concurrently in TEST:
+  npm run test --env=TEST --licenseType=RESIDENTIAL,COMMERCIAL --parallel=2
+
+Run every environment and both license types (6 combinations):
+  npm run test --env=ALL --licenseType=ALL --parallel=6
+  npm run test:matrix
+
+
+Environment Examples
+====================
+
+npm run test --env=TEST
+npm run test --env=PREPROD
+npm run test --env=PRE PROD
+npm run test --env=PROD
+npm run test --env=ALL
+npm run test --env=TEST,PROD,PREPROD
+npm run test --env=PREPROD,TEST,PROD --parallel=3
+
+
+License Type Examples
+=====================
+
+npm run test --licenseType=COMMERCIAL
+npm run test --licenseType=RESIDENTIAL
+npm run test --licenseType=RESIDENTIAL,COMMERCIAL --parallel=2
+npm run test --licenseType=ALL --parallel=2
+npm run test --env=TEST --licenseType=COMMERCIAL
+npm run test --env=PRE PROD --licenseType RESIDENTIAL
+npm run test --env=TEST,PREPROD --licenseType=RESIDENTIAL,COMMERCIAL --parallel=4
+
+
+Endorsement Type Override Examples
+==================================
+
+Select a specific Residential endorsement:
+  npm run test --env=PRE PROD --licenseType RESIDENTIAL --ResType ORC
+
+Select specific Residential and Commercial endorsements in a mixed matrix:
+  npm run test --env=PRE PROD,TEST --licenseType=RESIDENTIAL,COMMERCIAL --ResType RC --CommType FC --parallel=2
+
+Select a specific Commercial endorsement:
+  npm run test --env=PROD --licenseType=COMMERCIAL --CommType=PASS
+
+Random selection:
+  Omit --ResType/--CommType, or leave resType/commType blank in runSettings.json.
+  ResType applies only to RESIDENTIAL combinations.
+  CommType applies only to COMMERCIAL combinations.
+
+Residential codes:
+  ORC     OTHER RESIDENTIAL CONVEYANCE
+  RD      RESIDENTIAL DUMBWAITER
+  RE      RESIDENTIAL ELEVATOR
+  RIC     RESIDENTIAL INCLINED CHAIR
+  RIE     RESIDENTIAL INCLINED ELEVATOR
+  RPV     RESIDENTIAL PNEUMATIC VACUUM
+  RVPL    RESIDENTIAL VERTICAL PLATFORM LIFT
+  RIPL    RESIDENTIAL INCLINED PLATFORM LIFT
+
+Residential compatibility alias:
+  RC      Same selection as ORC
+
+Commercial codes:
+  FC       FREIGHT CABLE
+  FH       FREIGHT HYDRAULIC
+  FRHE     FREIGHT ROPED HYDRAULIC ELEVATOR
+  IE       INCLINED ELEVATOR
+  LULA     LIMITED-USE/LIMITED-APPLICATION (LULA)
+  PC       PASSENGER CABLE
+  PH       PASSENGER HYDRAULIC
+  PRHE     PASSENGER ROPED HYDRAULIC ELEVATOR
+  BML      BELT MAN LIFT
+  DOTR     DUMBWAITER IN OTHER THAN RESIDENCE
+  HPFE     HAND POWERED FREIGHT ELEVATOR
+  HPML     HAND POWERED MAN LIFT
+  IPL      INCLINED PLATFORM LIFT
+  ISCL     INCLINED STAIR CHAIR LIFT
+  RL       RELOCATABLE LIFT
+  SE       SIDEWALK ELEVATOR
+  SP       SPECIAL PURPOSE
+  TYPEAML  TYPE A MATERIAL LIFT
+  TYPEBML  TYPE B MATERIAL LIFT
+  VPL      VERTICAL PLATFORM LIFT
+  WACML    WAC MATERIAL LIFT
+  ESC      ESCALATOR
+  MW       MOVING WALK
+  PASS     PASSENGER
+
+Invalid codes stop the run before opening a browser and print the supported codes.
+
+
+Browser / Headed Examples
+=========================
+
+npm run test --project=chromium
+npm run test --project=firefox
+npm run test --project="Microsoft Edge"
+npm run test --headed --project=chromium
+npm run test --debug --project=chromium
+
+
+Repeat / Parallel Examples
+==========================
+
+npm run test --repeat-each=2
+npm run test --env=TEST --repeat-each=2
+npm run test --env=PROD --project=chromium --repeat-each=2
+npm run test --env=PRE PROD --parallel 3
+npm run test --env=PRE PROD --parallel=3
+npm run test --env=ALL --licenseType=ALL --parallel=6
+
+Note:
+  --parallel controls how many environment/license combinations run at the same time.
+  Inside every combination, Script 1 always finishes before Script 2 starts.
+  Each combination has isolated saved credentials and test artifacts.
+  All combination results are merged into one HTML report, which opens once after the complete matrix finishes.
+
+
+Standalone Script Commands
+==========================
+
+Run only Script 1 registration:
+  npm run test --spec=register --env=TEST --headed
+  npm run test --spec=01_RegisterUser.spec.js --env=PREPROD --project=chromium
+
+Run only Script 2 login/apply:
+  npm run test --spec=apply --env=TEST --headed
+  npm run test --spec=02_LoginApply.spec.js --env=PROD --project=chromium
+
+For standalone Script 2 credentials, edit:
+  tests\LNI\Conveyance\config\script2LoginCredentials.js
+
+If loginName/password are blank in that file, Script 2 uses the latest saved user:
+  tests\LNI\Conveyance\testData\userData.json
+
+
+Config Files
+============
+
+Main run defaults:
+  tests\LNI\Conveyance\config\runSettings.json
+
+Important values in runSettings.json:
+  environment
+  licenseType
+  resType (blank = random Residential endorsement)
+  commType (blank = random Commercial endorsement)
+  defaultProject
+  workers
+  parallelWorkers
+  registrationLoginRetryLimit
+  documentUploadRetryLimit
+  documentUploadResultTimeoutMs
+  headless
+  maximizeWindow
+  viewport
+
+Editable test data:
+  tests\LNI\Conveyance\config\editableData.js
+
+Standalone Script 2 credentials:
+  tests\LNI\Conveyance\config\script2LoginCredentials.js
+
+
+Login / Entity Name Format
+==========================
+
+Login names use this format in TEST, PRE PROD, and PROD:
+  Conv_CC_12
+  Conv_CC_123
+  Conv_CC_1234
+
+The first registration attempt uses 2 digits.
+If the login name is taken, retry attempts use 3 digits, then 4 digits, then 5 digits, and so on.
+The maximum number of attempts is controlled here:
+  runSettings.json -> registrationLoginRetryLimit
+
+Entity names use this format in TEST, PRE PROD, and PROD:
+  CONV_DD-MM-YYYY_HH:MM:SS AM/PM
+
+Example:
+  CONV_25-06-2026_09:54:12 AM
+
+
+Useful Existing Package Shortcuts
+=================================
+
+From tests\LNI\Conveyance:
+  npm run test
+  npm run test:headed
+  npm run test:list
+  npm run test:test
+  npm run test:preprod
+  npm run test:prod
+  npm run test:matrix
+  npm run test:register
+  npm run test:apply
+npm run clean
+  npm run report
+
+From workspace root:
+  npm run test
+  npm run conveyance:e2e
+  npm run conveyance:e2e:matrix
+  npm run conveyance:e2e:headed
+  npm run conveyance:e2e:list
+
+
+Notes
+=====
+
+- "test" means run Script 1 then Script 2 in serial order.
+- Environment and license-type lists create every combination. Example: 3 environments and 2 license types create 6 flows.
+- ResType is applied only to Residential combinations; CommType is applied only to Commercial combinations.
+- When the applicable endorsement code is blank, the framework selects randomly from its configured pool.
+- Use PREPROD inside comma-separated lists. For the spaced name, quote the whole value: --env="PRE PROD,TEST,PROD".
+- --parallel controls concurrent combinations; it never changes the Register -> Login/Apply order inside a combination.
+- The HTML report opens automatically after the selected run finishes.
+- Use npm run report only when you want to reopen the latest report manually.
+- Environment names are normalized, so PREPROD and PRE PROD both work.
+- PROD existing-owner UBI is configured in editableData.js.
+- Questions tab answers still avoid selecting Yes.
