@@ -160,6 +160,16 @@ TC05_InformativeText
 
 RPM, RM, and MAMMO use the NVRCP URL profile. New Entity flows store the generated Facility Name and reuse it in the Business Entity search field.
 
+Create forms adapt to the rendered NVRCP version: `DBA / Business Name` is populated with the generated entity name when present, and legacy `Local License #` is filled only when available. Both are verified before Save when visible; required field failures still stop the run. New profiles are reopened by their exact name or Entity ID, without substituting another profile from a prefix search. Removed Local License controls are no longer used as generated search fallbacks.
+
+To verify all NVRCP business units and all four flows while preserving the last run:
+
+```bash
+npm run baseline -- --bu=RPM,RM,MAMMO --url=NVRCP --flow=all --tc=all --project=chromium --parallel=4 --output-dir=nvrcp-verification
+```
+
+The output directory must be new or empty. `npm run test:runtime` includes regression coverage for both old and current NVRCP create forms.
+
 For `Activity Log(s)` and `Payment(s)`, the framework checks whether the expected table headers are already visible. If not, it runs the configured Add steps before capturing table headers. NVRCP `Payment(s)` opens Search Receipt, searches receipts, and picks a random receipt date from the result grid before saving.
 
 ## DPBH Notes

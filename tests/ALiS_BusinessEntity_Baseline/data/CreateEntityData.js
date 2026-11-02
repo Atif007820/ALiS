@@ -463,7 +463,7 @@ export function buildRpmRunData(testData) {
   const mailingUnit = `${pick(testData.unitPrefixes)} ${numberWithDigitLength(2)}`;
   const mailingCounty = pick(rpmCountyValues);
   const localLicense = `LL#${numberWithDigitLength(3)}`;
-  const nvBusinessId = `NV${numberWithDigitLength(7)}`;
+  const nvBusinessId = `NV${numberWithDigitLength(11)}`;
   const serialNo = numberWithDigitLength(6);
   const zipPlusFour = `${numberWithDigitLength(5)}-${numberWithDigitLength(4)}`;
   const contactPhone = phone();
@@ -486,7 +486,7 @@ export function buildRpmRunData(testData) {
     createEntityFields: [
       { type: 'textbox', name: 'Registered Name with', value: registrationPerson.firstName },
       { type: 'textbox', name: 'NV Business ID', value: nvBusinessId },
-      { type: 'textbox', name: 'Local License #', value: localLicense },
+      ...nvrcpVersionedBusinessFields(localLicense),
       { type: 'selectByLabel', label: 'Facility Type', value: '63' },
       { type: 'textbox', name: 'First Name', value: person.firstName },
       { type: 'textbox', name: 'Last Name', value: person.lastName },
@@ -520,7 +520,6 @@ export function buildRpmRunData(testData) {
     ...credentialDetails,
     modifySearchFallbacks: [
       { label: 'Serial No', fieldNames: ['Serial No', 'Serial No.'], value: serialNo },
-      { label: 'Local License #', fieldNames: ['Local License #'], value: localLicense },
       { label: 'NV Business ID', fieldNames: ['NV Business ID'], value: nvBusinessId },
     ],
   };
@@ -533,7 +532,7 @@ export function buildRmRunData(testData) {
   const mailingUnit = `${pick(testData.unitPrefixes)} ${numberWithDigitLength(2)}`;
   const mailingCounty = pick(rpmCountyValues);
   const localLicense = `LL#${numberWithDigitLength(3)}`;
-  const nvBusinessId = `NV${numberWithDigitLength(5)}`;
+  const nvBusinessId = `NV${numberWithDigitLength(11)}`;
   const zipPlusFour = `${numberWithDigitLength(5)}-${numberWithDigitLength(4)}`;
   const contactPhone = phone();
   const mailingPhone = phone();
@@ -550,7 +549,7 @@ export function buildRmRunData(testData) {
     createEntityFields: [
       { type: 'textbox', name: 'Registered Name with', value: `RM_${numberWithDigitLength(4)}` },
       { type: 'textbox', name: 'NV Business ID', value: nvBusinessId },
-      { type: 'textbox', name: 'Local License #', value: localLicense },
+      ...nvrcpVersionedBusinessFields(localLicense),
       { type: 'selectByLabel', label: 'Facility Type', value: '15' },
       { type: 'textbox', name: 'First Name', value: person.firstName },
       { type: 'textbox', name: 'Last Name', value: person.lastName },
@@ -583,7 +582,6 @@ export function buildRmRunData(testData) {
     ],
     ...credentialDetails,
     modifySearchFallbacks: [
-      { label: 'Local License #', fieldNames: ['Local License #'], value: localLicense },
       { label: 'NV Business ID', fieldNames: ['NV Business ID'], value: nvBusinessId },
     ],
   };
@@ -598,7 +596,7 @@ export function buildMammoRunData(testData) {
   const mailingUnit = `${pick(testData.unitPrefixes)} ${numberWithDigitLength(2)}`;
   const mailingCounty = pick(rpmCountyValues);
   const localLicense = `LL#${numberWithDigitLength(3)}`;
-  const nvBusinessId = `NV${numberWithDigitLength(7)}`;
+  const nvBusinessId = `NV${numberWithDigitLength(11)}`;
   const consoleSerialNo = `CC${numberWithDigitLength(6)}`;
   const zipPlusFour = `${numberWithDigitLength(5)}-${numberWithDigitLength(4)}`;
   const contactPhone = phone();
@@ -631,7 +629,7 @@ export function buildMammoRunData(testData) {
     createEntityFields: [
       { type: 'textbox', name: 'Registered Name with', value: registrationPerson.firstName },
       { type: 'textbox', name: 'NV Business ID', value: nvBusinessId },
-      { type: 'textbox', name: 'Local License #', value: localLicense },
+      ...nvrcpVersionedBusinessFields(localLicense),
       { type: 'selectByLabel', label: 'Facility Type', value: '53' },
       { type: 'textbox', name: 'First Name', value: person.firstName },
       { type: 'textbox', name: 'Last Name', value: person.lastName },
@@ -667,10 +665,19 @@ export function buildMammoRunData(testData) {
     ...credentialDetails,
     modifySearchFallbacks: [
       { label: 'Serial No', fieldNames: ['Serial No', 'Serial No.'], value: consoleSerialNo },
-      { label: 'Local License #', fieldNames: ['Local License #'], value: localLicense },
       { label: 'NV Business ID', fieldNames: ['NV Business ID'], value: nvBusinessId },
     ],
   };
+}
+
+function nvrcpVersionedBusinessFields(localLicense) {
+  // NVRCP 11.4.42.07 introduces a required business name and removes Local
+  // License #. Populate whichever controls the rendered version exposes; do
+  // not substitute license identifiers for a business name.
+  return [
+    { type: 'textbox', name: 'DBA / Business Name', value: '$ENTITY_NAME', optional: true },
+    { type: 'textbox', name: 'Local License #', value: localLicense, optional: true },
+  ];
 }
 
 function requiredLicenseCredentialDetails(popupActions) {

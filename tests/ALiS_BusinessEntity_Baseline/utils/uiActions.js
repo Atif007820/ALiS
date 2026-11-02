@@ -22,7 +22,7 @@ export async function ensureUiActionValues(page, actions = [], context = {}, {
 
     for (const action of valueActions) {
       const locator = locatorForValueAction(page, action);
-      const available = await locator.count().catch(() => 0);
+      const available = await valueActionAvailable(locator, action);
 
       if (!available) {
         if (!action.optional) {
@@ -50,7 +50,7 @@ export async function ensureUiActionValues(page, actions = [], context = {}, {
     const unstable = [];
     for (const action of valueActions) {
       const locator = locatorForValueAction(page, action);
-      const available = await locator.count().catch(() => 0);
+      const available = await valueActionAvailable(locator, action);
 
       if (!available) {
         if (!action.optional) {
@@ -82,10 +82,10 @@ export async function runUiAction(page, action, context = {}) {
   const value = resolveValue(action.value, context);
 
   if (action.type === 'textbox') {
-    await page.getByRole('textbox', {
+    await fillConfiguredLocator(page.getByRole('textbox', {
       name: action.name,
       exact: action.exact ?? false,
-    }).first().fill(value);
+    }).first(), value, action);
     return;
   }
 
@@ -1484,18 +1484,17 @@ async function selectAllVisibleDropdownsByLabelText(page, labelText, value) {
 
 async function fillConfiguredLocator(locator, value, action = {}) {
   if (action.optional) {
-    try {
-      if ((await locator.count()) === 0) {
-        return;
-      }
-
-      await locator.waitFor({ state: 'visible', timeout: Number(action.timeoutMs || 5_000) });
-    } catch {
-      return;
-    }
+    if (!await valueActionAvailable(locator, action)) return;
   }
 
   await locator.fill(value);
+}
+
+async function valueActionAvailable(locator, action) {
+  if ((await locator.count()) === 0) return false;
+  // Version-dependent fields can be removed or retained as hidden ASP.NET
+  // controls. A visible control still has to accept and retain its value.
+  return !action.optional || await locator.isVisible();
 }
 
 async function checkConfiguredRadio(page, action) {

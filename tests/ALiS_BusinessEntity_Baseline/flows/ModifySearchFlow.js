@@ -92,7 +92,7 @@ async function assertOpenedEntityIdentity(page, { entityName, entityId }) {
   }, { name: entityName, id: entityId }, { timeout: 10_000 }).then(() => true).catch(() => false);
 
   if (!matched) {
-    throw new Error(`Retry did not open the checkpointed entity "${entityName}"${entityId ? ` (ID ${entityId})` : ''}. Refusing to capture a different profile.`);
+    throw new Error(`Search did not open the expected entity "${entityName}"${entityId ? ` (ID ${entityId})` : ''}. Refusing to capture a different profile.`);
   }
 }
 

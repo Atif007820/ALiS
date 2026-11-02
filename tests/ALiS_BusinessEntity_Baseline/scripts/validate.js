@@ -418,19 +418,31 @@ for (const nvrcpBusinessUnit of nvrcpCreateBusinessUnits) {
     entityId: '12345',
     searchFallbacks: [{ label: 'Generated key', fieldNames: ['Serial No'], value: 'ABC123' }],
     actionName: 'View',
+    strictEntityMatch: true,
   });
   const createdPrefixIndex = createdViewAttempts.findIndex((attempt) => attempt.isPrefixFallback);
   const generatedKeyIndex = createdViewAttempts.findIndex((attempt) => attempt.label.startsWith('Generated key'));
   const createdEntityIdAttempt = createdViewAttempts.find((attempt) => attempt.type === 'entityId');
   assert.equal(
     createdEntityIdAttempt?.retries,
-    1,
-    `${nvrcpBusinessUnit.id} View search should not repeat a stale entity ID before its safe prefix fallback`,
+    2,
+    `${nvrcpBusinessUnit.id} newly created View search should retry the exact entity ID`,
   );
   assert.equal(
-    createdPrefixIndex > -1 && createdPrefixIndex < generatedKeyIndex,
+    createdPrefixIndex === -1 && generatedKeyIndex === -1,
     true,
-    `${nvrcpBusinessUnit.id} newly created View flow should use a BU prefix before slow generated-key fallbacks when indexing is delayed`,
+    `${nvrcpBusinessUnit.id} newly created View flow must not substitute a different profile via prefix or secondary-key fallback`,
+  );
+
+  const businessName = nvrcpBusinessUnit.createEntityFields.find((action) => action.name === 'DBA / Business Name');
+  const localLicense = nvrcpBusinessUnit.createEntityFields.find((action) => action.name === 'Local License #');
+  assert.equal(businessName?.value, '$ENTITY_NAME', `${nvrcpBusinessUnit.id} should populate the current business-name field`);
+  assert.equal(businessName?.optional, true, `${nvrcpBusinessUnit.id} should tolerate older pages without a business-name control`);
+  assert.equal(localLicense?.optional, true, `${nvrcpBusinessUnit.id} should tolerate versions that removed Local License #`);
+  assert.equal(
+    nvrcpBusinessUnit.modifySearchFallbacks.some((fallback) => fallback.label === 'Local License #'),
+    false,
+    `${nvrcpBusinessUnit.id} search should not depend on the removed Local License field`,
   );
 
   const physicalAddressActions = nvrcpBusinessUnit.createEntityFields.filter((action) => (

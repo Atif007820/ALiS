@@ -39,7 +39,7 @@ export async function executeFlow(page, {
       entityName: created.entityName,
       entityId: created.entityId,
       searchFallbacks: created.searchFallbacks,
-      strictEntityMatch: Boolean(createdEntity),
+      strictEntityMatch: Boolean(createdEntity) || businessUnit.urlKey === 'NVRCP',
     });
     page = openedInModify.page || page;
 
@@ -57,7 +57,7 @@ export async function executeFlow(page, {
       entityName: created.entityName,
       entityId: created.entityId,
       searchFallbacks: created.searchFallbacks,
-      strictEntityMatch: Boolean(createdEntity),
+      strictEntityMatch: Boolean(createdEntity) || businessUnit.urlKey === 'NVRCP',
     });
   }
 
