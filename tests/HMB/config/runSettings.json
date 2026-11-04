@@ -2,7 +2,7 @@
   "defaultProject": "chromium",
   "headless": true,
   "fullyParallel": false,
-  "workers": 2,
+  "workers": 1,
   "slowMo": 0,
   "testTimeout": 1200000,
   "defaultTimeout": 30000,

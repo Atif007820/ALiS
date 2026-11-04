@@ -113,9 +113,11 @@ export class HmbLoginApplyPage {
     // Legacy pages return an href that tells us to resume; the current Angular
     // dashboard uses a clickable menu item with no href. In the latter case,
     // allow the application action to decide whether to open/resume the form.
-    const resumedLink = freshRegistration
-      ? null
-      : await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
+    // A fresh registration may already have an incomplete application on the
+    // dashboard. Flow 3 exposed that ALiS can leave Apply selected without
+    // opening the wizard, so probe for a resumable application after the Apply
+    // action fails even when this run just registered the user.
+    const resumedLink = await this.portalAction('View Pending Online Application(s)', { timeout: 1500 }).catch(() => null);
     if (resumedLink) {
       await this.openPendingApplication();
       if (await this.isApplicationScreenVisible()) return;
