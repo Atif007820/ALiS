@@ -24,22 +24,22 @@ export class LoginPage extends BasePage {
    * Skips login if an active session is already detected (unless `force` is true).
    *
    * @param {{ loginName: string, password: string }} userData
-   * @param {{ force?: boolean }} [options]
+   * @param {{ force?: boolean, landing?: import('@playwright/test').Locator }} [options]
    */
-  async login(userData, { force = false } = {}) {
+  async login(userData, { force = false, landing = this.dashboardLink } = {}) {
     if (!userData?.loginName || !userData?.password) {
       throw new Error('userData must include loginName and password.');
     }
 
     await this.goto();
 
-    if (!force && await isVisible(this.dashboardLink, 15000)) {
+    if (!force && await isVisible(landing, 15000)) {
       logger.success('Existing logged-in state restored');
       return;
     }
 
     if (!(await isVisible(this.loginNameField, 15000))) {
-      if (await isVisible(this.dashboardLink, 10000)) {
+      if (await isVisible(landing, 10000)) {
         logger.success('Existing logged-in state restored');
         return;
       }
@@ -47,10 +47,11 @@ export class LoginPage extends BasePage {
     }
 
     await fillField(this.loginNameField, userData.loginName, { pressTab: false });
-    await fillField(this.passwordField,  userData.password,  { pressTab: false });
+    await this.passwordField.or(this.page.locator('input[type="password"]'))
+      .filter({ visible: true }).first().fill(userData.password);
     await this.loginButton.click();
     await this.waitForLoad();
-    await expect(this.dashboardLink).toBeVisible({ timeout: 150000 });
+    await expect(landing).toBeVisible({ timeout: 150000 });
     logger.success('Login successful');
   }
 }

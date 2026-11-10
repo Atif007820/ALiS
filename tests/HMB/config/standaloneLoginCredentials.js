@@ -1,11 +1,8 @@
 /**
- * Optional credentials for running tests/02_LoginApply.spec.js by itself.
- *
- * Provide both values to log in without a saved registration account. Leave
- * them blank to use the latest project-specific account saved by Register.
- * LOGIN_NAME and LOGIN_PASSWORD environment variables override these values.
+ * Set both credentials for standalone Script 02.
+ * When Script 01 runs first, Script 02 uses the account created for that run.
  */
 export const STANDALONE_LOGIN_CREDENTIALS = {
-  loginName: '',
-  password: '',
+  loginName: 'HMB_9287',
+  password: 'Password@1',
 };

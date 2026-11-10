@@ -61,7 +61,7 @@ test('Run mode resolves to normal npm commands without debugging overrides', () 
     'HMB - E2E.launch': 'hmb',
     'HMB - Apply.launch': 'hmb:apply',
     'HMB - Register.launch': 'hmb:register',
-    'Conveyance - E2E.launch': 'test',
+    'Conveyance - E2E.launch': 'conv',
     'Conveyance - Apply.launch': 'test:apply',
     'Conveyance - Register.launch': 'test:register',
   };

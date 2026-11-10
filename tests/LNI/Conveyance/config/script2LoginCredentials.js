@@ -5,6 +5,6 @@
  *   testData/userData.json
  */
 export const STANDALONE_LOGIN_CREDENTIALS = {
-  loginName: '',
-  password: '',
+  loginName: 'Conv_CC_33',
+  password: 'Password@1',
 };

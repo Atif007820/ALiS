@@ -4,6 +4,41 @@ import { logger } from './logger.js';
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export async function gotoWithRetry(page, url, options = {}) {
+  const retries = Math.min(5, Math.max(0, Math.floor(Number(runSettings.navigationRetries) || 0)));
+  const attempts = retries + 1;
+  const baseDelay = Math.max(0, Number(runSettings.navigationRetryDelayMs) || 0);
+  const maxDelay = Math.max(baseDelay, Number(runSettings.navigationRetryMaxDelayMs) || baseDelay);
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await page.goto(url, options);
+      return;
+    } catch (error) {
+      if (!isTransientNavigationError(error) || attempt === attempts) {
+        if (isTransientNavigationError(error)) {
+          throw new Error(
+            `Navigation to ${url} failed after ${attempts} attempts because of a transient network error: ${error.message}`,
+            { cause: error },
+          );
+        }
+        throw error;
+      }
+
+      const delay = Math.min(maxDelay, baseDelay * (2 ** (attempt - 1)));
+      logger.warn(
+        `Navigation to ${url} hit a transient network error (attempt ${attempt}/${attempts}); retrying in ${delay} ms.`,
+      );
+      if (delay) await page.waitForTimeout(delay);
+    }
+  }
+}
+
+function isTransientNavigationError(error) {
+  return /net::ERR_NETWORK_CHANGED|net::ERR_CONNECTION_RESET|net::ERR_CONNECTION_CLOSED|net::ERR_CONNECTION_TIMED_OUT|net::ERR_NAME_NOT_RESOLVED|net::ERR_INTERNET_DISCONNECTED/i
+    .test(error?.message || '');
+}
+
 const OVERLAY_SELECTOR = [
   '#overlay',
   '.blockUI.blockOverlay',
@@ -26,13 +61,22 @@ export async function clearBlockingOverlay(page) {
   if (cleared) return;
 
   logger.warn('Blocking overlay stayed visible; disabling it for this step.');
-  await overlays.evaluateAll((elements) => {
-    for (const element of elements) {
-      element.style.pointerEvents = 'none';
-      element.style.display = 'none';
-      element.style.visibility = 'hidden';
-    }
-  });
+  try {
+    await overlays.evaluateAll((elements) => {
+      for (const element of elements) {
+        element.style.pointerEvents = 'none';
+        element.style.display = 'none';
+        element.style.visibility = 'hidden';
+      }
+    });
+  } catch (error) {
+    // A full-page navigation can invalidate the old document between the
+    // overlay check and evaluateAll. Treat that specific race as navigation,
+    // then wait for the new document before continuing.
+    if (!isNavigationContextError(error)) throw error;
+    await page.waitForLoadState('domcontentloaded', { timeout: runSettings.navigationTimeout }).catch(() => {});
+    await waitForAsyncPostback(page).catch(() => {});
+  }
 }
 
 export async function waitForPageReady(page) {
@@ -52,6 +96,11 @@ export async function waitForAsyncPostback(page) {
     const manager = window.Sys?.WebForms?.PageRequestManager?.getInstance?.();
     return !manager?.get_isInAsyncPostBack();
   }, undefined, { polling: 50, timeout: runSettings.navigationTimeout });
+}
+
+function isNavigationContextError(error) {
+  return /execution context was destroyed|cannot find context with specified id|frame was detached/i
+    .test(error?.message || '');
 }
 
 export async function firstVisible(candidates, { label = 'element', timeout = runSettings.actionTimeout } = {}) {

@@ -39,7 +39,7 @@ export default defineConfig({
     actionTimeout: appConfig.timeouts.action,
     navigationTimeout: appConfig.timeouts.navigation,
     launchOptions,
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },

@@ -31,6 +31,8 @@ import { logger } from '../utils/logger.js';
 import { MachineInformationPage } from './MachineInformationPage.js';
 import { DocumentUploadComponent } from './components/DocumentUploadComponent.js';
 
+const TRANSACTION_NUMBER = /\b(?:online\s+)?transaction\s+(?:number|no\.?|#)\s*(?:is\s+)?[:#]?\s*(\d+)(?=$|[\s.,;])/i;
+
 export class PermitApplicationPage extends BasePage {
   /** @param {import('@playwright/test').Page} page */
   constructor(page) {
@@ -38,7 +40,10 @@ export class PermitApplicationPage extends BasePage {
     this.machineInformation  = new MachineInformationPage(page);
     this.documents           = new DocumentUploadComponent(page);
     this.newConveyanceRadio  = page.getByRole('radio', { name: 'New Conveyance Installation' });
-    this.confirmationHeading = page.getByRole('heading', { name: 'Confirmation' });
+    this.confirmationHeading = page.getByRole('heading', { name: 'Confirmation', exact: true })
+      .or(page.getByText('Confirmation', { exact: true }))
+      .filter({ visible: true })
+      .first();
   }
 
   /**
@@ -313,6 +318,22 @@ export class PermitApplicationPage extends BasePage {
   async expectConfirmation() {
     await expect(this.confirmationHeading).toBeVisible({ timeout: 20000 });
     logger.success('Application submitted successfully');
+  }
+
+  async getConfirmationTransaction() {
+    const message = this.page.getByText(TRANSACTION_NUMBER).filter({ visible: true });
+    await expect(message, 'Confirmation must show an online transaction number')
+      .toBeVisible({ timeout: appConfig.timeouts.expect });
+
+    const transactionNumber = (await message.innerText()).match(TRANSACTION_NUMBER)?.[1];
+    if (!transactionNumber) {
+      throw new Error('The transaction number disappeared from the Confirmation message.');
+    }
+
+    const numberText = message.getByText(transactionNumber, { exact: true }).filter({ visible: true });
+    // Some deployments render the number inline instead of in its own element.
+    const transactionText = await numberText.count() ? numberText : message;
+    return { transactionNumber, transactionText };
   }
 
   // ─── Private Helpers ──────────────────────────────────────────────────────

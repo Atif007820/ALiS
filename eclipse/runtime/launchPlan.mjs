@@ -18,7 +18,7 @@ export function createLaunchPlan(framework, flow, environment = process.env) {
   const program = framework === 'HMB' ? playwrightCli : path.join(cwd, 'scripts/run-env.mjs');
   let args = framework === 'HMB'
     ? ['test', `tests/${hmbSpecsByFlow[flow]}.spec.js`, '--config=playwright.config.js', '--project=chromium', '--workers=1']
-    : ['--parallel=1', '--', ...(flow === 'E2E' ? [] : [`testScripts/${conveyanceSpecsByFlow[flow]}.spec.js`]), '--project=chromium', '--workers=1'];
+    : [...(flow === 'E2E' ? ['--e2e'] : [`testScripts/${conveyanceSpecsByFlow[flow]}.spec.js`]), '--parallel=1', '--project=chromium', '--workers=1'];
   const env = {
     ...environment,
     PLAYWRIGHT_HTML_OPEN: 'never',

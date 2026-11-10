@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import { HmbLoginApplyPage } from '../pages/HmbLoginApplyPage.js';
 import { DocumentUploadComponent } from '../pages/DocumentUploadComponent.js';
-import { check, clearBlockingOverlay, fill, waitAfterAction } from '../utils/formActions.js';
-import { mergeLoginCredentials, registeredUserPath } from '../utils/userStore.js';
+import { check, clearBlockingOverlay, fill, gotoWithRetry, waitAfterAction } from '../utils/formActions.js';
+import { loadLoginApplyUser, registeredUserPath, saveRegisteredUser } from '../utils/userStore.js';
+import { loadApprovalTransaction, saveApplicationTransaction } from '../utils/transactionStore.js';
 
 test('HMB stores registered accounts separately for each browser project', () => {
   const chromiumPath = registeredUserPath('chromium');
@@ -18,25 +21,111 @@ test('HMB stores registered accounts separately for each browser project', () =>
   assert.match(path.basename(edgePath), /\.msedge\.json$/);
 });
 
-test('HMB standalone Apply accepts configured credentials without a saved account', () => {
+test('HMB keeps standalone Apply and Approval inputs separate from E2E handoffs', async (t) => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'hmb-handoff-'));
+  t.after(() => rm(tempDir, { recursive: true, force: true }));
+  const testInfo = { project: { name: 'chromium' } };
+  const env = {
+    HMB_FLOW_RUN_ID: 'current-run',
+    HMB_FLOW_REPEAT: '0',
+    HMB_LOGIN_SOURCE: 'current-run',
+    HMB_REGISTRATION_PATH: path.join(tempDir, 'registration.json'),
+    HMB_TRANSACTION_SOURCE: 'current-run',
+    HMB_TRANSACTION_PATH: path.join(tempDir, 'transaction.json'),
+  };
+  const standaloneCredentials = { loginName: 'configured-user', password: 'configured-password' };
+  const standaloneTransactionNumber = '9001';
+  const currentUser = {
+    loginName: 'registered-user',
+    password: 'registered-password',
+    entityName: 'Current Entity',
+  };
+
+  await assert.rejects(
+    () => loadLoginApplyUser(testInfo, { env, standaloneCredentials }),
+    /Script 01 did not save a readable registration handoff/,
+  );
+  assert.throws(
+    () => loadApprovalTransaction(testInfo, { env, standaloneTransactionNumber }),
+    /Script 02 did not save a valid HMB transaction/,
+  );
+
+  await saveRegisteredUser(currentUser, testInfo, { env });
   assert.deepEqual(
-    mergeLoginCredentials(null, { loginName: 'configured-user', password: 'configured-password' }),
-    { loginName: 'configured-user', password: 'configured-password' },
+    await loadLoginApplyUser(testInfo, { env, standaloneCredentials }),
+    { user: currentUser, freshRegistration: true },
+  );
+  saveApplicationTransaction({ submitted: true, transactionNumber: '9002' }, currentUser, testInfo, { env });
+  const approval = loadApprovalTransaction(testInfo, { env, standaloneTransactionNumber });
+  assert.equal(approval.transactionNumber, '9002');
+  assert.equal(approval.entityName, currentUser.entityName);
+
+  const nextRepeatEnv = { ...env, HMB_FLOW_REPEAT: '1' };
+  await assert.rejects(
+    () => loadLoginApplyUser(testInfo, { env: nextRepeatEnv, standaloneCredentials }),
+    /belongs to a different HMB run/,
+  );
+  assert.throws(
+    () => loadApprovalTransaction(testInfo, { env: nextRepeatEnv, standaloneTransactionNumber }),
+    /transaction handoff is stale/,
+  );
+
+  const standaloneEnv = { ...env, HMB_LOGIN_SOURCE: 'standalone', HMB_TRANSACTION_SOURCE: 'standalone' };
+  assert.deepEqual(
+    await loadLoginApplyUser(testInfo, { env: standaloneEnv, standaloneCredentials }),
+    { user: standaloneCredentials, freshRegistration: false },
+  );
+  await assert.rejects(
+    () => loadLoginApplyUser(testInfo, {
+      env: standaloneEnv,
+      standaloneCredentials: { loginName: 'configured-user' },
+    }),
+    /standaloneLoginCredentials.js must provide both loginName and password/,
+  );
+  assert.equal(
+    loadApprovalTransaction(testInfo, { env: standaloneEnv, standaloneTransactionNumber }).transactionNumber,
+    standaloneTransactionNumber,
   );
 });
 
-test('HMB standalone Apply overrides only configured credentials on a saved account', () => {
-  const savedUser = {
-    loginName: 'registered-user',
-    password: 'registered-password',
-    entityName: 'Saved Entity',
+test('HMB retries initial navigation after a transient network change', async () => {
+  let attempts = 0;
+  const delays = [];
+  const page = {
+    async goto() {
+      attempts += 1;
+      if (attempts === 1) throw new Error('page.goto: net::ERR_NETWORK_CHANGED');
+    },
+    async waitForTimeout(delay) {
+      delays.push(delay);
+    },
   };
 
-  assert.deepEqual(
-    mergeLoginCredentials(savedUser, { loginName: 'configured-user' }),
-    { ...savedUser, loginName: 'configured-user' },
+  await gotoWithRetry(page, 'http://hmb.test/LoginNJ.aspx');
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(delays, [1000]);
+});
+
+test('HMB gives a clear error after bounded transient navigation retries', async () => {
+  let attempts = 0;
+  const delays = [];
+  const page = {
+    async goto() {
+      attempts += 1;
+      throw new Error('page.goto: net::ERR_NETWORK_CHANGED');
+    },
+    async waitForTimeout(delay) {
+      delays.push(delay);
+    },
+  };
+
+  await assert.rejects(
+    () => gotoWithRetry(page, 'http://hmb.test/LoginNJ.aspx'),
+    /Navigation to http:\/\/hmb\.test\/LoginNJ\.aspx failed after 3 attempts.*ERR_NETWORK_CHANGED/,
   );
-  assert.deepEqual(mergeLoginCredentials(savedUser), savedUser);
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [1000, 2000]);
 });
 
 test('HMB application entry waits for the delayed Angular list-item menu', async (t) => {
@@ -362,9 +451,9 @@ test('HMB reports persistent Fee Detail API 500 responses with actionable diagno
   const application = new HmbLoginApplyPage(page);
   await assert.rejects(
     () => application.completePayment({ required: true }),
-    /GetApplicationFee returned HTTP 500 after 3 attempts.*fee service is failing/s,
+    /GetApplicationFee returned HTTP 500 after 5 attempts.*fee service kept returning a retryable error/s,
   );
-  assert.equal(feeLookupAttempts, 3);
+  assert.equal(feeLookupAttempts, 5);
 });
 
 test('HMB fails when payment click has no transaction confirmation', async (t) => {

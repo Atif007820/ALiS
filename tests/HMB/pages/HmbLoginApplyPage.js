@@ -3,6 +3,7 @@ import { HMB_DATA } from '../config/editableData.js';
 import { URLS } from '../config/urls.js';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
 import { randomDocumentPath } from '../utils/documentPool.js';
+import { readEntityNames } from '../utils/entityNames.js';
 import {
   buildAddressInformation,
   buildApplicant,
@@ -19,6 +20,7 @@ import {
   fill,
   fillIfVisible,
   firstVisible,
+  gotoWithRetry,
   select,
   selectIfVisible,
   visibleDialog,
@@ -52,7 +54,7 @@ export class HmbLoginApplyPage {
     logger.section('Login and Apply for RA-HMB');
     await step('Login', () => this.login(user));
     await step('Open application', () => this.openApplication({ freshRegistration }));
-    await step('Entity Information', () => this.fillEntityInformation());
+    const entity = await step('Entity Information', () => this.fillEntityInformation());
     await step('Applicant Information', () => this.fillApplicantInformation());
     await step('Address Information', () => this.fillAddressInformation());
     await step('Owner, Director and Personnel', () => this.fillOwnerDirectorPersonnel());
@@ -63,6 +65,7 @@ export class HmbLoginApplyPage {
     const transactionNumber = submitted ? await step('Payment', () => this.completePayment()) : 'Not submitted';
 
     return {
+      ...entity,
       submitted,
       transactionNumber,
       personnelDocumentsUploaded: this.personnelDocumentsUploaded,
@@ -71,7 +74,10 @@ export class HmbLoginApplyPage {
   }
 
   async login(user) {
-    await this.page.goto(URLS.loginUrl, { waitUntil: 'domcontentloaded', timeout: runSettings.navigationTimeout });
+    await gotoWithRetry(this.page, URLS.loginUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: runSettings.navigationTimeout,
+    });
     await waitForPageReady(this.page);
     await this.selectHumanMilkBankPortal();
     await fill(this.page, this.page.getByRole('textbox', { name: /Login Name/i }), user.loginName, { label: 'Login Name' });
@@ -208,9 +214,10 @@ export class HmbLoginApplyPage {
       this.page.getByRole('radio', { name: /Initial Registration and Accreditation/i }).first(),
     ], { label: 'Registration Type radio', timeout: 15000 }).catch(() => null);
 
+    const entity = await readEntityNames(this.page);
     if (!registrationRadio) {
       logger.info('Entity Information page is already complete or not visible; skipping.');
-      return;
+      return entity;
     }
 
     await check(this.page, registrationRadio, { label: 'Registration Type radio' });
@@ -227,6 +234,7 @@ export class HmbLoginApplyPage {
       timeout: 60000,
     });
     await this.resumePendingApplicationIfReturnedToDashboard('Entity Information');
+    return entity;
   }
 
   async resumePendingApplicationIfReturnedToDashboard(stage) {
@@ -928,6 +936,7 @@ export class HmbLoginApplyPage {
     const retries = Math.min(5, Math.max(0, Math.floor(Number(runSettings.paymentApiRetries) || 0)));
     const attempts = retries + 1;
     const retryDelay = Math.max(0, Number(runSettings.paymentRetryDelayMs) || 0);
+    const maxRetryDelay = Math.max(retryDelay, Number(runSettings.paymentRetryMaxDelayMs) || retryDelay);
     const payButton = this.paymentActionLocator();
 
     try {
@@ -942,7 +951,7 @@ export class HmbLoginApplyPage {
         { timeout: readyTimeout },
       ).catch(() => null);
 
-      await this.page.goto(URLS.feeDetailUrl, {
+      await gotoWithRetry(this.page, URLS.feeDetailUrl, {
         waitUntil: 'domcontentloaded',
         timeout: runSettings.navigationTimeout,
       });
@@ -953,19 +962,20 @@ export class HmbLoginApplyPage {
       const feeResponse = await feeResponsePromise;
       if (feeResponse) lastFeeResponse = feeResponse;
 
-      if (feeResponse && feeResponse.status() >= 500) {
+      if (feeResponse && isRetryableFeeStatus(feeResponse.status())) {
         if (attempt < attempts) {
+          const delay = getFeeRetryDelay(feeResponse, attempt, retryDelay, maxRetryDelay);
           logger.warn(
-            `Fee lookup returned HTTP ${feeResponse.status()} (attempt ${attempt}/${attempts}); retrying in ${retryDelay} ms.`,
+            `Fee lookup returned HTTP ${feeResponse.status()} (attempt ${attempt}/${attempts}); retrying in ${delay} ms.`,
           );
-          if (retryDelay) await this.page.waitForTimeout(retryDelay);
+          if (delay) await this.page.waitForTimeout(delay);
           continue;
         }
 
         throw new Error(
           `Fee Detail could not load payment data: GetApplicationFee returned HTTP ${feeResponse.status()} `
           + `after ${attempts} attempts. URL: ${feeResponse.url()}. `
-          + 'The fee service is failing; check the HMB API/server logs.',
+          + 'The fee service kept returning a retryable error; check the HMB API/server logs and application state.',
         );
       }
 
@@ -982,8 +992,9 @@ export class HmbLoginApplyPage {
       } catch {}
 
       if (!feeResponse && attempt < attempts) {
-        logger.warn(`Fee Detail did not return GetApplicationFee (attempt ${attempt}/${attempts}); retrying.`);
-        if (retryDelay) await this.page.waitForTimeout(retryDelay);
+        const delay = Math.min(maxRetryDelay, retryDelay * (2 ** (attempt - 1)));
+        logger.warn(`Fee Detail did not return GetApplicationFee (attempt ${attempt}/${attempts}); retrying in ${delay} ms.`);
+        if (delay) await this.page.waitForTimeout(delay);
         continue;
       }
 
@@ -1060,6 +1071,25 @@ export class HmbLoginApplyPage {
       throw new Error(`${label} dialog stayed open after Save. Text: ${text.replace(/\s+/g, ' ').slice(0, 1000)}`);
     }
   }
+}
+
+function isRetryableFeeStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function getFeeRetryDelay(response, attempt, baseDelay, maxDelay) {
+  const retryAfter = response.headers()['retry-after'];
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    const retryAfterMs = Number.isFinite(seconds)
+      ? seconds * 1000
+      : Date.parse(retryAfter) - Date.now();
+    if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
+      return Math.min(maxDelay, retryAfterMs);
+    }
+  }
+
+  return Math.min(maxDelay, baseDelay * (2 ** (attempt - 1)));
 }
 
 function escapeRegex(value) {

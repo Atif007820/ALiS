@@ -71,13 +71,14 @@ export function addUserAnnotations(testInfo, userData) {
  * Attach permit-application details to the test report.
  *
  * @param {import('@playwright/test').TestInfo} testInfo
- * @param {{ licenseType?: string, conveyanceType?: string, typeName?: string, endorsementCode?: string }} selection
+ * @param {{ licenseType?: string, conveyanceType?: string, typeName?: string, endorsementCode?: string, transactionNumber?: string }} selection
  */
 export function addApplyAnnotations(testInfo, {
   licenseType,
   conveyanceType,
   typeName,
   endorsementCode,
+  transactionNumber,
 } = {}) {
   addEnvironmentAnnotations(testInfo);
 
@@ -87,4 +88,12 @@ export function addApplyAnnotations(testInfo, {
   upsertAnnotation(testInfo, 'License Type', resolvedLicenseType);
   upsertAnnotation(testInfo, 'Endorsement Code', endorsementCode);
   upsertAnnotation(testInfo, 'Conveyance Type', resolvedTypeName);
+  upsertAnnotation(testInfo, 'Transaction Number', transactionNumber);
+}
+
+export function addApprovalAnnotations(testInfo, { transactionNumber, entityName, status } = {}) {
+  addEnvironmentAnnotations(testInfo);
+  upsertAnnotation(testInfo, 'Transaction Number', transactionNumber);
+  upsertAnnotation(testInfo, 'Entity', entityName);
+  upsertAnnotation(testInfo, 'Application Status', status);
 }

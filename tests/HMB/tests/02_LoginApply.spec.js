@@ -1,24 +1,27 @@
 import { runSettings, test } from '../fixtures/hmb.fixture.js';
 import { addApplicationAnnotations } from '../utils/annotations.js';
-import { loadLoginApplyUser, registeredUserPath } from '../utils/userStore.js';
+import { registrationEntityNames, resolveEntityNames } from '../utils/entityNames.js';
+import { findRegisteredEntityNames, loadLoginApplyUser } from '../utils/userStore.js';
+import { saveApplicationTransaction } from '../utils/transactionStore.js';
 
-test('HMB - Login Apply', async ({ loginApplyPage }, testInfo) => {
+test('HMB - Login and Apply Permit', async ({ loginApplyPage }, testInfo) => {
   test.setTimeout(runSettings.testTimeout);
 
-  let user;
-  try {
-    user = await loadLoginApplyUser(testInfo.project.name);
-  } catch (error) {
-    throw new Error(
-      `Could not load Login/Apply credentials. Provide both values in config/standaloneLoginCredentials.js `
-      + `or set LOGIN_NAME and LOGIN_PASSWORD; otherwise run "npm run hmb:register -- --project=${testInfo.project.name}" first. `
-      + `Expected saved account: ${registeredUserPath(testInfo.project.name)}. ${error.message}`,
-    );
-  }
+  const { user, freshRegistration } = await test.step(
+    'Load HMB applicant credentials',
+    () => loadLoginApplyUser(testInfo),
+  );
 
   const result = await loginApplyPage.loginAndApply(user, {
     step: (name, action) => test.step(name, action),
+    freshRegistration,
   });
+  const registeredNames = freshRegistration
+    ? registrationEntityNames(user)
+    : await findRegisteredEntityNames(testInfo.project.name, { loginName: user.loginName });
+  const application = { ...result, ...resolveEntityNames(result, registeredNames) };
 
-  addApplicationAnnotations(testInfo, result, user);
+  addApplicationAnnotations(testInfo, application, user);
+  console.log(`HMB Transaction Number: ${application.transactionNumber}`);
+  saveApplicationTransaction(application, user, testInfo);
 });

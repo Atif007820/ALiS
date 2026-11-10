@@ -19,46 +19,56 @@ npm run hmb:list
 
 Run Register Only
 -----------------
-npm run hmb:register -- --project=chromium --headed
+npm run test -- --spec=register --headed
+npm run test -- --spec=01_RegisterUser.spec.js
 
 
-Run Login Apply Using Last Registered User
-------------------------------------------
-npm run hmb:apply -- --project=chromium --headed
+Run Login Apply Only
+--------------------
+npm run test -- --spec=apply --headed
+npm run test -- --spec=02_LoginApply.spec.js --project=chromium
 
-This uses the project-specific user file, for example:
-  testData\lastRegisteredHmbUser.chromium.json
-For Chromium only, if the project-specific file is missing, the legacy
-testData\lastRegisteredHmbUser.json is still read as a fallback.
-
-To provide credentials directly for this standalone flow, edit:
+Set both loginName and password in:
   config\standaloneLoginCredentials.js
-Set both loginName and password. If both are set, no saved registration file is
-needed. Blank or partial values use the saved account and override only values
-that are provided. LOGIN_NAME and LOGIN_PASSWORD environment variables take
-precedence over the config file.
+To use an account from a standalone registration, copy both credentials from
+the project-specific user file, for example testData\lastRegisteredHmbUser.chromium.json.
+
+
+Run Approval Only for an Already Submitted Application
+------------------------------------------------------
+Set the exact transaction number in:
+  config\approvalTransacNumber.js -> TransactionNumber
+
+Approver credentials are configured in:
+  config\approvalTransacNumber.js
+
+Run Script 3 by itself:
+  npm run test -- --spec=approve --headed
+  npm run test -- --spec=03_ApproveApplication.spec.js --project=chromium
 
 
 Run Full E2E
 ------------
-npm run hmb:e2e -- --project=chromium --headed
+npm run hmb
 
-Run without a visible browser (headless=true in config\runSettings.json):
-npm run hmb:e2e -- --project=chromium
+Show the browser during the full flow:
+npm run hmb -- --headed
 
-This runs the complete register, login, application, document upload, submit,
-and payment flow as one browser-project test. Chromium and Edge can run in
-parallel with the default two workers, and each browser saves its own account.
+The default is headless=true in config\runSettings.json.
 
-Register creates a fresh HMB user and saves it. LoginApply uses the saved user,
-applies, uploads documents, submits, attempts payment, captures the transaction
-number when available, and prints annotations.
+This runs Register, Login/Apply, and Approve as separate Playwright scripts in
+strict serial order for each selected browser project:
+  01_RegisterUser.spec.js -> 02_LoginApply.spec.js -> 03_ApproveApplication.spec.js
+
+Login/Apply uses the account created by Register for the current run. Approve
+uses the transaction number captured and printed by Login/Apply. Both handoffs
+are scoped to the current run, browser, and repeat. A missing or mismatched
+handoff stops the flow.
 
 Execution Time
 --------------
-Use --project chromium msedge to run Chromium and Edge concurrently. Omitting
---project runs all configured browsers (Chromium, Firefox, and Edge). Set
-workers in config\runSettings.json or override with HMB_WORKERS.
+HMB uses the TEST application only. Use --project=chromium or --project=msedge
+to select a browser. The runner controls workers so the flow completes serially.
 Keep slowMo: 0 in config\runSettings.json for normal-speed execution.
 The Playwright report shows timings for each Login Apply section, including
 personnel, mandatory documents, submission, and payment.
@@ -66,9 +76,9 @@ personnel, mandatory documents, submission, and payment.
 
 Current Test Files
 ------------------
-tests\01_Register.spec.js       Register only
-tests\02_LoginApply.spec.js     Apply using a previously registered account
-tests\03_E2E.spec.js            Full flow (default runner)
+tests\01_RegisterUser.spec.js   Register only
+tests\02_LoginApply.spec.js     Apply using the configured or current run account
+tests\03_ApproveApplication.spec.js  Approval only or final E2E stage
 
 
 Run All HMB Tests
@@ -79,19 +89,16 @@ npm run hmb -- --project=chromium --headed
 Browser Options
 ---------------
 Chromium:
-  npm run hmb:e2e -- --project=chromium --headed
+  npm run hmb -- --headed
 
-Run Chromium and Edge at the same time:
-  npm run hmb:e2e -- --project chromium msedge
-
-Override the number of concurrent browser workers:
-  $env:HMB_WORKERS=2; npm run hmb:e2e -- --project chromium msedge
+Run the full flow in Chromium:
+  npm run hmb -- --project=chromium
 
 Firefox:
-  npm run hmb:e2e -- --project=firefox --headed
+  npm run hmb -- --project=firefox --headed
 
 Microsoft Edge:
-  npm run hmb:e2e -- --project=msedge --headed
+  npm run hmb -- --project=msedge --headed
 
 
 Config Files
@@ -100,11 +107,17 @@ URLs and run behavior:
   config\urls.js
   config\runSettings.json
   config\standaloneLoginCredentials.js
+  config\approvalTransacNumber.js
 
 Payment recovery:
   paymentReadyTimeoutMs controls how long to wait for the payment action.
-  paymentApiRetries controls retries after a transient GetApplicationFee error.
-  paymentRetryDelayMs controls the pause between those retries.
+  paymentApiRetries controls retries after transient GetApplicationFee errors.
+  paymentRetryDelayMs sets the initial retry pause, which grows exponentially.
+  paymentRetryMaxDelayMs caps the backoff and Retry-After delay.
+
+Navigation recovery:
+  navigationRetries controls retries for transient connection failures.
+  navigationRetryDelayMs sets the initial pause; navigationRetryMaxDelayMs caps it.
 
 Fixtures:
   fixtures\hmb.fixture.js

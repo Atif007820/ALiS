@@ -14,5 +14,5 @@ if errorlevel 1 exit /b %errorlevel%
 call npx.cmd playwright install
 if errorlevel 1 exit /b %errorlevel%
 
-call npm.cmd test
+call npm.cmd run conv
 exit /b %errorlevel%

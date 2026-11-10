@@ -51,7 +51,7 @@ HMB login/apply only:
 npm.cmd --prefix tests/HMB run hmb:apply
 
 Conveyance (configured environment/license selections):
-npm.cmd --prefix tests/LNI/Conveyance test
+npm.cmd --prefix tests/LNI/Conveyance run conv
 
 Conveyance register only:
 npm.cmd --prefix tests/LNI/Conveyance run test:register
@@ -207,7 +207,7 @@ npm.cmd --prefix tests/ALiS_UserRegistration run register -- --project=chromium 
 npm.cmd --prefix tests/SidebarComparison run test:debug -- --project=chromium
 npm.cmd --prefix tests/ContentComparison run test:debug -- --project=chromium
 npm.cmd --prefix tests/HMB run hmb -- --project=chromium --debug
-npm.cmd --prefix tests/LNI/Conveyance run test:debug
+npm.cmd --prefix tests/LNI/Conveyance run conv -- --debug --project=chromium
 
 Sidebar's test:debug command reads its existing selection settings and bypasses
 the custom sidebar CLI wrapper. npm run sidebar -- --debug is NOT supported.

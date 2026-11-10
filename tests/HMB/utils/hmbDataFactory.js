@@ -6,11 +6,12 @@ export function buildRegistrationUser(overrides = {}) {
 
   return {
     entityName,
+    dbaName: overrides.dbaName || entityName,
     firstName: overrides.firstName || random.firstName(),
     lastName: overrides.lastName || random.lastName(),
     email: overrides.email || HMB_DATA.common.primaryEmail,
     altEmail: overrides.altEmail || HMB_DATA.common.alternateEmail,
-    loginName: overrides.loginName || random.loginName(HMB_DATA.registration.entityNamePrefix),
+    loginName: overrides.loginName || random.loginName(HMB_DATA.registration.loginPrefix),
     password: overrides.password || HMB_DATA.common.password,
     streetOne: overrides.streetOne || random.address(),
     streetTwo: overrides.streetTwo || random.apt(),

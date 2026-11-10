@@ -3,35 +3,35 @@ import { HMB_DATA } from '../config/editableData.js';
 import { URLS } from '../config/urls.js';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
 import { buildRegistrationUser } from '../utils/hmbDataFactory.js';
-import { clickAndWait, fill, select, waitAfterAction, waitForPageReady } from '../utils/formActions.js';
+import { clickAndWait, fill, firstVisible, gotoWithRetry, select, waitAfterAction, waitForPageReady } from '../utils/formActions.js';
 import { logger } from '../utils/logger.js';
+import { loginName } from '../utils/randomData.js';
+
+const LOGIN_NAME_LABEL = /^Login Name[\s*:]*$/i;
+const DUPLICATE_LOGIN = /(?:login\s*name|user\s*name|user\s*login).*(?:already|exists|duplicate|unique|taken)|(?:already|duplicate|taken).*(?:login\s*name|user\s*name|user\s*login)/i;
 
 export class HmbRegistrationPage {
   constructor(page) {
     this.page = page;
+    this.legalNameField = page.getByRole('textbox', { name: /Entity Name \(Legal Name\)/i });
   }
 
-  async register(overrides = {}, { maxAttempts = 3 } = {}) {
+  async register(overrides = {}, { maxAttempts = 8 } = {}) {
+    const user = buildRegistrationUser(overrides);
     let lastError = null;
+    let needsProfile = true;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const user = buildRegistrationUser(overrides);
-      if (attempt > 1 && !overrides.loginName) {
-        user.loginName = buildRegistrationUser().loginName;
-      }
-
       logger.section(`Register HMB User (attempt ${attempt}/${maxAttempts})`);
       logger.info(`Entity Name: ${user.entityName}`);
       logger.info(`Login Name: ${user.loginName}`);
 
-      await this.openRegistrationForm();
-      await this.fillRegistrationForm(user);
-      await clickAndWait(this.page, this.page.getByRole('link', { name: /^Register$/i }), {
-        label: 'Register link',
-        timeout: 60000,
-      });
-
-      const validationText = await this.getVisibleValidationText();
+      if (needsProfile) {
+        await this.openRegistrationForm();
+        await this.fillRegistrationForm(user);
+      }
+      const duplicateLoginAlert = await this.submitRegistration(user);
+      const validationText = duplicateLoginAlert || await this.getVisibleValidationText();
       if (!validationText) {
         user.hmbCode = await this.captureHmbCode();
         logger.info(`Registration completed. HMB Code: ${user.hmbCode}`);
@@ -39,19 +39,25 @@ export class HmbRegistrationPage {
       }
 
       lastError = new Error(`Registration failed validation: ${validationText}`);
-      const canRetry = /already exists|duplicate|login name/i.test(validationText)
+      const canRetry = DUPLICATE_LOGIN.test(validationText)
         && !overrides.loginName
         && attempt < maxAttempts;
 
       if (!canRetry) throw lastError;
-      logger.warn(`${lastError.message}. Retrying with a fresh login name.`);
+      user.loginName = loginName(HMB_DATA.registration.loginPrefix);
+      logger.warn(`Login name already taken. Retrying with ${user.loginName}.`);
+      const retainedLegalName = await this.legalNameField.inputValue({ timeout: 1000 }).catch(() => '');
+      needsProfile = retainedLegalName !== user.entityName;
     }
 
     throw lastError || new Error('Registration failed.');
   }
 
   async openRegistrationForm() {
-    await this.page.goto(URLS.loginUrl, { waitUntil: 'domcontentloaded', timeout: runSettings.navigationTimeout });
+    await gotoWithRetry(this.page, URLS.loginUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: runSettings.navigationTimeout,
+    });
     await waitForPageReady(this.page);
     await this.selectHumanMilkBankPortal();
     await clickAndWait(this.page, this.page.getByRole('link', { name: /^Click Here$/i }), {
@@ -68,10 +74,10 @@ export class HmbRegistrationPage {
   }
 
   async fillRegistrationForm(user) {
-    await fill(this.page, this.page.getByRole('textbox', { name: /Entity Name \(Legal Name\)/i }), user.entityName, {
+    await fill(this.page, this.legalNameField, user.entityName, {
       label: 'Entity Name Legal Name',
     });
-    await fill(this.page, this.page.getByRole('textbox', { name: /Entity Name \(DBA Name\)/i }), user.entityName, {
+    await fill(this.page, this.page.getByRole('textbox', { name: /Entity Name \(DBA Name\)/i }), user.dbaName, {
       label: 'Entity Name DBA Name',
     });
     await fill(this.page, this.page.getByRole('textbox', { name: /^Last Name/i }), user.lastName, { label: 'Last Name' });
@@ -87,12 +93,43 @@ export class HmbRegistrationPage {
     await fill(this.page, this.page.getByRole('textbox', { name: /^Fax/i }), user.fax, { label: 'Fax' });
     await fill(this.page, this.page.getByRole('textbox', { name: /^Email$/i }), user.email, { label: 'Email' });
     await fill(this.page, this.page.getByRole('textbox', { name: /^Alt Email/i }), user.altEmail, { label: 'Alt Email' });
+  }
 
-    await fill(this.page, this.page.getByRole('textbox', { name: /Login Name/i }), user.loginName, { label: 'Login Name' });
+  async fillRegistrationAccount(user) {
+    const field = await firstVisible([
+      this.page.getByRole('textbox', { name: LOGIN_NAME_LABEL }),
+      this.page.getByLabel(LOGIN_NAME_LABEL),
+    ], { label: 'Login Name' });
+    await fill(this.page, field, '', { label: 'Login Name' });
+    await fill(this.page, field, user.loginName, { label: 'Login Name' });
+    await expect(field).toHaveValue(user.loginName);
     await fill(this.page, this.page.getByRole('textbox', { name: /^Password/i }), user.password, { label: 'Password' });
     await fill(this.page, this.page.getByRole('textbox', { name: /Re-type Password/i }), user.password, {
       label: 'Re-type Password',
     });
+  }
+
+  async submitRegistration(user) {
+    let duplicateLoginAlert = '';
+    const dismissDialog = async (dialog) => {
+      const message = dialog.message();
+      if (DUPLICATE_LOGIN.test(message)) duplicateLoginAlert = message;
+      await dialog.dismiss().catch(() => {});
+    };
+
+    this.page.on('dialog', dismissDialog);
+    try {
+      await this.fillRegistrationAccount(user);
+      if (duplicateLoginAlert) return duplicateLoginAlert;
+
+      await clickAndWait(this.page, this.page.getByRole('link', { name: /^Register$/i }), {
+        label: 'Register link',
+        timeout: 60000,
+      });
+      return duplicateLoginAlert;
+    } finally {
+      this.page.off('dialog', dismissDialog);
+    }
   }
 
   async selectAndVerifyCounty(county) {
@@ -118,9 +155,9 @@ export class HmbRegistrationPage {
       .split(/\r?\n/)
       .map((line) => line.replace(/\s+/g, ' ').trim())
       .filter(Boolean)
-      .filter((line) => /required field|already exists|invalid|does not match|duplicate/i.test(line));
+      .filter((line) => /required field|already exists|invalid|does not match|duplicate/i.test(line) || DUPLICATE_LOGIN.test(line));
 
-    return [...new Set(lines)].join(' ');
+    return [...new Set(lines)].join('\n');
   }
 
   async captureHmbCode() {

@@ -1,14 +1,14 @@
 import { spawnSync } from 'child_process';
-import { createRequire } from 'module';
+import { fileURLToPath } from 'node:url';
 
-const require = createRequire(import.meta.url);
-const playwrightCli = require.resolve('@playwright/test/cli');
+const runScript = fileURLToPath(new URL('./run-env.mjs', import.meta.url));
 const userArgs = process.argv.slice(2);
-const args = [playwrightCli, 'test', ...userArgs, '--project=chromium', '--headed'];
+const args = [runScript, ...userArgs, '--headed'];
 
 console.log('Running Playwright with slowMo from config/runSettings.json');
 
 const result = spawnSync(process.execPath, args, {
+  cwd: fileURLToPath(new URL('../', import.meta.url)),
   env: {
     ...process.env,
     HEADLESS: 'false',

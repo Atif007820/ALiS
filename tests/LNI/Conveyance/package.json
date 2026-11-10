@@ -6,9 +6,10 @@
   "private": true,
   "scripts": {
     "setup": "npx playwright install",
-    "validate:flows": "node --test scripts/tests/loginSource.test.mjs",
+    "validate:flows": "node --test scripts/tests/*.test.mjs",
 
-    "test":                 "node scripts/run-env.mjs",
+    "conv":                 "node scripts/run-env.mjs --e2e",
+    "test":                 "node scripts/run-env.mjs --standalone",
     "test:serial":          "node scripts/run-env.mjs -- --workers=1 --project=chromium",
     "test:headed":          "node scripts/run-env.mjs -- --project=chromium --headed",
     "test:debug":           "node scripts/run-env.mjs -- --project=chromium --debug",
@@ -27,13 +28,14 @@
     "test:prod:parallel":   "node scripts/run-env.mjs --env=PROD -- --project=chromium",
     "test:prod:headed":     "node scripts/run-env.mjs --env=PROD -- --workers=1 --project=chromium --headed",
 
-    "test:all-envs":         "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --max-failures=1 --project=chromium",
-    "test:all-envs:headed":  "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --max-failures=1 --project=chromium --headed",
-    "test:all-envs:list":    "node scripts/run-env.mjs --env=TEST,PROD,PREPROD -- testScripts/01_RegisterUser.spec.js testScripts/02_LoginApply.spec.js --workers=1 --project=chromium --list",
+    "test:all-envs":         "node scripts/run-env.mjs --env=TEST,PROD,PREPROD --workers=1 --max-failures=1 --project=chromium",
+    "test:all-envs:headed":  "node scripts/run-env.mjs --env=TEST,PROD,PREPROD --workers=1 --max-failures=1 --project=chromium --headed",
+    "test:all-envs:list":    "node scripts/run-env.mjs --env=TEST,PROD,PREPROD --workers=1 --project=chromium --list",
     "test:matrix":           "node scripts/run-env.mjs --env=ALL --licenseType=ALL --parallel=6 --project=chromium",
 
     "test:register":        "node scripts/run-env.mjs -- testScripts/01_RegisterUser.spec.js --workers=1 --project=chromium",
     "test:apply":           "node scripts/run-env.mjs -- testScripts/02_LoginApply.spec.js --workers=1 --project=chromium",
+    "test:approve":         "node scripts/run-env.mjs --spec=approve --workers=1",
 
     "test:firefox":         "node scripts/run-env.mjs -- --workers=1 --project=firefox",
     "test:edge":            "node scripts/run-env.mjs -- --workers=1 --project=\"Microsoft Edge\"",

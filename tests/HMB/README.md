@@ -1,18 +1,21 @@
 # HMB Playwright Framework
 
-Reusable framework for NJ Human Milk Bank registration and login/apply flow.
+Reusable framework for NJ Human Milk Bank registration, login/apply, and
+application approval.
 
-The framework provides a complete end-to-end test and separate registration/apply tests:
+The serial end-to-end flow runs three separate tests in this order:
 
-- `tests/01_Register.spec.js`
+- `tests/01_RegisterUser.spec.js`
 - `tests/02_LoginApply.spec.js`
-- `tests/03_E2E.spec.js`
+- `tests/03_ApproveApplication.spec.js`
 
 ## Main Commands
 
+Run commands from the `tests/HMB` framework folder.
+
 ```bash
 npm install
-npm run hmb:e2e -- --project chromium msedge
+npm run hmb
 ```
 
 Before a multi-browser run, install the browser revisions required by this
@@ -32,18 +35,17 @@ To preserve the default report and saved user while running an isolated
 verification, set `HMB_TEST_RESULTS_DIR`, `HMB_REPORT_DIR`, and
 `HMB_USER_DATA_FILE` to paths under `validation-runs`.
 
-The E2E command runs registration, login/apply, uploads, submission, and payment
-inside one test per browser. Chromium and Edge run concurrently by default, and
-each browser stores its registered account in a separate project-specific file.
-When `submitPayment` is enabled, a missing payment action or missing transaction
-confirmation fails the test instead of producing a false pass.
+The E2E command runs registration, login/apply, then approval serially for each
+selected browser. Script 02 uses the account created by Script 01. Script 03
+uses the transaction number that Script 02 captures and prints. Both handoffs
+are scoped to the current run, browser, and repeat. A missing or mismatched
+handoff stops the flow. When `submitPayment` is enabled, a missing payment action
+or transaction confirmation fails Script 02.
 
 For a headless run with the current `headless: true` setting, omit `--headed`.
-Use `--project=chromium` to run one browser. `--project chromium msedge` runs
-Chromium and Edge concurrently. Omitting `--project` runs all three configured
-browsers. The default worker count is configured in `config/runSettings.json`
-and can be overridden with `HMB_WORKERS`. Keep `slowMo: 0` for normal-speed
-execution.
+HMB uses the TEST application only. Use `--project=chromium` to select a browser.
+The runner enforces one worker per script to prevent overlapping submissions or
+approvals.
 
 The Login/apply report contains named steps with timings for each application
 section. Form helpers check loading overlays together and use Playwright's
@@ -53,28 +55,45 @@ still awaited, with no fixed pause after each action.
 Register only:
 
 ```bash
-npm run hmb:register -- --project=chromium --headed
+npm run test -- --spec=register --headed
+npm run test -- --spec=01_RegisterUser.spec.js
 ```
 
-Login/apply using the last registered user:
+Standalone Login/Apply:
 
 ```bash
-npm run hmb:apply -- --project=chromium --headed
+npm run test -- --spec=apply --headed
+npm run test -- --spec=02_LoginApply.spec.js --project=chromium
 ```
 
-For standalone Login/Apply with an existing account, enter both `loginName` and
-`password` in `config/standaloneLoginCredentials.js`. When both are provided,
-the test does not need a saved registration file. If either value is blank, it
-loads the project-specific saved account and overrides only the configured
-field. `LOGIN_NAME` and `LOGIN_PASSWORD` environment variables take precedence
-over the config file.
+For standalone Login/Apply, enter both `loginName` and `password` in
+`config/standaloneLoginCredentials.js`. To use an account from a standalone
+registration, copy both values from the registration's project-specific user
+file into that config.
+
+When the portal omits a legal or DBA name, the report uses the matching
+registration data. Standalone Login/Apply matches by login name, and standalone
+Approval matches the entity shown for the selected transaction.
+
+Standalone approval for an already-submitted application:
+
+1. Set `TransactionNumber` in `config/approvalTransacNumber.js`.
+2. Approver credentials are configured in `config/approvalTransacNumber.js`.
+3. Run `npm run test -- --spec=approve --headed` or
+   `npm run test -- --spec=03_ApproveApplication.spec.js --project=chromium`.
+
+The standalone approval command accepts `--transaction=<digits>` as an optional
+one-run override when you do not want to edit the config file. It never reuses a
+transaction from an older E2E run.
 
 ## Editable Files
 
 - `config/urls.js` - login and fee detail URLs.
 - `config/runSettings.json` - headless/headed defaults, timeouts, report behavior.
-- Payment recovery controls: `paymentReadyTimeoutMs`, `paymentApiRetries`, and `paymentRetryDelayMs` in `config/runSettings.json`.
-- `config/standaloneLoginCredentials.js` - optional credentials for standalone Login/Apply.
+- Payment recovery controls: `paymentReadyTimeoutMs`, `paymentApiRetries`, `paymentRetryDelayMs`, and `paymentRetryMaxDelayMs` in `config/runSettings.json`. Transient API errors use capped exponential backoff and honor `Retry-After` when provided.
+- Navigation recovery controls: `navigationRetries`, `navigationRetryDelayMs`, and `navigationRetryMaxDelayMs` in `config/runSettings.json` retry transient browser network errors with capped exponential backoff.
+- `config/standaloneLoginCredentials.js` - required credentials for standalone Login/Apply.
+- `config/approvalTransacNumber.js` - standalone approval transaction number and approver credential loader.
 - `config/editableData.js` - hardcoded HMB form data.
 - `fixtures/hmb.fixture.js` - Playwright fixtures for page objects.
 - `utils/hmbDataFactory.js` - generated entity/login data.

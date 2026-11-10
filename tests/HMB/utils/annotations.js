@@ -1,18 +1,38 @@
+import { URLS } from '../config/urls.js';
+import { registrationEntityNames } from './entityNames.js';
+
 export function addRegistrationAnnotations(testInfo, user) {
-  testInfo.annotations.push(
-    { type: 'Entity Name', description: user.entityName },
-    { type: 'Login Name', description: user.loginName },
-    { type: 'HMB Code', description: user.hmbCode || 'Not captured' },
-  );
+  addAnnotations(testInfo, registrationEntityNames(user), [
+    ['Login Name', user.loginName],
+    ['HMB Code', user.hmbCode],
+  ]);
 }
 
 export function addApplicationAnnotations(testInfo, result, user = {}) {
-  testInfo.annotations.push(
-    { type: 'Login Name', description: user.loginName || 'Not captured' },
-    { type: 'Entity Name', description: user.entityName || 'Not captured' },
-    { type: 'Transaction Number', description: result.transactionNumber || 'Not captured' },
-    { type: 'Personnel Documents Uploaded', description: String(result.personnelDocumentsUploaded) },
-    { type: 'Mandatory Documents Uploaded', description: String(result.mandatoryDocumentsUploaded) },
-    { type: 'Submitted', description: String(result.submitted) },
-  );
+  addAnnotations(testInfo, result, [
+    ['Login Name', user.loginName],
+    ['Personnel Documents Uploaded', result.personnelDocumentsUploaded],
+    ['Mandatory Documents Uploaded', result.mandatoryDocumentsUploaded],
+    ['Transaction Number', result.transactionNumber],
+    ['Submitted', result.submitted],
+  ]);
+}
+
+export function addApprovalAnnotations(testInfo, { legalName, dbaName, transactionNumber, status }) {
+  addAnnotations(testInfo, { legalName, dbaName }, [
+    ['Transaction Number', transactionNumber],
+    ['Application Status', status],
+  ]);
+}
+
+function addAnnotations(testInfo, { legalName, dbaName }, fields) {
+  const entries = [
+    ['URL', URLS.loginUrl],
+    ['Entity Name (Legal Name)', legalName],
+    ['Entity Name (DBA Name)', dbaName],
+    ...fields,
+  ];
+  for (const [type, value] of entries) {
+    testInfo.annotations.push({ type, description: String(value ?? '').trim() || 'Not captured' });
+  }
 }

@@ -8,6 +8,7 @@ export const HMB_DATA = Object.freeze({
 
   registration: {
     entityNamePrefix: 'HMB',
+    loginPrefix: 'HMB_',
     county: '10',
   },
 

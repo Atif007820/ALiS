@@ -1,5 +1,8 @@
 import { fakerEN_US as faker } from '@faker-js/faker';
 
+const usedLoginNumbers = new Map();
+const PREFERRED_LOGIN_NUMBER_MAX = 9999;
+
 const FIRST_NAMES = [
   'Adam', 'Anna', 'Ben', 'Bella', 'Chris', 'Daisy', 'Ella', 'Emma',
   'Evan', 'Grace', 'Henry', 'Jack', 'James', 'Jane', 'John', 'Kate',
@@ -50,8 +53,20 @@ export function timestampName(prefix = 'HMB') {
   return `${prefix}_${dd}-${mm}-${yyyy}_${time}`;
 }
 
-export function loginName(prefix = 'HMB') {
-  const shortNumber = faker.number.int({ min: 1, max: 9999 });
-  const uniqueness = String(Date.now()).slice(-4);
-  return `${prefix}_${shortNumber}${uniqueness}`;
+export function loginName(prefix = 'HMB_') {
+  if (!usedLoginNumbers.has(prefix)) usedLoginNumbers.set(prefix, new Set());
+  const used = usedLoginNumbers.get(prefix);
+
+  // Match ALiS HMB registration: use short numbers first, then five digits.
+  let min = 1;
+  let max = PREFERRED_LOGIN_NUMBER_MAX;
+  while (used.size >= max) {
+    min = max + 1;
+    max = max * 10 + 9;
+  }
+
+  let number = faker.number.int({ min, max });
+  while (used.has(number)) number = number === max ? min : number + 1;
+  used.add(number);
+  return `${prefix}${number}`;
 }

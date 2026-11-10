@@ -3,25 +3,23 @@
  * Environment wrapper for the Conveyance Playwright framework.
  *
  * Supported examples:
- *   npm run test --env=TEST --headed --project=chromium --repeat-each=2
- *   npm run test --env=PROD --project=chromium --repeat-each=2
- *   npm run test --env=PREPROD --headed --licenseType=COMMERCIAL
- *   npm run test --env PREPROD --headed --licenseType COMMERCIAL
- *   npm run test --env=PRE PROD --headed --licenseType=COMMERCIAL --parallel 3
- *   npm run test --env=PRE PROD --headed --licenseType RESIDENTIAL --parallel=3
- *   npm run test --env=PREPROD,TEST,PROD --licenseType=RESIDENTIAL --parallel=3
- *   npm run test --env=TEST --licenseType=RESIDENTIAL,COMMERCIAL --parallel=2
- *   npm run test --env=ALL --licenseType=ALL --parallel=6
+ *   npm run conv -- --env=TEST --headed --project=chromium --repeat-each=2
+ *   npm run conv -- --env=ALL --licenseType=ALL --parallel=6
+ *   npm run test -- --spec=apply --env=TEST
  *
  * Combinations may run in parallel, but every combination remains serial:
- * 01_RegisterUser -> 02_LoginApply.
+ * 01_RegisterUser -> 02_LoginApply -> 03_ApproveApplication.
  */
 
 import { spawn, spawnSync } from 'child_process';
 import { createRequire } from 'module';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import playwrightConfig from '../playwright.config.js';
+import { loadApprovalCredentials, TransactionNumber } from '../config/approvalTransacNumber.js';
+import { normalizeTransactionNumber } from '../utils/transactionStore.js';
+import { assertApprovalSelection, assertMutationRetries, expandFlowTargets, flowAxes, SERIAL_FLOW_SPECS } from './flowPlan.mjs';
 import {
   endorsementCodesForLicense,
   resolveEndorsementSelection,
@@ -39,11 +37,6 @@ const runSettingsPath = resolve(projectRoot, 'config', 'runSettings.json');
 
 const DEFAULT_ENVIRONMENTS = ['TEST', 'PROD', 'PREPROD'];
 const DEFAULT_LICENSE_TYPES = ['RESIDENTIAL', 'COMMERCIAL'];
-const SERIAL_FLOW_SPECS = [
-  'testScripts/01_RegisterUser.spec.js',
-  'testScripts/02_LoginApply.spec.js',
-];
-
 const runSettings = loadRunSettings();
 const parsed = parseCommandLine(expandConcatenatedOptions(process.argv.slice(2)));
 
@@ -78,7 +71,15 @@ const commercialSelection = resolveConfiguredEndorsement(
   runSettings.commType,
 );
 
-const selectedSpecs = orderSelectedSpecs(resolveSelectedSpecs(parsed.selectedSpecs));
+const selectedSpecs = resolveSelectedSpecs(parsed.selectedSpecs, parsed.flowMode);
+const standaloneApproval = selectedSpecs.includes(SERIAL_FLOW_SPECS[2])
+  && !selectedSpecs.includes(SERIAL_FLOW_SPECS[1]);
+const suppliedTransaction = parsed.rawTransactionValue
+  ?? valueFromNpmConfig('transaction', 'transaction_number')
+  ?? (standaloneApproval ? process.env.CONVEYANCE_TRANSACTION_NUMBER : null);
+const rawTransaction = String(suppliedTransaction ?? '').trim()
+  || (standaloneApproval ? String(TransactionNumber ?? '').trim() : '');
+const transactionNumber = rawTransaction ? normalizeTransactionNumber(rawTransaction) : null;
 
 let playwrightArgs = [...parsed.playwrightArgs];
 playwrightArgs = applyNpmConfigPlaywrightOptions(playwrightArgs);
@@ -86,13 +87,29 @@ playwrightArgs = applyDefaultProject(playwrightArgs);
 playwrightArgs = applyWorkerOption(playwrightArgs);
 
 const listOnly = playwrightArgs.includes('--list');
-const runTargets = buildRunTargets(
+const axes = flowAxes(playwrightArgs, playwrightConfig.projects.map(project => project.name));
+playwrightArgs = axes.remainingArgs;
+const runTargets = expandFlowTargets(buildRunTargets(
   environments,
   licenseTypes,
   residentialSelection,
   commercialSelection,
-);
+), axes);
 const parallelRuns = resolveParallelRuns(parsed.parallelRuns, runTargets.length, playwrightArgs);
+assertMutationRetries(selectedSpecs, playwrightArgs);
+if (!listOnly) {
+  try {
+    assertApprovalSelection(selectedSpecs, runTargets, transactionNumber);
+    if (selectedSpecs.includes(SERIAL_FLOW_SPECS[2])) {
+      for (const environment of unique(runTargets.map(target => target.environment))) {
+        await loadApprovalCredentials(environment);
+      }
+    }
+  } catch (error) {
+    console.error(`Configuration error: ${error.message}`);
+    process.exit(1);
+  }
+}
 
 const envDisplay = runTargets.map(({ environment }) => environment).filter((value, index, values) => values.indexOf(value) === index).join(', ');
 const licenseDisplay = runTargets.map(({ licenseType }) => licenseType).filter((value, index, values) => values.indexOf(value) === index).join(', ');
@@ -140,23 +157,28 @@ async function runTarget(target, targetIndex) {
   const { environment, licenseType, label, slug } = target;
   const combinationUserDataPath = resolve(matrixUserDataRoot, environment, licenseType, 'userData.json');
   const includesRegistration = selectedSpecs.includes(SERIAL_FLOW_SPECS[0]);
+  const includesApply = selectedSpecs.includes(SERIAL_FLOW_SPECS[1]);
+  const flowDirectory = resolve(matrixArtifactRoot, slug, 'handoff', target.runId);
+  const freshUserDataPath = resolve(flowDirectory, 'userData.json');
   const resultEnv = {
     ...process.env,
     ENVIRONMENT: environment,
     LICENSE_TYPE: licenseType,
     RES_TYPE: residentialSelection?.code ?? '',
     COMM_TYPE: commercialSelection?.code ?? '',
-    USER_DATA_PATH: resolveUserDataPath(combinationUserDataPath, includesRegistration),
+    USER_DATA_PATH: includesRegistration ? freshUserDataPath : resolveUserDataPath(combinationUserDataPath, false),
     CONVEYANCE_LOGIN_SOURCE: includesRegistration ? 'registered' : 'standalone',
+    CONVEYANCE_RUN_ID: target.runId,
+    CONVEYANCE_FLOW_REPEAT: String(target.repeatIndex),
+    CONVEYANCE_TRANSACTION_PATH: resolve(flowDirectory, 'transaction.json'),
+    CONVEYANCE_TRANSACTION_SOURCE: includesApply ? 'current-run' : 'explicit',
+    CONVEYANCE_TRANSACTION_NUMBER: includesApply ? '' : transactionNumber || '',
+    FULLY_PARALLEL: 'false',
   };
 
   console.log('\n============================================================');
   console.log(`Starting Conveyance run: ${label}`);
   console.log('============================================================\n');
-
-  if (!listOnly && includesRegistration) {
-    rmSync(combinationUserDataPath, { force: true });
-  }
 
   for (let specIndex = 0; specIndex < selectedSpecs.length; specIndex += 1) {
     const spec = selectedSpecs[specIndex];
@@ -174,9 +196,11 @@ async function runTarget(target, targetIndex) {
       return { ...target, passed: false };
     }
 
-    if (!listOnly && spec === SERIAL_FLOW_SPECS[0] && existsSync(combinationUserDataPath)) {
+    if (!listOnly && spec === SERIAL_FLOW_SPECS[0] && existsSync(freshUserDataPath)) {
+      mkdirSync(dirname(combinationUserDataPath), { recursive: true });
+      copyFileSync(freshUserDataPath, combinationUserDataPath);
       mkdirSync(dirname(canonicalUserDataPath), { recursive: true });
-      copyFileSync(combinationUserDataPath, canonicalUserDataPath);
+      copyFileSync(freshUserDataPath, canonicalUserDataPath);
     }
   }
 
@@ -193,6 +217,9 @@ function runPlaywrightSpec({ target, targetIndex, spec, specIndex, env, playwrig
     playwrightCli,
     'test',
     ...commandArgs,
+    `--project=${target.project}`,
+    '--repeat-each=1',
+    ...([SERIAL_FLOW_SPECS[1], SERIAL_FLOW_SPECS[2]].includes(spec) ? ['--retries=0'] : []),
     `--reporter=${listOnly ? 'line' : 'blob,line'}`,
     `--output=${artifactDir}`,
     spec,
@@ -415,17 +442,23 @@ function stopExistingHtmlReportServers() {
   });
 }
 
-function resolveSelectedSpecs(parsedSpecs) {
-  if (parsedSpecs.length > 0) return unique(parsedSpecs);
-
-  const configuredSpec = valueFromNpmConfig('script', 'spec');
-  if (configuredSpec) {
-    const specs = [];
-    addSpecAlias(specs, configuredSpec);
-    if (specs.length > 0) return unique(specs);
+function resolveSelectedSpecs(parsedSpecs, flowMode) {
+  const specs = [...parsedSpecs];
+  if (specs.length === 0) {
+    const configuredSpec = valueFromNpmConfig('script', 'spec');
+    if (configuredSpec) addRequestedSpec(specs, configuredSpec);
   }
 
-  return SERIAL_FLOW_SPECS;
+  const ordered = orderSelectedSpecs(specs);
+  if (flowMode === 'standalone' && ordered.length !== 1) {
+    exitConfigurationError('npm run test requires exactly one spec, e.g. npm run test -- --spec=register, --spec=apply, or --spec=approve. Use npm run conv for the full flow.');
+  }
+  if (flowMode === 'e2e' && ordered.length > 0
+    && (ordered.length !== SERIAL_FLOW_SPECS.length || ordered.some((spec, index) => spec !== SERIAL_FLOW_SPECS[index]))) {
+    exitConfigurationError('npm run conv runs the full flow. Use npm run test -- --spec=<register|apply|approve> to run one script.');
+  }
+
+  return ordered.length ? ordered : SERIAL_FLOW_SPECS;
 }
 
 function orderSelectedSpecs(specs) {
@@ -459,10 +492,12 @@ function splitCombinedEnvironmentOption(value) {
 
 function parseCommandLine(args) {
   const result = {
+    flowMode: null,
     rawEnvValue: null,
     rawLicenseTypeValue: null,
     rawResTypeValue: null,
     rawCommTypeValue: null,
+    rawTransactionValue: null,
     selectedSpecs: [],
     playwrightArgs: [],
     parallelRuns: null,
@@ -471,6 +506,29 @@ function parseCommandLine(args) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--') continue;
+
+    if (arg === '--e2e' || arg === '--standalone') {
+      const flowMode = arg.slice(2);
+      if (result.flowMode && result.flowMode !== flowMode) {
+        exitConfigurationError('Select either the full E2E flow or a standalone script.');
+      }
+      result.flowMode = flowMode;
+      continue;
+    }
+
+    if (arg === '--transaction' || arg === '--transaction-number') {
+      result.rawTransactionValue = args[index + 1] ?? '';
+      index += 1;
+      continue;
+    }
+    if (/^--transaction(?:-number)?=/.test(arg)) {
+      result.rawTransactionValue = valueAfterEquals(arg);
+      continue;
+    }
+    if (!result.rawTransactionValue && npmBooleanOption('transaction', 'transaction_number') && /^\d+$/.test(arg)) {
+      result.rawTransactionValue = arg;
+      continue;
+    }
 
     if (arg === '--env' || arg === '--environment' || arg === '--environments') {
       const read = readJoinedValue(args, index, 'env');
@@ -520,12 +578,12 @@ function parseCommandLine(args) {
 
     if (arg === '--script' || arg === '--spec') {
       const value = args[index + 1];
-      addSpecAlias(result.selectedSpecs, value);
+      addRequestedSpec(result.selectedSpecs, value);
       index += 1;
       continue;
     }
     if (arg.startsWith('--script=') || arg.startsWith('--spec=')) {
-      addSpecAlias(result.selectedSpecs, valueAfterEquals(arg));
+      addRequestedSpec(result.selectedSpecs, valueAfterEquals(arg));
       continue;
     }
 
@@ -665,6 +723,17 @@ function parseLicenseTypeValues(value) {
   return unique(candidates);
 }
 
+function exitConfigurationError(message) {
+  console.error(`Configuration error: ${message}`);
+  process.exit(1);
+}
+
+function addRequestedSpec(selectedSpecs, value) {
+  if (!addSpecAlias(selectedSpecs, value)) {
+    exitConfigurationError(`Unknown script selection: "${value ?? ''}". Use register, apply, approve, or a spec filename.`);
+  }
+}
+
 function addSpecAlias(selectedSpecs, value) {
   const normalized = String(value || '').trim().replaceAll('\\', '/').toLowerCase();
   if (!normalized) return false;
@@ -683,6 +752,12 @@ function addSpecAlias(selectedSpecs, value) {
   if (['apply', 'loginapply', 'login-apply', '02', '02_loginapply', '02_loginapply.spec.js'].includes(normalized)
     || normalized.endsWith('/02_loginapply.spec.js')) {
     selectedSpecs.push(SERIAL_FLOW_SPECS[1]);
+    return true;
+  }
+
+  if (['approve', 'approval', '03', '03_approveapplication', '03_approveapplication.spec.js'].includes(normalized)
+    || normalized.endsWith('/03_approveapplication.spec.js')) {
+    selectedSpecs.push(SERIAL_FLOW_SPECS[2]);
     return true;
   }
 
@@ -710,6 +785,9 @@ function applyNpmConfigPlaywrightOptions(args) {
   if (repeatEach && !hasOption(nextArgs, '--repeat-each')) {
     nextArgs.push(`--repeat-each=${repeatEach}`);
   }
+
+  const retries = valueFromNpmConfig('retries');
+  if (retries && !hasOption(nextArgs, '--retries')) nextArgs.push(`--retries=${retries}`);
 
   if (isTrue(process.env.npm_config_list) && !nextArgs.includes('--list')) {
     nextArgs.push('--list');
