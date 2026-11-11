@@ -1,12 +1,10 @@
-import { runSettings, test } from '../fixtures/hmb.fixture.js';
+import { test } from '../fixtures/hmb.fixture.js';
 import { addApplicationAnnotations } from '../utils/annotations.js';
 import { registrationEntityNames, resolveEntityNames } from '../utils/entityNames.js';
 import { findRegisteredEntityNames, loadLoginApplyUser } from '../utils/userStore.js';
 import { saveApplicationTransaction } from '../utils/transactionStore.js';
 
 test('HMB - Login and Apply Permit', async ({ loginApplyPage }, testInfo) => {
-  test.setTimeout(runSettings.testTimeout);
-
   const { user, freshRegistration } = await test.step(
     'Load HMB applicant credentials',
     () => loadLoginApplyUser(testInfo),

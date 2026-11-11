@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import { HmbLoginApplyPage } from '../pages/HmbLoginApplyPage.js';
 import { DocumentUploadComponent } from '../pages/DocumentUploadComponent.js';
+import runSettings from '../config/runSettings.json' with { type: 'json' };
 import { check, clearBlockingOverlay, fill, gotoWithRetry, waitAfterAction } from '../utils/formActions.js';
 import { loadLoginApplyUser, registeredUserPath, saveRegisteredUser } from '../utils/userStore.js';
 import { loadApprovalTransaction, saveApplicationTransaction } from '../utils/transactionStore.js';
@@ -449,11 +450,18 @@ test('HMB reports persistent Fee Detail API 500 responses with actionable diagno
   await page.setContent('<h1>Submitted</h1>');
 
   const application = new HmbLoginApplyPage(page);
+  const expectedAttempts = Math.min(10, Math.max(0, Math.floor(Number(runSettings.paymentApiRetries) || 0))) + 1;
   await assert.rejects(
     () => application.completePayment({ required: true }),
-    /GetApplicationFee returned HTTP 500 after 5 attempts.*fee service kept returning a retryable error/s,
+    (error) => {
+      assert.match(
+        error.message,
+        new RegExp(`GetApplicationFee returned HTTP 500 after ${expectedAttempts} attempts.*fee service kept returning a retryable error`, 's'),
+      );
+      return true;
+    },
   );
-  assert.equal(feeLookupAttempts, 5);
+  assert.equal(feeLookupAttempts, expectedAttempts);
 });
 
 test('HMB fails when payment click has no transaction confirmation', async (t) => {

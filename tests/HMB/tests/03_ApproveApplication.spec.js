@@ -9,7 +9,7 @@ import { findRegisteredEntityNames } from '../utils/userStore.js';
 test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 
 test('HMB - Approve Application', async ({ approvalPage }, testInfo) => {
-  test.setTimeout(300000);
+  if (process.env.ALIS_ECLIPSE_MODE !== 'debug') test.setTimeout(300000);
 
   let application;
   let entity;

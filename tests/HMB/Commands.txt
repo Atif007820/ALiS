@@ -111,9 +111,10 @@ URLs and run behavior:
 
 Payment recovery:
   paymentReadyTimeoutMs controls how long to wait for the payment action.
-  paymentApiRetries controls retries after transient GetApplicationFee errors.
+  paymentApiRetries controls retries after transient GetApplicationFee errors (8 retries / 9 total attempts by default; bounded at 10 retries).
   paymentRetryDelayMs sets the initial retry pause, which grows exponentially.
   paymentRetryMaxDelayMs caps the backoff and Retry-After delay.
+  paymentRetryJitterMs adds a small random pause to spread concurrent retries.
 
 Navigation recovery:
   navigationRetries controls retries for transient connection failures.

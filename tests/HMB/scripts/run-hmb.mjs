@@ -65,7 +65,7 @@ try {
 
       const merged = mergeReports(blobRoot);
       if (!merged) results.push({ passed: false, label: 'Report merge' });
-      if (runSettings.openHtmlReport && merged) {
+      if (runSettings.openHtmlReport && merged && process.env.ALIS_ECLIPSE_MANAGED_REPORT !== '1') {
         try {
           await openHtmlReport();
         } catch (error) {

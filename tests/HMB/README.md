@@ -90,7 +90,7 @@ transaction from an older E2E run.
 
 - `config/urls.js` - login and fee detail URLs.
 - `config/runSettings.json` - headless/headed defaults, timeouts, report behavior.
-- Payment recovery controls: `paymentReadyTimeoutMs`, `paymentApiRetries`, `paymentRetryDelayMs`, and `paymentRetryMaxDelayMs` in `config/runSettings.json`. Transient API errors use capped exponential backoff and honor `Retry-After` when provided.
+- Payment recovery controls: `paymentReadyTimeoutMs`, `paymentApiRetries`, `paymentRetryDelayMs`, `paymentRetryMaxDelayMs`, and `paymentRetryJitterMs` in `config/runSettings.json`. Transient API errors use bounded exponential backoff, add jitter to spread concurrent retries, and honor `Retry-After` when provided. The default is 8 retries (9 total attempts), with a hard cap of 10 retries.
 - Navigation recovery controls: `navigationRetries`, `navigationRetryDelayMs`, and `navigationRetryMaxDelayMs` in `config/runSettings.json` retry transient browser network errors with capped exponential backoff.
 - `config/standaloneLoginCredentials.js` - required credentials for standalone Login/Apply.
 - `config/approvalTransacNumber.js` - standalone approval transaction number and approver credential loader.

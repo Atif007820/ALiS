@@ -933,10 +933,15 @@ export class HmbLoginApplyPage {
 
   async findPaymentAction() {
     const readyTimeout = Math.max(1000, Number(runSettings.paymentReadyTimeoutMs) || 20000);
-    const retries = Math.min(5, Math.max(0, Math.floor(Number(runSettings.paymentApiRetries) || 0)));
+    // This is a read-only fee lookup, so retry transient statuses for a bounded
+    // window. A server-side limit prevents an accidental config value from
+    // keeping a test stuck indefinitely while still allowing recovery windows
+    // longer than the original five total requests.
+    const retries = Math.min(10, Math.max(0, Math.floor(Number(runSettings.paymentApiRetries) || 0)));
     const attempts = retries + 1;
     const retryDelay = Math.max(0, Number(runSettings.paymentRetryDelayMs) || 0);
     const maxRetryDelay = Math.max(retryDelay, Number(runSettings.paymentRetryMaxDelayMs) || retryDelay);
+    const retryJitter = Math.max(0, Number(runSettings.paymentRetryJitterMs) || 0);
     const payButton = this.paymentActionLocator();
 
     try {
@@ -964,7 +969,7 @@ export class HmbLoginApplyPage {
 
       if (feeResponse && isRetryableFeeStatus(feeResponse.status())) {
         if (attempt < attempts) {
-          const delay = getFeeRetryDelay(feeResponse, attempt, retryDelay, maxRetryDelay);
+          const delay = getFeeRetryDelay(feeResponse, attempt, retryDelay, maxRetryDelay, retryJitter);
           logger.warn(
             `Fee lookup returned HTTP ${feeResponse.status()} (attempt ${attempt}/${attempts}); retrying in ${delay} ms.`,
           );
@@ -992,7 +997,7 @@ export class HmbLoginApplyPage {
       } catch {}
 
       if (!feeResponse && attempt < attempts) {
-        const delay = Math.min(maxRetryDelay, retryDelay * (2 ** (attempt - 1)));
+        const delay = getFeeRetryDelay(null, attempt, retryDelay, maxRetryDelay, retryJitter);
         logger.warn(`Fee Detail did not return GetApplicationFee (attempt ${attempt}/${attempts}); retrying in ${delay} ms.`);
         if (delay) await this.page.waitForTimeout(delay);
         continue;
@@ -1077,8 +1082,8 @@ function isRetryableFeeStatus(status) {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
-function getFeeRetryDelay(response, attempt, baseDelay, maxDelay) {
-  const retryAfter = response.headers()['retry-after'];
+function getFeeRetryDelay(response, attempt, baseDelay, maxDelay, jitterMs = 0) {
+  const retryAfter = response?.headers?.()['retry-after'];
   if (retryAfter) {
     const seconds = Number(retryAfter);
     const retryAfterMs = Number.isFinite(seconds)
@@ -1089,7 +1094,9 @@ function getFeeRetryDelay(response, attempt, baseDelay, maxDelay) {
     }
   }
 
-  return Math.min(maxDelay, baseDelay * (2 ** (attempt - 1)));
+  const backoff = baseDelay * (2 ** (attempt - 1));
+  const jitter = jitterMs > 0 ? Math.floor(Math.random() * (jitterMs + 1)) : 0;
+  return Math.min(maxDelay, backoff + jitter);
 }
 
 function escapeRegex(value) {

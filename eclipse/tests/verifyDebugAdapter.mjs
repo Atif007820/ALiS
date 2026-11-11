@@ -12,9 +12,12 @@ assert.ok(adapterPath && fs.existsSync(adapterPath), 'Provide the installed Ecli
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const workerCheck = process.argv.includes('--playwright-worker');
 const runOnly = process.argv.includes('--run');
+const viaLauncher = process.argv.includes('--via-launcher');
+assert.ok(!viaLauncher || workerCheck, '--via-launcher requires --playwright-worker.');
 const fixture = path.join(root, 'eclipse', 'debug', workerCheck ? 'workerCheck.spec.js' : 'breakpointCheck.mjs');
 const expectedRoles = workerCheck ? ['worker'] : ['child', 'parent'];
 const temporaryOutput = workerCheck ? fs.mkdtempSync(path.join(os.tmpdir(), 'eclipse-debug-check-')) : null;
+const temporaryPackage = viaLauncher ? fs.mkdtempSync(path.join(root, 'eclipse', 'debug', '.npm worker check-')) : null;
 const xml = new DOMParser().parseFromString(fs.readFileSync(path.join(root, 'eclipse', 'launches', 'HMB - E2E.launch'), 'utf8'), 'application/xml');
 const parameterNode = Array.from({ length: xml.getElementsByTagName('stringAttribute').length }, (_, i) => xml.getElementsByTagName('stringAttribute').item(i))
   .find(node => node.getAttribute('key') === 'org.eclipse.lsp4e.debug.model.ATTR_DSP_PARAM');
@@ -33,7 +36,7 @@ const fail = error => { if (!finished) { finished = true; doneReject(error); } }
 const adapter = spawn(process.execPath, [path.resolve(adapterPath), '0', '127.0.0.1'], {
   stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DA_TEST_DISABLE_TELEMETRY: 'true' },
 });
-const timer = setTimeout(() => fail(new Error(`Debug adapter verification timed out. ${adapterOutput.slice(-1500)}`)), 45000);
+const timer = setTimeout(() => fail(new Error(`Debug adapter verification timed out. ${adapterOutput.slice(-1500)}`)), 55000);
 adapter.once('error', fail);
 
 class Client {
@@ -175,6 +178,12 @@ function sameSource(source, target) {
 }
 
 try {
+  if (temporaryPackage) {
+    fs.writeFileSync(path.join(temporaryPackage, 'package.json'), JSON.stringify({
+      private: true,
+      scripts: { check: 'playwright test' },
+    }));
+  }
   const ready = new Promise((resolve, reject) => {
     adapter.once('exit', code => { if (!adapterPort) reject(new Error(`Adapter exited ${code}: ${adapterOutput}`)); });
     adapter.stdout.on('data', data => {
@@ -185,12 +194,21 @@ try {
     adapter.stderr.on('data', data => { adapterOutput += data.toString(); });
   });
   await Promise.race([ready, done]);
+  const playwrightConfig = path.join(root, 'eclipse', 'debug', 'playwright.config.js');
+  const program = viaLauncher
+    ? path.join(root, 'eclipse', 'runtime', 'runFramework.mjs')
+    : workerCheck ? path.join(root, 'node_modules', '@playwright', 'test', 'cli.js') : fixture;
+  const args = viaLauncher ? [
+    `--package=${path.relative(root, temporaryPackage)}`, '--script=check',
+    `--arg=--config=${playwrightConfig}`, `--arg=--output=${temporaryOutput}`,
+    `--eclipse-mode=${runOnly ? 'run' : 'debug'}`,
+  ] : workerCheck ? ['test', '--config', playwrightConfig, '--output', temporaryOutput] : [];
   const run = setupSession('launch', {
     ...parameters, runtimeExecutable: process.execPath, env: {},
-    args: workerCheck ? ['test', '--config', path.join(root, 'eclipse', 'debug', 'playwright.config.js'), '--output', temporaryOutput] : [],
+    args,
     stopOnEntry: false,
     type: 'pwa-node', request: 'launch', name: 'Eclipse breakpoint verification',
-    program: workerCheck ? path.join(root, 'node_modules', '@playwright', 'test', 'cli.js') : fixture,
+    program,
     cwd: root, outputCapture: 'std', noDebug: runOnly,
   });
   run.catch(fail);
@@ -213,4 +231,8 @@ try {
   }
   adapter.kill();
   if (temporaryOutput) fs.rmSync(temporaryOutput, { recursive: true, force: true });
+  if (temporaryPackage) {
+    fs.rmSync(path.join(temporaryPackage, 'package.json'), { force: true });
+    fs.rmdirSync(temporaryPackage);
+  }
 }

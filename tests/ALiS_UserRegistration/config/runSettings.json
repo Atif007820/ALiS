@@ -3,7 +3,7 @@
   "environmentVersionOverrides": {
     "TEST": {
       "enabled": true,
-      "version": "11.4.42.07"
+      "version": "11.4.43"
     },
     "PROD": {
       "enabled": true,

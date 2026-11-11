@@ -4,32 +4,91 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
-const hmbSpecsByFlow = { E2E: '03_E2E', Apply: '02_LoginApply', Register: '01_Register' };
-const conveyanceSpecsByFlow = { Apply: '02_LoginApply', Register: '01_RegisterUser' };
+const frameworks = {
+  HMB: {
+    packageDir: 'tests/HMB',
+    scripts: { E2E: 'hmb', Apply: 'hmb:apply', Register: 'hmb:register' },
+    args: ['--project=chromium'],
+    reportScript: 'report',
+  },
+  Conveyance: {
+    packageDir: 'tests/LNI/Conveyance',
+    scripts: { E2E: 'conv', Apply: 'test:apply', Register: 'test:register' },
+    args: ['--project=chromium', '--parallel=1'],
+  },
+};
 
-export function createLaunchPlan(framework, flow, environment = process.env) {
-  if (!['HMB', 'Conveyance'].includes(framework) || !Object.hasOwn(hmbSpecsByFlow, flow)) {
-    throw new Error('Select HMB or Conveyance with E2E, Apply or Register.');
+export function createLaunchPlan(selection, environment = process.env) {
+  const { framework, flow, scriptArgs = [], debugArgs = [] } = selection;
+  let { packageDir, script } = selection;
+  let frameworkArgs = [];
+  const savedFlow = framework !== undefined || flow !== undefined;
+  if (savedFlow) {
+    if (packageDir !== undefined || script !== undefined) {
+      throw new Error('Choose either --framework and --flow or --package and --script.');
+    }
+    const config = Object.hasOwn(frameworks, framework) ? frameworks[framework] : undefined;
+    if (!config || !Object.hasOwn(config.scripts, flow)) {
+      throw new Error(`Unknown Eclipse flow "${framework} - ${flow}". Select a saved flow or use --package and --script.`);
+    }
+    packageDir = config.packageDir;
+    script = config.scripts[flow];
+    frameworkArgs = config.args;
+  } else if (!packageDir || !script) {
+    throw new Error('Provide --package=<project-relative directory> and --script=<npm script name>.');
   }
+
+  const cwd = path.resolve(projectRoot, packageDir);
+  const relative = path.relative(projectRoot, cwd);
+  if (path.isAbsolute(relative) || relative.split(path.sep)[0] === '..') {
+    throw new Error(`Eclipse package directory must be inside the Playwright project: ${packageDir}`);
+  }
+  const manifestPath = path.join(cwd, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (script.startsWith('-') || !Object.hasOwn(manifest.scripts ?? {}, script)
+    || typeof manifest.scripts[script] !== 'string' || !manifest.scripts[script].trim()) {
+    throw new Error(`npm script "${script}" is missing from ${manifestPath}.`);
+  }
+
   const debug = environment.ALIS_ECLIPSE_MODE === 'debug';
-  const cwd = path.join(projectRoot, 'tests', framework === 'HMB' ? 'HMB' : 'LNI/Conveyance');
-  const require = createRequire(path.join(cwd, 'package.json'));
-  const playwrightCli = require.resolve('@playwright/test/cli');
-  const program = framework === 'HMB' ? playwrightCli : path.join(cwd, 'scripts/run-env.mjs');
-  let args = framework === 'HMB'
-    ? ['test', `tests/${hmbSpecsByFlow[flow]}.spec.js`, '--config=playwright.config.js', '--project=chromium', '--workers=1']
-    : [...(flow === 'E2E' ? ['--e2e'] : [`testScripts/${conveyanceSpecsByFlow[flow]}.spec.js`]), '--parallel=1', '--project=chromium', '--workers=1'];
-  const env = {
-    ...environment,
-    PLAYWRIGHT_HTML_OPEN: 'never',
-    ALIS_ECLIPSE_MANAGED_REPORT: '1',
-  };
+  const forwarded = [...frameworkArgs, ...scriptArgs];
   if (debug) {
-    args.push('--headed', '--timeout=0', '--retries=0');
-    env.HEADLESS = 'false';
+    if (savedFlow) forwarded.push('--headed', '--timeout=0', '--retries=0');
+    forwarded.push(...debugArgs);
   }
-  return { framework, flow, debug, openReportAfterCompletion: true, cwd, program, args, env, playwrightCli,
-    reportDir: path.resolve(cwd, framework === 'HMB' ? env.HMB_REPORT_DIR || 'playwright-report' : 'playwright-report') };
+  const args = ['run', script, ...(forwarded.length ? ['--', ...forwarded] : [])];
+  const env = { ...environment };
+  const reportConfig = Object.values(frameworks).find(config => path.resolve(projectRoot, config.packageDir) === cwd);
+  const openReportAfterCompletion = Boolean(reportConfig) && !forwarded.includes('--list');
+  if (openReportAfterCompletion) {
+    env.PLAYWRIGHT_HTML_OPEN = 'never';
+    env.ALIS_ECLIPSE_MANAGED_REPORT = '1';
+  }
+  if (debug) env.HEADLESS = 'false';
+
+  return {
+    name: savedFlow ? `${framework} - ${flow}` : `${packageDir} - ${script}`,
+    framework, flow, script, debug, openReportAfterCompletion, cwd, args, env,
+    program: resolveNpmCli(environment),
+    reportDir: path.join(cwd, 'playwright-report'),
+    reportScript: reportConfig?.reportScript,
+  };
+}
+
+function resolveNpmCli(environment) {
+  const nodeDir = path.dirname(process.execPath);
+  const candidates = [
+    environment.npm_execpath,
+    path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.resolve(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(nodeDir, 'npm'),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || !fs.existsSync(candidate)) continue;
+    const resolved = fs.realpathSync(candidate);
+    if (path.basename(resolved) === 'npm-cli.js' && fs.statSync(resolved).isFile()) return resolved;
+  }
+  throw new Error(`Cannot find npm for Node at ${process.execPath}. Select a Node.js installation with npm in the Eclipse launch parameters.`);
 }
 
 export function reportEnvironment(environment = process.env) {
@@ -46,8 +105,12 @@ export function createReportPlan(plan, startedAt, signal) {
   if (!plan.openReportAfterCompletion || signal) return null;
   const reportIndex = path.join(plan.reportDir, 'index.html');
   if (!fs.existsSync(reportIndex) || fs.statSync(reportIndex).mtimeMs < startedAt) return null;
+  const args = plan.reportScript
+    ? [plan.program, 'run', plan.reportScript]
+    : [createRequire(path.join(plan.cwd, 'package.json')).resolve('@playwright/test/cli'),
+      'show-report', plan.reportDir, '--host', '127.0.0.1', '--port', '0'];
   return {
-    args: [plan.playwrightCli, 'show-report', plan.reportDir, '--host', '127.0.0.1', '--port', '0'],
+    args,
     options: { cwd: plan.cwd, env: reportEnvironment(plan.env), detached: true, windowsHide: true, stdio: 'ignore' },
   };
 }
