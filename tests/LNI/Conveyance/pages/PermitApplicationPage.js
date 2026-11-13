@@ -1,13 +1,11 @@
 import { expect } from '@playwright/test';
 import { BasePage } from './BasePage.js';
-import { appConfig } from '../config/runConfig.js';
+import { appConfig, getApplicationTarget } from '../config/runConfig.js';
 import { TEST_DATA } from '../config/editableData.js';
 import {
   COMM_CONVEYANCE_TYPES,
   endorsementCodeForConveyance,
-  endorsementCodesForLicense,
   RESIDENTIAL_CONVEYANCE_TYPES,
-  resolveEndorsementSelection,
 } from '../config/constants.js';
 import {
   checkRandomAvailableRadio,
@@ -32,6 +30,7 @@ import { MachineInformationPage } from './MachineInformationPage.js';
 import { DocumentUploadComponent } from './components/DocumentUploadComponent.js';
 
 const TRANSACTION_NUMBER = /\b(?:online\s+)?transaction\s+(?:number|no\.?|#)\s*(?:is\s+)?[:#]?\s*(\d+)(?=$|[\s.,;])/i;
+const EXISTING_BUILDING_QUESTION = /is the conveyance being installed in an existing building/i;
 
 export class PermitApplicationPage extends BasePage {
   /** @param {import('@playwright/test').Page} page */
@@ -39,120 +38,59 @@ export class PermitApplicationPage extends BasePage {
     super(page);
     this.machineInformation  = new MachineInformationPage(page);
     this.documents           = new DocumentUploadComponent(page);
-    this.newConveyanceRadio  = page.getByRole('radio', { name: 'New Conveyance Installation' });
     this.confirmationHeading = page.getByRole('heading', { name: 'Confirmation', exact: true })
       .or(page.getByText('Confirmation', { exact: true }))
       .filter({ visible: true })
       .first();
   }
 
-  /**
-   * End-to-end orchestration for a New Conveyance permit application.
-   * Calls each step method in order and returns the license/conveyance selection.
-   *
-   * @param {{ onSelection?: (selection: { licenseType: string, conveyanceType: string, typeName: string }) => void | Promise<void> }} [options]
-   * @returns {Promise<{ licenseType: string, conveyanceType: string, typeName: string }>}
-   */
-  async completeNewConveyancePermitApplication({ onSelection } = {}) {
-    const selection = await this.selectApplicationTypeAndLicense();
+  async completePermitApplication({ onSelection } = {}) {
+    const target = getApplicationTarget();
+    const hoist = target.appType === 'CHI';
+    const selection = await this.selectApplicationAndPermit(target);
     await onSelection?.(selection);
     await this.continueFromEntityInformation();
-    await this.fillAddressInformation();
-    await this.fillOwnerInformation();
-    await this.documents.uploadVisibleMandatoryDocuments();
-    await this.machineInformation.fill();
+    await this.fillAddressInformation({ hoist });
+    await this.fillOwnerInformation({ hoist });
+    if (hoist) await this.machineInformation.fillConstructionHoist();
+    else {
+      await this.documents.uploadVisibleMandatoryDocuments();
+      await this.machineInformation.fill();
+    }
     await this.goToReviewQuestions();
-    await this.answerReviewQuestions();
+    const existingBuildingAnswer = await this.answerReviewQuestions();
     await this.attestSubmitAndPayLater();
     await this.expectConfirmation();
+    return { ...selection, existingBuildingAnswer };
+  }
+
+  async selectApplicationAndPermit({ appType, perType, application, permit, endorsement }) {
+    await this.page.getByRole('radio', { name: application.radio, exact: true }).check();
+    const byName = this.page.getByRole('radio', { name: permit.radio ?? permit.label, exact: true });
+    const generic = this.page.getByRole('radio', { name: 'License Type', exact: true });
+    await expect(byName.or(generic).first(), `Permit radios for ${appType} should appear`).toBeVisible();
+    let radio = byName;
+    if (!(await byName.count())) {
+      // The recorded build exposes both permit radios with the same accessible name.
+      await expect(generic, `Unexpected permit radio layout for ${appType}`).toHaveCount(Object.keys(application.permits).length);
+      radio = generic.nth(permit.radioIndex);
+    }
+    await radio.check();
+    await expect(radio).toBeChecked();
+
+    const selection = { appType, perType };
+    if (permit.endorsementFor) {
+      const licenseType = permit.endorsementFor;
+      const pool = licenseType === 'RESIDENTIAL' ? RESIDENTIAL_CONVEYANCE_TYPES : COMM_CONVEYANCE_TYPES;
+      await this.waitForConveyanceRadios(`${perType} endorsement`);
+      selection.conveyanceType = await checkRandomAvailableRadio(this.page,
+        endorsement ? [endorsement.conveyanceType] : pool,
+        { label: `${perType} endorsement${endorsement ? ` (${endorsement.code})` : ''}`, timeout: 10000 });
+      selection.endorsementCode = endorsement?.code ?? endorsementCodeForConveyance(licenseType, selection.conveyanceType);
+    }
+    logger.info(`Selected ${appType} / ${perType}${selection.conveyanceType ? ` / ${selection.conveyanceType}` : ''}`);
+    await this.page.getByRole('button', { name: 'Next', exact: true }).click();
     return selection;
-  }
-
-  // ─── Step Methods ─────────────────────────────────────────────────────────
-
-  async selectApplicationTypeAndLicense() {
-    await this.waitForVisible(this.newConveyanceRadio, 150000);
-    await this.newConveyanceRadio.check();
-
-    const selection = await this.selectConfiguredLicenseAndConveyance();
-    logger.info(`Conveyance type: ${selection.conveyanceType}`);
-
-    await this.page.getByRole('button', { name: 'Next' }).click();
-    return selection;
-  }
-
-  /**
-   * Selects the configured endorsement code, or a random available type when blank.
-   * @returns {Promise<{ licenseType: string, conveyanceType: string, typeName: string }>}
-   */
-  async selectConfiguredLicenseAndConveyance() {
-    const licenseType   = appConfig.licenseType;
-    const licenseRadios = this.page.getByRole('radio', { name: 'License Type' });
-
-    if (licenseType === 'RESIDENTIAL') {
-      const radio = licenseRadios.first();
-      await this.waitForVisible(radio, 150000);
-      await radio.check();
-      logger.info('License Type selected: RESIDENTIAL');
-      await this.waitForConveyanceRadios('residential conveyance type');
-      const { conveyanceType, endorsementCode } = await this.selectConfiguredOrRandomConveyance({
-        licenseType,
-        configuredCode: appConfig.resType,
-        pool: RESIDENTIAL_CONVEYANCE_TYPES,
-        label: 'residential conveyance type',
-      });
-      return { licenseType, conveyanceType, typeName: conveyanceType, endorsementCode };
-    }
-
-    if (licenseType === 'COMMERCIAL') {
-      const radio = licenseRadios.nth(1);
-      await this.waitForVisible(radio, 150000);
-      await radio.check();
-      logger.info('License Type selected: COMMERCIAL');
-      await this.waitForConveyanceRadios('commercial conveyance type');
-      const { conveyanceType, endorsementCode } = await this.selectConfiguredOrRandomConveyance({
-        licenseType,
-        configuredCode: appConfig.commType,
-        pool: COMM_CONVEYANCE_TYPES,
-        label: 'commercial conveyance type',
-      });
-      return { licenseType, conveyanceType, typeName: conveyanceType, endorsementCode };
-    }
-
-    throw new Error(`Unsupported LICENSE_TYPE "${licenseType}". Use RESIDENTIAL or COMMERCIAL.`);
-  }
-
-  async selectConfiguredOrRandomConveyance({ licenseType, configuredCode, pool, label }) {
-    if (!configuredCode) {
-      const conveyanceType = await checkRandomAvailableRadio(this.page, pool, {
-        label,
-        timeout: 10000,
-      });
-      logger.info(`No ${licenseType} endorsement override provided; selected randomly.`);
-      return {
-        conveyanceType,
-        endorsementCode: endorsementCodeForConveyance(licenseType, conveyanceType),
-      };
-    }
-
-    const configuredSelection = resolveEndorsementSelection(licenseType, configuredCode);
-    if (!configuredSelection) {
-      throw new Error(
-        `Unsupported ${licenseType} endorsement code "${configuredCode}". ` +
-        `Supported codes: ${endorsementCodesForLicense(licenseType).join(', ')}.`,
-      );
-    }
-
-    const conveyanceType = await checkRandomAvailableRadio(
-      this.page,
-      [configuredSelection.conveyanceType],
-      { label: `${label} (${configuredSelection.code})`, timeout: 10000 },
-    );
-    logger.info(
-      `${licenseType} endorsement override selected: ` +
-      `${configuredSelection.code} -> ${configuredSelection.conveyanceType}`,
-    );
-    return { conveyanceType, endorsementCode: configuredSelection.code };
   }
 
   async continueFromEntityInformation() {
@@ -161,25 +99,28 @@ export class PermitApplicationPage extends BasePage {
     await entityNext.click();
   }
 
-  async fillAddressInformation() {
+  async fillAddressInformation({ hoist = false } = {}) {
     await this.page.locator('#ddlCopy_LMA').waitFor({ state: 'visible', timeout: 150000 });
     await this.waitForLoad('domcontentloaded');
 
     try {
       await safeSelect(this.page.locator('#ddlCopy_LMA'),    TEST_DATA.lmaCopySource);
       await fillField (this.page.locator('#ContactName_LMA'), randomEnglishName());
-      await fillField (this.page.locator('#txtAlternatePhone_LMA'), randomPhone10());
-      await fillField (this.page.locator('#txtFax_LMA'),      randomPhone10());
+      if (!hoist) {
+        await fillField(this.page.locator('#txtAlternatePhone_LMA'), randomPhone10());
+        await fillField(this.page.locator('#txtFax_LMA'), randomPhone10());
+      }
 
       await safeSelect(this.page.locator('#ddlCopy_SLA'),    TEST_DATA.slaCopySource);
-      await fillField (this.page.locator('#ContactName_SLA'), randomEnglishName());
+      if (!hoist) await fillField(this.page.locator('#ContactName_SLA'), randomEnglishName());
 
       await fillField(this.page.getByRole('textbox', { name: 'Building Name' }),  randomBuildingName());
-      await fillField(this.page.getByRole('textbox', { name: 'Location Notes' }), TEST_DATA.locationNotes);
+      if (!hoist) await fillField(this.page.getByRole('textbox', { name: 'Location Notes' }), TEST_DATA.locationNotes);
 
       await safeSelect(this.page.locator('#ddlCopy_CON'),    TEST_DATA.contractorCopySource);
-      await fillField (this.page.locator('#ContactName_CON'), randomEnglishName());
+      if (!hoist) await fillField(this.page.locator('#ContactName_CON'), randomEnglishName());
     } catch (error) {
+      if (hoist) throw error;
       logger.warn(`Address step error (retrying after page settle): ${error.message.split('\n')[0]}`);
       await this.waitForLoad('networkidle');
     }
@@ -188,37 +129,38 @@ export class PermitApplicationPage extends BasePage {
     await this.waitForLoad('domcontentloaded');
   }
 
-  async fillOwnerInformation() {
+  async fillOwnerInformation({ hoist = false } = {}) {
     await this.waitForLoad('domcontentloaded');
 
-    const ownerExistsDropdown = await this.openOwnerInformationDialog();
+    const ownerExistsDropdown = await this.openOwnerInformationDialog({ directLookup: hoist });
 
-    let ownerExistsValue = pick(TEST_DATA.ownerExistsOptions);
-    const configuredExistingUbi = TEST_DATA.ownerExistingUbiByEnvironment[appConfig.environment];
+    let ownerExistsValue = hoist ? 'Y' : pick(TEST_DATA.ownerExistsOptions);
+    const configuredExistingUbi = TEST_DATA.ownerExistingUbi;
 
-    if (ownerExistsValue === 'Y' && !configuredExistingUbi) {
-      logger.warn(`No existing owner UBI configured for ${appConfig.environment}; using Owner Exists: N.`);
+    if (!hoist && ownerExistsValue === 'Y' && !configuredExistingUbi) {
+      logger.warn('No existing owner UBI configured; using Owner Exists: N.');
       ownerExistsValue = 'N';
     }
 
     logger.info(`Owner Exists: ${ownerExistsValue}`);
-    await safeSelect(ownerExistsDropdown, ownerExistsValue);
+    if (ownerExistsDropdown) await safeSelect(ownerExistsDropdown, ownerExistsValue);
     await this.waitForLoad('domcontentloaded');
 
     if (ownerExistsValue === 'Y') {
       const ownerExistingUbi = configuredExistingUbi;
       if (!ownerExistingUbi) {
-        throw new Error(`Missing existing owner UBI for ${appConfig.environment}. Add it in TEST_DATA.ownerExistingUbiByEnvironment.`);
+        throw new Error('Missing existing owner UBI. Set TEST_DATA.ownerExistingUbi in editableData.js.');
       }
 
-      logger.info(`Existing Owner UBI (${appConfig.environment}): ${ownerExistingUbi}`);
+      logger.info(`Existing Owner UBI: ${ownerExistingUbi}`);
       await fillField(this.page.getByRole('textbox', { name: 'UBI #' }), ownerExistingUbi, { pressTab: false });
       await this.page.getByRole('button', { name: 'Search' }).click();
 
       const saveBtn = this.page.getByRole('button', { name: 'Save' });
       await this.waitForVisible(saveBtn, 150000);
       await saveBtn.click();
-      await this.page.locator('mat-dialog-container').waitFor({ state: 'hidden', timeout: 150000 }).catch(() => {});
+      if (hoist) await expect(saveBtn).toBeHidden();
+      else await this.page.locator('mat-dialog-container').waitFor({ state: 'hidden', timeout: 150000 }).catch(() => {});
     } else {
       await fillField(this.page.locator('#txtUBI1'),                                          randomUBI());
       await fillField(this.page.getByRole('textbox', { name: 'Owner Name' }),                 randomEnglishName());
@@ -248,7 +190,9 @@ export class PermitApplicationPage extends BasePage {
   }
 
   async goToReviewQuestions() {
-    const nextToReview = this.page.getByRole('button', { name: 'Next' }).nth(2);
+    // Ignore the document grid's disabled pagination button.
+    const nextToReview = this.page.getByRole('button', { name: /^Next$/i, disabled: false })
+      .filter({ visible: true }).last();
     await this.waitForVisible(nextToReview, 100000);
     await nextToReview.click();
   }
@@ -277,6 +221,7 @@ export class PermitApplicationPage extends BasePage {
     }
 
     const questionCount = await questionItems.count();
+    let existingBuildingAnswer;
     logger.info(`Question items found: ${questionCount}`);
 
     for (let index = 0; index < questionCount; index++) {
@@ -291,7 +236,8 @@ export class PermitApplicationPage extends BasePage {
         continue;
       }
 
-      await this.answerQuestionItem(questionItem, index);
+      const { questionText, answer } = await this.answerQuestionItem(questionItem, index);
+      if (EXISTING_BUILDING_QUESTION.test(questionText)) existingBuildingAnswer = answer;
     }
 
     const unansweredQuestions = await this.getUnansweredQuestionTexts(questionsSection);
@@ -300,6 +246,7 @@ export class PermitApplicationPage extends BasePage {
         `Question tab still has unanswered required radio question(s): ${unansweredQuestions.join(' | ')}`
       );
     }
+    return existingBuildingAnswer;
   }
 
   async attestSubmitAndPayLater() {
@@ -346,7 +293,7 @@ export class PermitApplicationPage extends BasePage {
       const checked = await this.checkQuestionRadioAnswer(questionItem, answer);
       if (checked) {
         logger.info(`Answered review question ${index + 1}: ${answer} (${questionText})`);
-        return;
+        return { questionText, answer };
       }
     }
 
@@ -480,13 +427,16 @@ export class PermitApplicationPage extends BasePage {
     return String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
   }
 
-  async openOwnerInformationDialog() {
+  async openOwnerInformationDialog({ directLookup = false } = {}) {
     const ownerExistsDropdown = this.page.getByLabel('Does the owner already exist');
+    const directUbi = this.page.getByRole('textbox', { name: 'UBI #', exact: true });
+    const ownerControl = directLookup ? ownerExistsDropdown.or(directUbi).filter({ visible: true }) : ownerExistsDropdown;
     const addLinks = this.page.getByRole('link', { name: /^Add$/i });
     const addButtons = this.page.getByRole('button', { name: /^Add$/i });
 
-    await this.waitForOwnerInformationReady(ownerExistsDropdown, [addLinks, addButtons]);
+    await this.waitForOwnerInformationReady(ownerControl.first(), [addLinks, addButtons]);
     if (await ownerExistsDropdown.isVisible().catch(() => false)) return ownerExistsDropdown;
+    if (directLookup && await directUbi.isVisible()) return null;
 
     const candidates = [];
 
@@ -530,10 +480,10 @@ export class PermitApplicationPage extends BasePage {
         await addOwner.evaluate((element) => element.click());
       }
 
-      const opened = await ownerExistsDropdown.waitFor({ state: 'visible', timeout: 15000 })
+      const opened = await ownerControl.first().waitFor({ state: 'visible', timeout: 15000 })
         .then(() => true)
         .catch(() => false);
-      if (opened) return ownerExistsDropdown;
+      if (opened) return await ownerExistsDropdown.isVisible() ? ownerExistsDropdown : null;
     }
 
     const pageText = await this.page.locator('main').innerText({ timeout: 5000 }).catch(() => '');

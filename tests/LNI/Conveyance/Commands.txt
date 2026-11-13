@@ -1,102 +1,55 @@
-LNI Conveyance E2E Playwright Framework - Commands
-==================================================
+Conveyance Playwright Commands
+==============================
 
-Recommended run location:
-  C:\Users\mohd.jamal\Downloads\Playwright
-
-You can also run from:
-  C:\Users\mohd.jamal\Downloads\Playwright\tests\LNI\Conveyance
-
-When you run "npm run conv", the framework runs all three scripts in serial order:
-  01_RegisterUser.spec.js -> 02_LoginApply.spec.js -> 03_ApproveApplication.spec.js
-
-Approval credentials are required before a non-list run containing 03 starts.
-Set both CONVEYANCE_APPROVER_LOGIN_NAME and CONVEYANCE_APPROVER_PASSWORD, or set
-the matching environment-specific pair (for example, *_TEST). Environment-specific
-credentials take precedence. Keep credentials in environment/local configuration, not commands.
-
-Each environment/license/project/repeat executes its own complete serial flow.
-02 passes its exact confirmed transaction to 03 using a fresh, isolated run file.
-The handoff verifies run ID, environment, license, URL, project and repeat; it never
-falls back to a previous run's transaction. --repeat-each repeats the complete flow.
-Apply/approve flows require retries=0; uncertain submissions must be inspected before
-a deliberate rerun, rather than automatically creating or approving a duplicate.
-
-Standalone approval (one environment/license/project; no repeated approval):
-  1. Set TransactionNumber in config/approvalTransacNumber.js to the exact transaction number.
-  2. Run Script 3 by itself:
-  npm run test -- --spec=approve --env=TEST --project=chromium
-The full 01 -> 02 -> 03 flow ignores TransactionNumber and approves only the
-fresh transaction captured by Script 2. Standalone Script 3 uses the configured number.
-
-Run one standalone script with "npm run test" and a spec selection:
-  npm run test -- --spec=register --env=TEST
-  npm run test -- --spec=apply --env=TEST
-
-Inspect without browser actions, credentials or approval:
-  npm run conv -- --list --env=TEST
-  npm run test -- --spec=approve --list --env=TEST
-
-
-Main Serial Flow Commands
-=========================
+Run from the workspace root or tests/LNI/Conveyance.
 
 npm run conv
-npm run conv -- --env=TEST --headed --project=chromium --repeat-each=2
-npm run conv -- --env=PROD --project=chromium --repeat-each=2
-npm run conv -- --env=PREPROD --headed --licenseType=COMMERCIAL
-npm run conv -- --env="PRE PROD" --headed --licenseType=COMMERCIAL --parallel=3
 
-Run selected environments concurrently with one license type:
-  npm run conv -- --env=PREPROD,TEST,PROD --licenseType=RESIDENTIAL --parallel=3
+The default is AppType=NCI, PerType=Res. The runner uses the single TEST URL
+in config/URL.js. Edit that file when the TEST build URL changes.
 
-Run both license types concurrently in TEST:
-  npm run conv -- --env=TEST --licenseType=RESIDENTIAL,COMMERCIAL --parallel=2
+Application and permit combinations
+-----------------------------------
+AppType   PerType                 Application
+NCI       Comm, Res               New Conveyance Installation
+CHI       CPH(A10.4), CMH(A10.5)   Construction Hoist Installation
 
-Run every environment and both license types (6 combinations):
-  npm run conv -- --env=ALL --licenseType=ALL --parallel=6
+Select one specific flow:
+  npm run conv -- --AppType=NCI --PerType=Comm --CommType=FC
+  npm run conv -- --AppType=NCI --PerType=Res --ResType=ORC
+  npm run conv -- --AppType=CHI "--PerType=CPH(A10.4)"
+  npm run conv -- --AppType=CHI "--PerType=CMH(A10.5)"
 
+Run both New Conveyance permits with specific endorsements:
+  npm run conv -- --AppType=NCI --PerType=Comm,Res --CommType=FC --ResType=ORC --parallel=2
 
-Environment Examples
-====================
+Run both hoist permits:
+  npm run conv -- --AppType=CHI --PerType=ALL --parallel=2
 
-npm run conv -- --env=TEST
-npm run conv -- --env=PREPROD
-npm run conv -- --env="PRE PROD"
-npm run conv -- --env=PROD
-npm run conv -- --env=ALL
-npm run conv -- --env=TEST,PROD,PREPROD
-npm run conv -- --env=PREPROD,TEST,PROD --parallel=3
+Run all four supported pairs:
+  npm run conv -- --AppType=ALL --PerType=ALL --parallel=4
 
+Run one permit from each application type:
+  npm run conv -- --AppType=NCI,CHI "--PerType=Comm,CMH(A10.5)" --CommType=FC --parallel=2
 
-License Type Examples
-=====================
+Use quotes around permit arguments containing parentheses. Lists are comma-
+separated and case-insensitive. ALL selects all supported choices. Each named
+AppType must have at least one compatible PerType. Invalid combinations stop
+before Playwright opens a browser. An explicit AppType with no PerType runs
+all permits for that application selection; otherwise defaults come from
+config/runSettings.json. Command-line values override the settings.
 
-npm run conv -- --licenseType=COMMERCIAL
-npm run conv -- --licenseType=RESIDENTIAL
-npm run conv -- --licenseType=RESIDENTIAL,COMMERCIAL --parallel=2
-npm run conv -- --licenseType=ALL --parallel=2
-npm run conv -- --env=TEST --licenseType=COMMERCIAL
-npm run conv -- --env="PRE PROD" --licenseType=RESIDENTIAL
-npm run conv -- --env=TEST,PREPROD --licenseType=RESIDENTIAL,COMMERCIAL --parallel=4
+Endorsements
+------------
+ResType applies only to NCI / Res, and CommType only to NCI / Comm.
+Blank selects one available endorsement randomly; use --ResType= or
+--CommType= to clear a configured override. CHI never selects an endorsement.
+Use a comma-separated list for specific endorsements, or ALL to run each
+configured endorsement as its own complete flow:
 
-
-Endorsement Type Override Examples
-==================================
-
-Select a specific Residential endorsement:
-  npm run conv -- --env="PRE PROD" --licenseType=RESIDENTIAL --ResType=ORC
-
-Select specific Residential and Commercial endorsements in a mixed matrix:
-  npm run conv -- --env=PREPROD,TEST --licenseType=RESIDENTIAL,COMMERCIAL --ResType=RC --CommType=FC --parallel=2
-
-Select a specific Commercial endorsement:
-  npm run conv -- --env=PROD --licenseType=COMMERCIAL --CommType=PASS
-
-Random selection:
-  Omit --ResType/--CommType, or leave resType/commType blank in runSettings.json.
-  ResType applies only to RESIDENTIAL combinations.
-  CommType applies only to COMMERCIAL combinations.
+  npm run conv -- --AppType=NCI --PerType=Comm --CommType=ALL --parallel=4
+  npm run conv -- --AppType=NCI --PerType=Comm --CommType=FC,LULA --parallel=2
+  npm run conv -- --AppType=NCI --PerType=Res --ResType=ALL --parallel=4
 
 Residential codes:
   ORC     OTHER RESIDENTIAL CONVEYANCE
@@ -137,136 +90,47 @@ Commercial codes:
   MW       MOVING WALK
   PASS     PASSENGER
 
-Invalid codes stop the run before opening a browser and print the supported codes.
+Parallel, browser and repeat options
+------------------------------------
+Each target runs Register -> Login/Apply -> Approve in order. --parallel=N
+limits concurrent full targets. Projects and --repeat-each expand the target
+list. Each target uses its own newly registered account and exact transaction
+handoff. The latest run is merged into one Playwright report.
 
+  npm run conv -- --AppType=ALL --PerType=ALL --parallel=4 --list
+  npm run conv -- --headed --project=chromium
+  npm run conv -- --project=firefox
+  npm run conv -- --project="Microsoft Edge"
+  npm run conv -- --repeat-each=2 --parallel=2
+  npm run conv -- --debug --project=chromium
 
-Browser / Headed Examples
-=========================
+--list shows the plan without signing in, changing records, or replacing the
+previous report. In runSettings.json, parallel sets the default concurrency
+and parallelWorkers is the limit used by a bare --parallel flag.
+Apply and approval require retries=0 to prevent duplicate submissions.
 
-npm run conv -- --project=chromium
-npm run conv -- --project=firefox
-npm run conv -- --project="Microsoft Edge"
-npm run conv -- --headed --project=chromium
-npm run conv -- --debug --project=chromium
+Standalone scripts
+------------------
+  npm run test -- --spec=register
+  npm run test -- --spec=apply --AppType=CHI "--PerType=CPH(A10.4)"
+  npm run test -- --spec=approve --AppType=CHI "--PerType=CPH(A10.4)" --transaction=<NUMBER>
 
+Use config/script2LoginCredentials.js for an existing applicant account.
+When both fields are blank, apply uses the last successfully registered account
+from testData/userData.json. Standalone approval requires one target and an
+explicit --transaction or the TransactionNumber in config/approvalTransacNumber.js.
+The full flow always uses the current run's captured transaction.
 
-Repeat / Parallel Examples
-==========================
+Set CONVEYANCE_APPROVER_LOGIN_NAME and CONVEYANCE_APPROVER_PASSWORD in the
+Conveyance .env file for approval. Keep actual credentials out of commands.
 
-npm run conv -- --repeat-each=2
-npm run conv -- --env=TEST --repeat-each=2
-npm run conv -- --env=PROD --project=chromium --repeat-each=2
-npm run conv -- --env="PRE PROD" --parallel=3
-npm run conv -- --env=ALL --licenseType=ALL --parallel=6
+Framework shortcuts: test:register, test:apply, test:approve, test:matrix, report.
+Workspace shortcuts: conveyance:e2e, conveyance:e2e:headed, conveyance:e2e:list,
+conveyance:e2e:matrix, conveyance:approve.
 
-Note:
-  --parallel controls how many environment/license combinations run at the same time.
-  Inside every combination, Script 1 finishes before Script 2, then Script 3 starts.
-  Each combination has isolated saved credentials and test artifacts.
-  All combination results are merged into one HTML report, which opens once after the complete matrix finishes.
-
-
-Standalone Script Commands
-==========================
-
-Run only Script 1 registration:
-  npm run test -- --spec=register --env=TEST --headed
-  npm run test -- --spec=01_RegisterUser.spec.js --env=PREPROD --project=chromium
-
-Run only Script 2 login/apply:
-  npm run test -- --spec=apply --env=TEST --headed
-  npm run test -- --spec=02_LoginApply.spec.js --env=PROD --project=chromium
-
-For standalone Script 2 credentials, edit:
-  tests\LNI\Conveyance\config\script2LoginCredentials.js
-
-If loginName/password are blank in that file, Script 2 uses the latest saved user:
-  tests\LNI\Conveyance\testData\userData.json
-
-Run only Script 3 approval:
-  npm run test -- --spec=approve --env=TEST --headed
-  npm run test -- --spec=03_ApproveApplication.spec.js --env=PROD --project=chromium
-
-Before running standalone Script 3, set its transaction number in:
-  tests\LNI\Conveyance\config\approvalTransacNumber.js -> TransactionNumber
-
-
-Config Files
-============
-
-Main run defaults:
-  tests\LNI\Conveyance\config\runSettings.json
-
-Important values in runSettings.json:
-  environment
-  licenseType
-  resType (blank = random Residential endorsement)
-  commType (blank = random Commercial endorsement)
-  defaultProject
-  workers
-  parallelWorkers
-  registrationLoginRetryLimit
-  documentUploadRetryLimit
-  documentUploadResultTimeoutMs
-  headless
-  maximizeWindow
-  viewport
-
-Editable test data:
-  tests\LNI\Conveyance\config\editableData.js
-
-Standalone Script 2 credentials:
-  tests\LNI\Conveyance\config\script2LoginCredentials.js
-
-
-Login / Entity Name Format
-==========================
-
-Login names use this format in TEST, PRE PROD, and PROD:
-  Conv_CC_12
-  Conv_CC_123
-  Conv_CC_1234
-
-The first registration attempt uses 2 digits.
-If the login name is taken, retry attempts use 3 digits, then 4 digits, then 5 digits, and so on.
-The maximum number of attempts is controlled here:
-  runSettings.json -> registrationLoginRetryLimit
-
-Entity names use this format in TEST, PRE PROD, and PROD:
-  CONV_DD-MM-YYYY_HH:MM:SS AM/PM
-
-Example:
-  CONV_25-06-2026_09:54:12 AM
-
-
-Useful Existing Package Shortcuts
-=================================
-
-From tests\LNI\Conveyance:
-  npm run test:register
-  npm run test:apply
-  npm run test:approve
-  npm run clean
-  npm run report
-
-From workspace root:
-  npm run conveyance:e2e
-  npm run conveyance:e2e:matrix
-  npm run conveyance:e2e:headed
-  npm run conveyance:e2e:list
-
-
-Notes
-=====
-
-- "conv" runs Scripts 1, 2 and 3 in serial order. "test" requires one standalone spec.
-- Environment and license-type lists create every combination. Example: 3 environments and 2 license types create 6 flows.
-- ResType is applied only to Residential combinations; CommType is applied only to Commercial combinations.
-- When the applicable endorsement code is blank, the framework selects randomly from its configured pool.
-- Use PREPROD inside comma-separated lists. For the spaced name, quote the whole value: --env="PRE PROD,TEST,PROD".
-- --parallel controls concurrent combinations; it never changes the Register -> Login/Apply -> Approve order inside a combination.
-- The HTML report opens automatically after the selected run finishes.
-- Use npm run report only when you want to reopen the latest report manually.
-- Environment names are normalized, so PREPROD and PRE PROD both work.
-- PROD existing-owner UBI is configured in editableData.js.
-- Questions tab answers still avoid selecting Yes.
+Configuration
+-------------
+config/URL.js              Single TEST URL
+config/runSettings.json    AppType, PerType, ResType, CommType and run options
+config/applicationTypes.js Supported application/permit pairs and UI labels
+config/editableData.js     Shared inputs and Construction Hoist fields

@@ -49,7 +49,7 @@ npm.cmd --prefix tests/HMB run hmb:register
 HMB login/apply only:
 npm.cmd --prefix tests/HMB run hmb:apply
 
-Conveyance (configured environment/license selections):
+Conveyance (configured application/permit selections):
 npm.cmd --prefix tests/LNI/Conveyance run conv
 
 Conveyance register only:
@@ -115,9 +115,12 @@ ECLIPSE DEBUGGER: ACTUAL JAVASCRIPT BREAKPOINTS
 
 These configurations use Eclipse's Node.js debugger, NOT Playwright Inspector.
 They attach to child Node.js processes, including Playwright test workers.
-They do not stop at startup: set your breakpoint before starting. With no
-breakpoints, the selected flow runs normally. Node internals/dependencies are
-skipped when stepping; your source files remain debuggable with source maps.
+Every saved Debug launch pauses at the shared launcher before npm starts.
+Eclipse can prompt to switch perspectives on that first pause, depending on
+your workspace preference and current perspective. Press F8 to start the
+selected flow, then Eclipse pauses at enabled breakpoints the flow reaches.
+Node internals and dependencies are skipped when stepping. Source maps keep
+your source files debuggable.
 
 Run does not pause at breakpoints or debugger statements. Debug can pause at
 enabled breakpoints and debugger statements. It does not automatically pause
@@ -138,8 +141,8 @@ Conveyance - E2E / Conveyance - Apply / Conveyance - Register
   E2E runs registration, application and approval using the current run's data.
   Apply runs only login/application using configured credentials or saved data.
   Register runs testScripts/01_RegisterUser.spec.js only and saves the account.
-  Runs scripts/run-env.mjs and the selected spec(s) in the correct flow order.
-  Set breakpoints in scripts/run-env.mjs for matrix selection, or in
+  Runs scripts/run-conveyance.mjs and the selected spec(s) in the correct flow order.
+  Set breakpoints in scripts/run-conveyance.mjs for matrix selection, or in
   testScripts/, pages/RegistrationPage.js and pages/PermitApplicationPage.js.
 
 DEBUG SELECTIONS AND LIMITATIONS
@@ -177,8 +180,8 @@ script. Repeat --arg=<value> for each argument in both modes and
 --debug-arg=<value> for Debug only. Use flags supported by the npm script.
 Keep each argument in a separate JSON string. The custom JSON args array
 controls the launch. Main tab Arguments can mirror it for readability.
-Keep runtimeExecutable, sourceMaps and autoAttachChildProcesses from the
-configuration you duplicated.
+Keep runtimeExecutable, sourceMaps, autoAttachChildProcesses and
+stopOnEntry: true from the configuration you duplicated.
 
 Keep the package directory and npm script name stable when moving or renaming
 internal runner or spec files. If the package directory or npm script name

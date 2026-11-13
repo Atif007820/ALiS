@@ -55,6 +55,10 @@ function queueFixture(resultMode) {
     </main>
     <div id="pullDialog" role="dialog" aria-label="Confirm Pull" hidden><button id="confirmPull">OK</button></div>
     <div id="statusDialog" role="dialog" aria-label="modal" hidden>
+      <div id="validation" hidden>
+        <p>Please review following errors and correct them.</p>
+        <ul><li>Make sure that all required checklist items are either completed or waived off.</li></ul>
+      </div>
       <table><tbody id="checklist"></tbody></table>
       <label for="applicationStatus">Application Status</label>
       <select id="applicationStatus"><option value=""></option><option value="ACP">Accepted</option><option value="APR">Approved</option></select>
@@ -119,26 +123,53 @@ function queueFixture(resultMode) {
       };
       function openStatus() {
         // Renumber and shuffle checklist items to exercise wording rather than row positions.
-        const items = state.saved.length === 0
-          ? [['review-b', '14 All (State Only) Review'], ['mandatory', '8 All Mandatory Required'],
-            ['additional', '13 All Additional Supporting'], ['ensure', '9 All (State Only) Ensure'],
-            ['review-a', '11 All (State Only) Review']]
+        let items = state.saved.length === 0
+          ? [['review-b', '14 All (State Only) Review Application Fee'], ['mandatory', '8 All Mandatory Required'],
+            ['additional', '13 All Additional Supporting'], ['ensure', '9 All (State Only) Ensure payment linked to permit #'],
+            ['review-a', '11 All (State Only) Review copy of contract and verify permit purchase price is correct']]
           : [['additional', '10 All Additional Supporting'], ['mandatory', '21 All Mandatory Required']];
+        if (resultMode === 'hoist') {
+          items = state.saved.length === 0
+            ? [['payment', '3 All (State Only) Ensure payment linked to permit #'],
+              ['additional', '1 All Additional Supporting Document(s)'],
+              ['fee', '2 All (State Only) Review Application Fee']]
+            : [['additional', '1 All Additional Supporting Document(s)']];
+        }
+        if (state.saved.length && resultMode === 'commercial') {
+          items.unshift(['blind-hoistway', '19 (State Only) Verify Blind Hoistway value is correct on Conveyance Information tab']);
+        }
+        if (state.saved.length && resultMode === 'unknown-checklist') {
+          items.push(['unrecognized', '24 (State Only) Verify additional engineering review']);
+        }
+        if (resultMode === 'building-official') {
+          items.unshift(['building-official', '31 Commercial Approval by Building Official (Required for existing buildings)']);
+        }
+        if (resultMode === 'variant-fee') {
+          if (!state.saved.length) items = items.filter(([key]) => !['review-b', 'ensure'].includes(key));
+          else items.unshift(['fee', '7 All (State Only) Review Application Fee']);
+        }
+        if (resultMode === 'license-validation') {
+          items.unshift(['license-validation', '32 All (State Only) Validate Elevator Contractor License']);
+        }
         byId('checklist').innerHTML = items.map(([key, wording]) => '<tr><td>' + wording + '</td><td>' +
           '<select data-key="' + key + '" aria-label="item-status"><option value=""></option>' +
-          '<option value="CPT">Complete</option><option value="WOF">Waived</option></select></td></tr>').join('');
+          '<option value="CPT">Complete</option><option value="WOF">Waived</option><option value="PEN" selected>Pending</option></select></td></tr>').join('');
         byId('applicationStatus').value = '';
         byId('statusDialog').hidden = false;
       }
       byId('saveStatus').onclick = () => {
         state.saved.push({ status: byId('applicationStatus').value,
           items: Object.fromEntries([...byId('checklist').querySelectorAll('select')].map((select) => [select.dataset.key, select.value])) });
+        if (resultMode === 'reject-approval' && byId('applicationStatus').value === 'APR') {
+          byId('validation').hidden = false;
+          return;
+        }
         setTimeout(() => { byId('statusDialog').hidden = true; state.closedDialogs++; }, 300);
       };
     </script>`;
 }
 
-async function setup(t, resultMode) {
+async function setup(t, resultMode = 'default') {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   t.after(() => context.close());
   // Fulfill the configured login URL locally. No other request can reach the portal.
@@ -174,6 +205,79 @@ test('accepts then approves only the exact transaction with the correct checklis
     { status: 'APR', items: { mandatory: 'CPT', additional: 'WOF' } },
   ]);
   assert.equal(state.closedDialogs, 2);
+});
+
+test('marks the Commercial Blind Hoistway checklist item Complete before approval', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'commercial');
+  await workflow.acceptApplication(application);
+  await workflow.approveApplication(application);
+  const state = await page.evaluate(() => window.approvalState);
+  assert.deepEqual(state.saved.at(-1), {
+    status: 'APR', items: { 'blind-hoistway': 'CPT', mandatory: 'CPT', additional: 'WOF' },
+  });
+  assert.equal(state.closedDialogs, 2);
+});
+
+test('accepts and approves a hoist transaction without requiring an NCI plan row', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'hoist');
+  const target = { ...application, appType: 'CHI', perType: 'CMH(A10.5)' };
+  await workflow.acceptApplication(target);
+  await workflow.approveApplication(target);
+  assert.deepEqual(await page.evaluate(() => window.approvalState.saved), [
+    { status: 'ACP', items: { payment: 'CPT', additional: 'WOF', fee: 'CPT' } },
+    { status: 'APR', items: { additional: 'WOF' } },
+  ]);
+});
+
+test('waives the Building Official row only when the NCI commercial application says it is not applicable', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'building-official');
+  const target = { ...application, appType: 'NCI', perType: 'Comm', existingBuildingAnswer: 'N/A' };
+  await workflow.acceptApplication(target);
+  await workflow.approveApplication(target);
+  const saves = await page.evaluate(() => window.approvalState.saved);
+  assert.deepEqual(saves.map(({ status, items }) => [status, items['building-official']]), [
+    ['ACP', 'WOF'], ['APR', 'WOF'],
+  ]);
+});
+
+test('does not guess Building Official approval status for an existing building or missing answer', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'building-official');
+  for (const existingBuildingAnswer of ['Yes', undefined]) {
+    const target = { ...application, appType: 'NCI', perType: 'Comm', existingBuildingAnswer };
+    await assert.rejects(() => workflow.acceptApplication(target), /unresolved approval checklist.*ACP.*Approval by Building Official.*Pending/);
+    assert.deepEqual(await page.evaluate(() => window.approvalState.saved), []);
+    await page.locator('#statusDialog').evaluate(dialog => { dialog.hidden = true; });
+  }
+});
+
+test('names an unrecognized pending checklist item and stops before saving approval', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'unknown-checklist');
+  await workflow.acceptApplication(application);
+  await assert.rejects(() => workflow.approveApplication(application), /unresolved approval checklist.*additional engineering review.*Pending/);
+  assert.deepEqual(await page.evaluate(() => window.approvalState.saved.map(item => item.status)), ['ACP']);
+});
+
+test('handles NCI fee and payment rows by name across stage variants', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'variant-fee');
+  await workflow.acceptApplication(application);
+  await workflow.approveApplication(application);
+  assert.deepEqual(await page.evaluate(() => window.approvalState.saved), [
+    { status: 'ACP', items: { mandatory: 'CPT', 'review-a': 'CPT', additional: 'WOF' } },
+    { status: 'APR', items: { fee: 'CPT', mandatory: 'CPT', additional: 'WOF' } },
+  ]);
+});
+
+test('requires manual review for a pending contractor-license validation', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'license-validation');
+  await assert.rejects(() => workflow.acceptApplication(application), /unresolved approval checklist.*ACP.*Validate Elevator Contractor License.*Pending/);
+  assert.deepEqual(await page.evaluate(() => window.approvalState.saved), []);
+});
+
+test('reports an ALiS save rejection without saving twice', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'reject-approval');
+  await workflow.acceptApplication(application);
+  await assert.rejects(() => workflow.approveApplication(application), /ALiS rejected status APR.*Make sure that all required checklist items/i);
+  assert.deepEqual(await page.evaluate(() => window.approvalState.saved.map(item => item.status)), ['ACP', 'APR']);
 });
 
 for (const resultMode of ['prefix-only', 'duplicate']) {

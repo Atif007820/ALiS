@@ -13,18 +13,41 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const workerCheck = process.argv.includes('--playwright-worker');
 const runOnly = process.argv.includes('--run');
 const viaLauncher = process.argv.includes('--via-launcher');
+const savedLaunch = process.argv.find(arg => arg.startsWith('--saved-launch='))?.slice('--saved-launch='.length);
+const savedScripts = {
+  'HMB - E2E': 'hmb',
+  'HMB - Apply': 'hmb:apply',
+  'HMB - Register': 'hmb:register',
+  'Conveyance - E2E': 'conv',
+  'Conveyance - Apply': 'test:apply',
+  'Conveyance - Register': 'test:register',
+};
+const specs = ['01_RegisterUser.spec.js', '02_LoginApply.spec.js', '03_ApproveApplication.spec.js'];
+assert.ok(savedLaunch === undefined || Object.hasOwn(savedScripts, savedLaunch), 'Choose one of the six saved launch names.');
+assert.ok(savedLaunch === undefined || (!workerCheck && !viaLauncher), '--saved-launch is separate from the local worker check.');
 assert.ok(!viaLauncher || workerCheck, '--via-launcher requires --playwright-worker.');
 const fixture = path.join(root, 'eclipse', 'debug', workerCheck ? 'workerCheck.spec.js' : 'breakpointCheck.mjs');
-const expectedRoles = workerCheck ? ['worker'] : ['child', 'parent'];
+const expectedRoles = savedLaunch ? [] : workerCheck ? ['worker'] : ['child', 'parent'];
 const temporaryOutput = workerCheck ? fs.mkdtempSync(path.join(os.tmpdir(), 'eclipse-debug-check-')) : null;
 const temporaryPackage = viaLauncher ? fs.mkdtempSync(path.join(root, 'eclipse', 'debug', '.npm worker check-')) : null;
-const xml = new DOMParser().parseFromString(fs.readFileSync(path.join(root, 'eclipse', 'launches', 'HMB - E2E.launch'), 'utf8'), 'application/xml');
-const parameterNode = Array.from({ length: xml.getElementsByTagName('stringAttribute').length }, (_, i) => xml.getElementsByTagName('stringAttribute').item(i))
-  .find(node => node.getAttribute('key') === 'org.eclipse.lsp4e.debug.model.ATTR_DSP_PARAM');
-const parameters = JSON.parse(parameterNode.getAttribute('value'));
-const checkLine = fs.readFileSync(fixture, 'utf8').split('\n').findIndex(line => line.trim() === 'debugger;') + 1;
+const launchPath = path.join(root, 'eclipse', 'launches', `${savedLaunch ?? 'HMB - E2E'}.launch`);
+const xml = new DOMParser().parseFromString(fs.readFileSync(launchPath, 'utf8'), 'application/xml');
+const attributes = Object.fromEntries(Array.from({ length: xml.getElementsByTagName('stringAttribute').length }, (_, i) => {
+  const node = xml.getElementsByTagName('stringAttribute').item(i);
+  return [node.getAttribute('key'), node.getAttribute('value')];
+}));
+const parameters = JSON.parse(attributes['org.eclipse.lsp4e.debug.model.ATTR_DSP_PARAM']);
+const launcher = path.resolve(resolveVariables(attributes.program));
+const cwd = path.resolve(resolveVariables(attributes['org.eclipse.debug.core.ATTR_WORKING_DIRECTORY']));
+const playwrightCli = path.join(root, 'node_modules', '@playwright', 'test', 'cli.js');
+const program = savedLaunch || viaLauncher ? launcher : workerCheck ? playwrightCli : fixture;
+const expectEntry = !runOnly && (!workerCheck || viaLauncher);
+if (expectEntry) assert.equal(parameters.stopOnEntry, true, `${launchPath} must enable Debug startup suspension.`);
+const checkLine = fs.readFileSync(fixture, 'utf8').split('\n').findIndex(line => line.trim().endsWith('// Source breakpoint.')) + 1;
+assert.ok(checkLine > 0, `Source breakpoint line missing from ${fixture}.`);
 const sessions = new Set();
 const roles = new Set();
+let entryVerified = false;
 let stepVerified = false;
 let adapterOutput = '';
 let applicationOutput = '';
@@ -36,7 +59,7 @@ const fail = error => { if (!finished) { finished = true; doneReject(error); } }
 const adapter = spawn(process.execPath, [path.resolve(adapterPath), '0', '127.0.0.1'], {
   stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DA_TEST_DISABLE_TELEMETRY: 'true' },
 });
-const timer = setTimeout(() => fail(new Error(`Debug adapter verification timed out. ${adapterOutput.slice(-1500)}`)), 55000);
+const timer = setTimeout(() => fail(new Error(`Debug adapter verification timed out.\n${applicationOutput.slice(-1500)}\n${adapterOutput.slice(-1500)}`)), 55000);
 adapter.once('error', fail);
 
 class Client {
@@ -106,14 +129,14 @@ class Client {
       if (message.event === 'terminated' && !this.isRoot) {
         this.request('disconnect').catch(() => {}).finally(() => this.socket.destroy());
       }
-      if (message.event === 'terminated' && runOnly && this.isRoot && !finished) {
-        const marker = workerCheck ? '1 passed' : 'Breakpoint check complete.';
-        if (!applicationOutput.includes(marker)) fail(new Error(`Run mode did not complete its local fixture: ${applicationOutput}`));
-        else { finished = true; doneResolve(); }
-      }
-      if (message.event === 'terminated' && roles.size === expectedRoles.length && stepVerified && !finished) {
-        finished = true;
-        doneResolve();
+      if (message.event === 'terminated' && this.isRoot && !finished) {
+        try {
+          verifyCompletion();
+          finished = true;
+          doneResolve();
+        } catch (error) {
+          fail(error);
+        }
       }
     }
   }
@@ -135,7 +158,9 @@ async function setupSession(command, configuration) {
   const launching = client.request(command, configuration);
   launching.catch(fail);
   await initialized;
-  await client.request('setBreakpoints', { source: { path: fixture }, breakpoints: [{ line: checkLine }] });
+  if (!savedLaunch) {
+    await client.request('setBreakpoints', { source: { path: fixture }, breakpoints: [{ line: checkLine }] });
+  }
   await client.request('configurationDone');
   await launching;
   return client;
@@ -145,11 +170,26 @@ async function inspectStop(client, stopped) {
   const stack = await client.request('stackTrace', { threadId: stopped.threadId, levels: 1 });
   const frame = stack.stackFrames[0];
   console.log(`Stopped: ${stopped.reason}, ${frame.name}:${frame.line}, source=${frame.source?.path}`);
-  if (client.stepPending) {
+  if (stopped.reason === 'entry' && frame.source?.path && sameSource(frame.source.path, program)) {
+    // js-debug can report the program entry stop in a separate target session.
+    // The parent/child fixture runs the same source in both processes.
+    const child = program === fixture && (await client.request('evaluate', {
+      expression: 'process.argv.includes("--child")', frameId: frame.id,
+    })).result === 'true';
+    if (!child) {
+      assert.ok(expectEntry, 'The debugger suspended at an unexpected startup stop.');
+      assert.equal(entryVerified, false, 'The root launch paused at entry more than once.');
+      entryVerified = true;
+      console.log('Verified root startup pause and resuming the launch.');
+    }
+  } else if (client.stepPending) {
+    assert.equal(stopped.reason, 'step');
+    assert.ok(frame.source?.path && sameSource(frame.source.path, fixture) && frame.line > checkLine);
     client.stepPending = false;
     stepVerified = true;
     console.log('Verified step-over in the paused application code.');
-  } else if (frame.source?.path && sameSource(frame.source.path, fixture) && frame.line >= checkLine) {
+  } else if (!savedLaunch && frame.source?.path && sameSource(frame.source.path, fixture) && frame.line === checkLine) {
+    assert.equal(stopped.reason, 'breakpoint');
     const role = await client.request('evaluate', { expression: 'inspection.role', frameId: frame.id, context: 'watch' });
     const answer = await client.request('evaluate', { expression: 'inspection.answer', frameId: frame.id, context: 'watch' });
     assert.equal(answer.result, '42');
@@ -177,6 +217,34 @@ function sameSource(source, target) {
   return normalize(source) === normalize(target);
 }
 
+function resolveVariables(value) {
+  return value.replaceAll('${workspace_loc:/Playwright}', root).replace(/\$\{env_var:([^}]+)\}/g, (_, name) => {
+    const key = Object.keys(process.env).find(key => key.toLowerCase() === name.toLowerCase());
+    assert.ok(key, `Missing launch environment variable ${name}.`);
+    return process.env[key];
+  });
+}
+
+function verifyCompletion() {
+  assert.equal(entryVerified, expectEntry, 'The launch did not suspend at its entry point.');
+  if (savedLaunch) {
+    const expectedScript = savedScripts[savedLaunch];
+    const expectedMode = runOnly ? 'Run' : 'Debug';
+    assert.ok(applicationOutput.includes(`Eclipse ${expectedMode}: ${savedLaunch} (npm run ${expectedScript})`), applicationOutput);
+    const listed = new Set([...applicationOutput.matchAll(/^\s*\[chromium\]\s+›\s+([^\r\n]+?\.spec\.js):\d+:\d+\s+›/gm)]
+      .map(match => path.basename(match[1])));
+    const expected = savedLaunch.endsWith(' - Register') ? [specs[0]]
+      : savedLaunch.endsWith(' - Apply') ? [specs[1]] : specs;
+    assert.deepEqual([...listed].sort(), [...expected].sort(), applicationOutput);
+    return;
+  }
+
+  const marker = workerCheck ? '1 passed' : 'Breakpoint check complete.';
+  assert.ok(applicationOutput.includes(marker), `The local fixture did not complete:\n${applicationOutput}`);
+  assert.deepEqual([...roles].sort(), runOnly ? [] : expectedRoles);
+  assert.equal(stepVerified, !runOnly, 'The debugger did not step over the source breakpoint.');
+}
+
 try {
   if (temporaryPackage) {
     fs.writeFileSync(path.join(temporaryPackage, 'package.json'), JSON.stringify({
@@ -195,29 +263,28 @@ try {
   });
   await Promise.race([ready, done]);
   const playwrightConfig = path.join(root, 'eclipse', 'debug', 'playwright.config.js');
-  const program = viaLauncher
-    ? path.join(root, 'eclipse', 'runtime', 'runFramework.mjs')
-    : workerCheck ? path.join(root, 'node_modules', '@playwright', 'test', 'cli.js') : fixture;
-  const args = viaLauncher ? [
+  const modeArgument = `--eclipse-mode=${runOnly ? 'run' : 'debug'}`;
+  const args = savedLaunch ? [...parameters.args, '--arg=--list', modeArgument] : viaLauncher ? [
     `--package=${path.relative(root, temporaryPackage)}`, '--script=check',
     `--arg=--config=${playwrightConfig}`, `--arg=--output=${temporaryOutput}`,
-    `--eclipse-mode=${runOnly ? 'run' : 'debug'}`,
+    modeArgument,
   ] : workerCheck ? ['test', '--config', playwrightConfig, '--output', temporaryOutput] : [];
   const run = setupSession('launch', {
-    ...parameters, runtimeExecutable: process.execPath, env: {},
+    ...parameters, runtimeExecutable: resolveVariables(parameters.runtimeExecutable),
+    env: Object.fromEntries(Object.entries(parameters.env).map(([key, value]) => [key, resolveVariables(value)])),
     args,
-    stopOnEntry: false,
+    stopOnEntry: expectEntry,
     type: 'pwa-node', request: 'launch', name: 'Eclipse breakpoint verification',
     program,
-    cwd: root, outputCapture: 'std', noDebug: runOnly,
+    cwd, outputCapture: 'std', noDebug: runOnly,
   });
   run.catch(fail);
   await done;
-  if (runOnly) {
-    assert.equal(roles.size, 0);
-    console.log('PASS: Run mode completes normally without pausing at configured breakpoints or debugger statements.');
+  if (savedLaunch) {
+    console.log(`PASS: ${savedLaunch} ${runOnly ? 'Run' : 'Debug'} discovered the expected specs in list mode.`);
+  } else if (runOnly) {
+    console.log('PASS: Run mode completed without pausing at configured source breakpoints.');
   } else {
-    assert.deepEqual([...roles].sort(), expectedRoles);
     console.log(`PASS: the installed Eclipse debug adapter supports ${workerCheck ? 'Playwright worker' : 'parent/child'} breakpoints, local variables and stepping.`);
   }
 } finally {

@@ -5,10 +5,8 @@
  * These appear in the HTML report under "Parameters".
  */
 
-import { BASE_URL, ENVIRONMENT_LABEL } from '../config/URL.js';
-import { appConfig } from '../config/runConfig.js';
-
-const RUN_ANNOTATION_TYPES = new Set(['Environment', 'Env URL', 'ENV URL', 'License Type']);
+import { LOGIN_URL } from '../config/URL.js';
+import { getApplicationTarget } from '../config/runConfig.js';
 
 function upsertAnnotation(testInfo, type, description) {
   if (!description) return;
@@ -22,19 +20,11 @@ function upsertAnnotation(testInfo, type, description) {
   testInfo.annotations.push({ type, description });
 }
 
-export function addEnvironmentAnnotations(testInfo) {
-  const otherAnnotations = testInfo.annotations.filter(
-    (annotation) => !RUN_ANNOTATION_TYPES.has(annotation.type)
-  );
-
-  testInfo.annotations.splice(
-    0,
-    testInfo.annotations.length,
-    { type: 'Environment', description: ENVIRONMENT_LABEL },
-    { type: 'ENV URL', description: BASE_URL },
-    { type: 'License Type', description: appConfig.licenseType },
-    ...otherAnnotations
-  );
+function addRunAnnotations(testInfo) {
+  const { application, permit } = getApplicationTarget();
+  upsertAnnotation(testInfo, 'Login URL', LOGIN_URL);
+  upsertAnnotation(testInfo, 'Application Type', application.label);
+  upsertAnnotation(testInfo, 'Permit Type', permit.label);
 }
 
 /**
@@ -46,7 +36,7 @@ export function addEnvironmentAnnotations(testInfo) {
 export function addUserAnnotations(testInfo, userData) {
   if (!userData) return;
 
-  addEnvironmentAnnotations(testInfo);
+  addRunAnnotations(testInfo);
 
   const { firstName, lastName, loginName, entityName, ubi } = userData;
 
@@ -71,29 +61,21 @@ export function addUserAnnotations(testInfo, userData) {
  * Attach permit-application details to the test report.
  *
  * @param {import('@playwright/test').TestInfo} testInfo
- * @param {{ licenseType?: string, conveyanceType?: string, typeName?: string, endorsementCode?: string, transactionNumber?: string }} selection
+ * @param {{ conveyanceType?: string, endorsementCode?: string, transactionNumber?: string }} selection
  */
 export function addApplyAnnotations(testInfo, {
-  licenseType,
   conveyanceType,
-  typeName,
   endorsementCode,
   transactionNumber,
 } = {}) {
-  addEnvironmentAnnotations(testInfo);
-
-  const resolvedLicenseType = licenseType || appConfig.licenseType;
-  const resolvedTypeName = typeName || conveyanceType;
-
-  upsertAnnotation(testInfo, 'License Type', resolvedLicenseType);
+  addRunAnnotations(testInfo);
   upsertAnnotation(testInfo, 'Endorsement Code', endorsementCode);
-  upsertAnnotation(testInfo, 'Conveyance Type', resolvedTypeName);
+  upsertAnnotation(testInfo, 'Conveyance Type', conveyanceType);
   upsertAnnotation(testInfo, 'Transaction Number', transactionNumber);
 }
 
-export function addApprovalAnnotations(testInfo, { transactionNumber, entityName, status } = {}) {
-  addEnvironmentAnnotations(testInfo);
-  upsertAnnotation(testInfo, 'Transaction Number', transactionNumber);
+export function addApprovalAnnotations(testInfo, { transactionNumber, entityName, status, conveyanceType, endorsementCode } = {}) {
+  addApplyAnnotations(testInfo, { transactionNumber, conveyanceType, endorsementCode });
   upsertAnnotation(testInfo, 'Entity', entityName);
   upsertAnnotation(testInfo, 'Application Status', status);
 }

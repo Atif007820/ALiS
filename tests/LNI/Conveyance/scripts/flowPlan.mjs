@@ -31,7 +31,7 @@ export function flowAxes(args, availableProjects) {
 export function expandFlowTargets(targets, axes) {
   return targets.flatMap(target => axes.projects.flatMap(project => Array.from({ length: axes.repeat }, (_, repeatIndex) => ({
     ...target, project, repeatIndex, runId: randomUUID(),
-    matrixSlug: target.slug,
+    selectionLabel: target.label,
     slug: `${target.slug}-${project.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-r${repeatIndex + 1}`,
     label: `${target.label} / ${project} / repeat ${repeatIndex + 1}`,
   }))));
@@ -49,7 +49,7 @@ export function assertApprovalSelection(specs, targets, transactionNumber) {
     if (!transactionNumber) {
       throw new Error('Standalone approval requires TransactionNumber in config/approvalTransacNumber.js; stale saved transactions are never used.');
     }
-    if (targets.length !== 1) throw new Error('Standalone approval requires one environment, license type, project and repeat to avoid approving the same transaction more than once.');
+    if (targets.length !== 1) throw new Error('Standalone approval requires one application/permit, project and repeat to avoid approving the same transaction more than once.');
   }
 }
 

@@ -4,8 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 function checkpoint(role) {
   const inspection = { role, status: 'paused-for-inspection', answer: 42 };
-  debugger;
-  console.log(`Breakpoint check: ${inspection.role}, answer=${inspection.answer}`);
+  console.log(`Breakpoint check: ${inspection.role}, answer=${inspection.answer}`); // Source breakpoint.
   return inspection.answer;
 }
 

@@ -53,7 +53,7 @@ test('saved launchers use the shared entry point in both Eclipse modes', () => {
     assert.equal(path.resolve(resolve(attributes['org.eclipse.debug.core.ATTR_WORKING_DIRECTORY'])), path.resolve(root), name);
     assert.ok(fs.statSync(resolve(parameters.runtimeExecutable)).isFile(), name);
     assert.equal(parameters.autoAttachChildProcesses, true, name);
-    assert.equal(parameters.stopOnEntry, false, name);
+    assert.equal(parameters.stopOnEntry, true, name);
     assert.equal(parameters.sourceMaps, true, name);
     assert.ok(parameters.skipFiles.includes('**/node_modules/**'), name);
     assert.ok(Array.isArray(parameters.args), name);

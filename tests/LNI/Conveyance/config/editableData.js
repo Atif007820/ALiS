@@ -9,6 +9,11 @@ export const TEST_DATA = {
   entityNamePrefix: 'CONV',
   businessContactFirstName: 'Atif',
   businessContactLastName: 'Jamal',
+  registrationLocations: [
+    { city: 'Seattle', state: 'WA', county: 'King', zip: '98101' },
+    { city: 'Tacoma', state: 'WA', county: 'Pierce', zip: '98402' },
+    { city: 'Spokane', state: 'WA', county: 'Spokane', zip: '99201' },
+  ],
   addressBuildingTypes: ['Apartments', 'Building'],
   unitPrefixes: ['Suite', 'Apt', 'Unit'],
 
@@ -18,11 +23,7 @@ export const TEST_DATA = {
   locationNotes: 'Testing Notes',
 
   ownerExistsOptions: ['Y','N'],
-  ownerExistingUbiByEnvironment: {
-    TEST: '222-555-888',
-    PREPROD: '007-007-007',
-    PROD: '999-888-777',
-  },
+  ownerExistingUbi: '222-555-888',
   ownerComments: 'Testing the Comments field',
 
   uploadDocuments: [
@@ -44,6 +45,16 @@ export const TEST_DATA = {
   interiorTypeOtherDescription: 'Testing Other Material Field',
   governorTypeOtherDescription: 'Testing Governor Type field',
   governorTypeOtherDescriptionCW: 'Testing Governor Type field 2',
+
+  constructionHoistOptions: {
+    carGovernor: ['Centrifugal', 'Flyball', 'Horizontal'],
+    signals: ['Audible', 'Visual', 'Audible and visual'],
+    entranceType: ['Sliding', 'Swing', 'Roll-up'],
+    driveType: ['Geared', 'Gearless', 'Direct drive'],
+    brakeType: ['Disc', 'Drum', 'Spring applied'],
+    cableType: ['Steel wire rope', 'Galvanized wire rope', 'Compacted wire rope'],
+    operatedOther: ['Pendant control', 'Remote control', 'Platform control'],
+  },
 
   reviewQuestionAnswerRules: [
     {

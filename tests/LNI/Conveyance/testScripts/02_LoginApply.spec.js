@@ -28,21 +28,21 @@ test('Conveyance - Login and Apply Permit', async (
     await dashboardPage.openNewPermitApplication();
   });
 
-  const licenseSelection = await test.step('Complete new conveyance installation permit application', async () => {
-    return permitApplicationPage.completeNewConveyancePermitApplication({
+  const selection = await test.step('Complete selected installation permit application', async () => {
+    return permitApplicationPage.completePermitApplication({
       onSelection: (selection) => addApplyAnnotations(testInfo, selection),
     });
   });
 
   await test.step('Attach permit application result', async () => {
-    addApplyAnnotations(testInfo, licenseSelection);
+    addApplyAnnotations(testInfo, selection);
   });
 
   await test.step('Capture confirmation transaction number', async () => {
     const { transactionNumber, transactionText } = await permitApplicationPage.getConfirmationTransaction();
-    addApplyAnnotations(testInfo, { ...licenseSelection, transactionNumber });
+    addApplyAnnotations(testInfo, { ...selection, transactionNumber });
     logger.info(`Transaction Number: ${transactionNumber}`);
     await transactionText.click();
-    saveApplicationTransaction({ ...licenseSelection, transactionNumber, entityName: userData.entityName }, testInfo);
+    saveApplicationTransaction({ ...selection, transactionNumber, entityName: userData.entityName }, testInfo);
   });
 });

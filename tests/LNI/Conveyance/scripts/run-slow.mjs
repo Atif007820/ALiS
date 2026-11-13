@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'node:url';
 
-const runScript = fileURLToPath(new URL('./run-env.mjs', import.meta.url));
+const runScript = fileURLToPath(new URL('./run-conveyance.mjs', import.meta.url));
 const userArgs = process.argv.slice(2);
 const args = [runScript, ...userArgs, '--headed'];
 

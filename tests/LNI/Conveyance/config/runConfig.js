@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from 'fs';
 import { dirname, isAbsolute, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { buildApplicationTargets } from './applicationTypes.js';
 
 export const FRAMEWORK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RUN_SETTINGS_PATH = join(FRAMEWORK_ROOT, 'config', 'runSettings.json');
 
 loadLocalEnv();
-const runSettings = loadRunSettings();
+export const runSettings = loadRunSettings();
 
 function loadLocalEnv() {
   const envPath = join(FRAMEWORK_ROOT, '.env');
@@ -28,10 +29,6 @@ function loadLocalEnv() {
       process.env[key] = value;
     }
   }
-}
-
-function normalizeEnvironment(value = 'TEST') {
-  return String(value).trim().toUpperCase().replace(/[-_\s]+/g, '');
 }
 
 function boolFromEnv(name, fallback) {
@@ -84,23 +81,18 @@ function rootPath(value, fallback) {
   return isAbsolute(nextValue) ? nextValue : join(FRAMEWORK_ROOT, nextValue);
 }
 
-export const environment = normalizeEnvironment(
-  process.env.ENVIRONMENT || runSettings.environment || 'PRE PROD'
-);
-
-export const licenseType = (
-  process.env.LICENSE_TYPE || runSettings.licenseType || 'COMMERCIAL'
-).trim().toUpperCase();
-
-export const resType = String(process.env.RES_TYPE ?? runSettings.resType ?? '').trim().toUpperCase();
-export const commType = String(process.env.COMM_TYPE ?? runSettings.commType ?? '').trim().toUpperCase();
+export function getApplicationTarget(env = process.env) {
+  const targets = buildApplicationTargets({
+    AppType: env.CONVEYANCE_APP_TYPE ?? runSettings.AppType ?? 'NCI',
+    PerType: env.CONVEYANCE_PER_TYPE ?? runSettings.PerType ?? 'Res',
+    ResType: env.CONVEYANCE_RES_TYPE ?? runSettings.ResType,
+    CommType: env.CONVEYANCE_COMM_TYPE ?? runSettings.CommType,
+  });
+  if (targets.length !== 1) throw new Error('Use the Conveyance runner for multiple application/permit combinations.');
+  return targets[0];
+}
 
 export const appConfig = {
-  environment,
-  baseUrl: process.env.BASE_URL || '',
-  licenseType,
-  resType,
-  commType,
   defaultProject: process.env.DEFAULT_PROJECT || runSettings.defaultProject || 'chromium',
   workers: intFromEnvOrSettings('WORKERS', 'workers', runSettings.workers ?? 3),
   parallelWorkers: intFromEnvOrSettings('PARALLEL_WORKERS', 'parallelWorkers', runSettings.parallelWorkers ?? 3),

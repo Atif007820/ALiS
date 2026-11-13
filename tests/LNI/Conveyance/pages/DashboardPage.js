@@ -1,11 +1,11 @@
 import { BasePage } from './BasePage.js';
+import { getApplicationTarget } from '../config/runConfig.js';
 
 export class DashboardPage extends BasePage {
   /** @param {import('@playwright/test').Page} page */
   constructor(page) {
     super(page);
     this.applyForNewPermitLink  = page.getByText('NPApply for New Permit');
-    this.newConveyanceRadio     = page.getByRole('radio', { name: 'New Conveyance Installation' });
   }
 
   /**
@@ -20,10 +20,11 @@ export class DashboardPage extends BasePage {
     if (await iisIndicator.isVisible().catch(() => false)) {
       throw new Error(
         `Navigation after "Apply for New Permit" landed on an IIS default/error page. ` +
-        `Current URL: ${this.currentUrl()}. Verify BASE_URL in config/editableData.js and server availability.`
+        `Current URL: ${this.currentUrl()}. Verify the URL in config/URL.js and server availability.`
       );
     }
 
-    await this.waitForVisible(this.newConveyanceRadio, 150000);
+    const { application } = getApplicationTarget();
+    await this.waitForVisible(this.page.getByRole('radio', { name: application.radio, exact: true }), 150000);
   }
 }

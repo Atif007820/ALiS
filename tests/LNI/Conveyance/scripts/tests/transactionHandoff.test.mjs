@@ -23,7 +23,8 @@ function fixture(t) {
     CONVEYANCE_TRANSACTION_SOURCE: 'current-run',
     CONVEYANCE_RUN_ID: 'fresh-flow',
     CONVEYANCE_FLOW_REPEAT: '0',
-    ENVIRONMENT: 'TEST', LICENSE_TYPE: 'RESIDENTIAL', BASE_URL: 'http://local-fixture.invalid/TEST',
+    CONVEYANCE_APP_TYPE: 'NCI', CONVEYANCE_PER_TYPE: 'Res',
+    CONVEYANCE_RES_TYPE: '', CONVEYANCE_COMM_TYPE: '',
   };
 }
 
@@ -34,8 +35,8 @@ test('default flow and all repeat/project units remain serial with distinct hand
   const axes = flowAxes(['--project=chromium', '--project', 'Microsoft Edge', '--repeat-each=2', '--headed'], projects);
   assert.deepEqual(axes.remainingArgs, ['--headed']);
   const targets = expandFlowTargets([
-    { slug: 'test-residential-random', environment: 'TEST', licenseType: 'RESIDENTIAL', label: 'TEST' },
-    { slug: 'prod-commercial-random', environment: 'PROD', licenseType: 'COMMERCIAL', label: 'PROD' },
+    { slug: 'nci-res-random', appType: 'NCI', perType: 'Res', label: 'NCI / Res' },
+    { slug: 'chi-cph-a10-4', appType: 'CHI', perType: 'CPH(A10.4)', label: 'CHI / CPH(A10.4)' },
   ], axes);
   assert.equal(targets.length, 8);
   assert.equal(new Set(targets.map(target => target.slug)).size, 8);
@@ -50,7 +51,7 @@ test('default flow and all repeat/project units remain serial with distinct hand
 
 test('standalone approval requires one target and cannot override a fresh apply result', () => {
   assert.throws(() => assertApprovalSelection([SERIAL_FLOW_SPECS[2]], [{}], null), /TransactionNumber/);
-  assert.throws(() => assertApprovalSelection([SERIAL_FLOW_SPECS[2]], [{}, {}], '6331'), /one environment/);
+  assert.throws(() => assertApprovalSelection([SERIAL_FLOW_SPECS[2]], [{}, {}], '6331'), /one application\/permit/);
   assert.throws(() => assertApprovalSelection(SERIAL_FLOW_SPECS, [{}], '6331'), /freshly captured/);
   assert.doesNotThrow(() => assertApprovalSelection([SERIAL_FLOW_SPECS[2]], [{}], '6331'));
   assert.doesNotThrow(() => assertApprovalSelection(SERIAL_FLOW_SPECS, [{}, {}], null));
@@ -67,21 +68,23 @@ test('apply/approval cannot automatically retry uncertain server mutations', () 
 
 test('handoff retains exact transaction, safe context and rejects overwrite', t => {
   const env = fixture(t);
-  saveApplicationTransaction({ transactionNumber: '006331', entityName: 'Fixture Entity', password: 'must-not-save' }, chromium, { env });
+  saveApplicationTransaction({ transactionNumber: '006331', entityName: 'Fixture Entity', existingBuildingAnswer: 'N/A', password: 'must-not-save' }, chromium, { env });
   const record = loadApprovalTransaction(chromium, { env });
   assert.equal(record.transactionNumber, '006331');
   assert.equal(record.entityName, 'Fixture Entity');
+  assert.equal(record.existingBuildingAnswer, 'N/A');
   assert.equal(record.source, 'current-run');
   assert.equal(readFileSync(env.CONVEYANCE_TRANSACTION_PATH, 'utf8').includes('must-not-save'), false);
   assert.throws(() => saveApplicationTransaction({ transactionNumber: '9999' }, chromium, { env }), { code: 'EEXIST' });
 });
 
-test('stale, cross-environment, cross-project and cross-repeat handoffs are refused', t => {
+test('stale, cross-application, cross-permit, cross-project and cross-repeat handoffs are refused', t => {
   const env = fixture(t);
   saveApplicationTransaction({ transactionNumber: '6331' }, chromium, { env });
   for (const override of [
-    { CONVEYANCE_RUN_ID: 'older-flow' }, { ENVIRONMENT: 'PROD' }, { LICENSE_TYPE: 'COMMERCIAL' },
-    { BASE_URL: 'http://wrong-fixture.invalid' }, { CONVEYANCE_FLOW_REPEAT: '1' },
+    { CONVEYANCE_RUN_ID: 'older-flow' },
+    { CONVEYANCE_APP_TYPE: 'CHI', CONVEYANCE_PER_TYPE: 'CPH(A10.4)' },
+    { CONVEYANCE_PER_TYPE: 'Comm' }, { CONVEYANCE_RES_TYPE: 'ORC' }, { CONVEYANCE_FLOW_REPEAT: '1' },
   ]) {
     assert.throws(() => loadApprovalTransaction(chromium, { env: { ...env, ...override } }), /does not match/);
   }
@@ -109,10 +112,11 @@ test('direct apply remains usable and standalone approval accepts explicit or co
 function listRunner(args, overrides = {}, expectedStatus = 0) {
   // --list is unconditional: this integration check cannot launch a browser/approval.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)));
-  const result = spawnSync(process.execPath, ['scripts/run-env.mjs', '--list', '--env=TEST', '--licenseType=RESIDENTIAL', ...args], {
-    cwd: frameworkRoot, encoding: 'utf8', timeout: 60000, windowsHide: true,
+  const result = spawnSync(process.execPath, ['scripts/run-conveyance.mjs', '--list', ...args], {
+    cwd: frameworkRoot, encoding: 'utf8', timeout: 120000, windowsHide: true,
     env: { ...env, CONVEYANCE_TRANSACTION_NUMBER: '', ...overrides },
   });
+  assert.ifError(result.error);
   assert.equal(result.status, expectedStatus, `${result.stdout}\n${result.stderr}`);
   assert.doesNotMatch(result.stdout, /Cleaning previous results/);
   return expectedStatus === 0 ? result.stdout : result.stderr;
@@ -132,6 +136,15 @@ test('the E2E entry point lists all three tests with the exact report titles', (
     'Conveyance - Login and Apply Permit',
     'Conveyance - Approve Application',
   ]);
+});
+
+test('E2E plans all three scripts for every selected application/permit pair', () => {
+  const output = listRunner(['--e2e', '--AppType=ALL', '--PerType=ALL', '--ResType=', '--CommType=', '--project=chromium', '--parallel=4']);
+  assert.match(output, /Combination\(s\): 4; parallel combination limit: 4/);
+  for (const selection of ['NCI / Res / RANDOM', 'NCI / Comm / RANDOM', 'CHI / CPH(A10.4)', 'CHI / CMH(A10.5)']) {
+    const steps = output.split(/\r?\n/).filter(line => line.startsWith('Running 0') && line.includes(' for ' + selection + ' /'));
+    assert.deepEqual(steps.map(line => line.split(' ')[1]), SERIAL_FLOW_SPECS.map(value => path.basename(value)));
+  }
 });
 
 test('the standalone entry point selects one script and rejects ambiguous selections', () => {

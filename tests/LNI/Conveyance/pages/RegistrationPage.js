@@ -1,13 +1,11 @@
 import { BasePage } from './BasePage.js';
-import { BASE_URL, ENVIRONMENT_LABEL, LOGIN_URL } from '../config/URL.js';
+import { LOGIN_URL } from '../config/URL.js';
 import { appConfig } from '../config/runConfig.js';
 import { TEST_DATA } from '../config/editableData.js';
 import {
   COUNTRIES,
   ENTITY_ROLES,
   ROLE_OPTIONS,
-  US_CITIES,
-  US_STATES,
 } from '../config/constants.js';
 import {
   clearTextInputs,
@@ -24,7 +22,6 @@ import {
   randomLoginNameForAttempt,
   randomPhone10,
   randomUnit,
-  randomZip,
 } from '../utils/randomData.js';
 import { saveUserData } from '../utils/userStore.js';
 import { logger } from '../utils/logger.js';
@@ -56,8 +53,7 @@ export class RegistrationPage extends BasePage {
     logger.info(`Login Name: ${userData.loginName}`);
     logger.info(`Entity:     ${userData.entityName}`);
     logger.info(`UBI:        ${userData.ubi}`);
-    logger.info(`Environment: ${ENVIRONMENT_LABEL}`);
-    logger.info(`Env URL:     ${BASE_URL}`);
+    logger.info(`Login URL:  ${LOGIN_URL}`);
 
     await disableAutocomplete(this.page);
     await this.openRegistrationForm();
@@ -97,7 +93,7 @@ export class RegistrationPage extends BasePage {
   }
 
   async fillEntityInformation(userData) {
-    const city = pick(US_CITIES);
+    const { city, state, county, zip } = pick(TEST_DATA.registrationLocations);
 
     await clearTextInputs(this.page);
     await fillRawText(this.page.getByRole('textbox', { name: 'Entity Name' }),            userData.entityName);
@@ -111,8 +107,10 @@ export class RegistrationPage extends BasePage {
     await fillRawText(this.page.getByRole('textbox', { name: 'Address' }),                 randomAddress(city));
     await fillRawText(this.page.getByRole('textbox', { name: 'Suite/Apt/Unit/etc.' }),     randomUnit());
     await fillRawText(this.page.getByRole('textbox', { name: 'City' }),                   city);
-    await safeSelect (this.page.getByLabel('State/Province'),                              pick(US_STATES));
-    await fillRawText(this.page.getByRole('textbox', { name: 'Zip' }),                    randomZip());
+    await safeSelect (this.page.getByLabel('State/Province'),                              state);
+    const countyField = this.page.getByRole('combobox', { name: 'County', exact: true });
+    await countyField.selectOption({ label: county }, { timeout: appConfig.timeouts.action });
+    await fillRawText(this.page.getByRole('textbox', { name: 'Zip' }),                    zip);
     await fillRawText(this.page.getByRole('textbox', { name: 'Primary Phone #', exact: true }), randomPhone10());
     await fillRawText(this.page.getByRole('textbox', { name: 'Primary E-mail' }),          TEST_DATA.businessEmail);
     await fillRawText(this.page.getByRole('textbox', { name: 'Alternate E-mail' }),        TEST_DATA.alternateEmail);
@@ -146,14 +144,23 @@ export class RegistrationPage extends BasePage {
 
       const successMsg     = this.page.getByText('There may be processing time while your company ad');
       const duplicateError = this.page.locator("//li[contains(text(),'Login Name must be unique; the login name has alre')]");
+      const validation = this.page.getByRole('listitem').filter({
+        hasText: /required field|must be|is not valid|invalid/i,
+        hasNotText: /Login Name must be unique/i,
+        visible: true,
+      });
 
       const result = await Promise.any([
         successMsg.waitFor    ({ state: 'visible', timeout: 30000 }).then(() => 'success'),
         duplicateError.waitFor({ state: 'visible', timeout: 30000 }).then(() => 'duplicate'),
+        validation.first().waitFor({ state: 'visible', timeout: 30000 }).then(() => 'validation'),
       ]).catch(() => 'timeout');
 
       if (result === 'success') {
         return { ...userData, loginName };
+      }
+      if (result === 'validation') {
+        throw new Error(`Registration failed validation: ${(await validation.allInnerTexts()).join(' | ')}`);
       }
 
       if (result === 'duplicate') {

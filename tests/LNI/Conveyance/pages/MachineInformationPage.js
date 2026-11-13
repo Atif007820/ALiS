@@ -13,9 +13,11 @@ import {
 } from '../config/constants.js';
 import {
   checkRandomAvailableCheckboxes,
+  fillField,
   fillIfAvailable,
   isVisible,
   selectIfAvailable,
+  selectRandomEnabledOption,
 } from '../utils/formActions.js';
 import {
   num1to12,
@@ -58,6 +60,63 @@ export class MachineInformationPage extends BasePage {
     await this.fillGovernorCarInformation();
     await this.fillGovernorCounterweightInformation();
     await this.selectRandomFeatureCheckboxes();
+  }
+
+  async fillConstructionHoist() {
+    const options = TEST_DATA.constructionHoistOptions;
+    const machine = this.page.locator('cc-machine-information').filter({ visible: true });
+    const textbox = (name) => machine.getByRole('textbox', { name, exact: true });
+
+    await fillField(textbox('Conveyance/Escalator Manufacturer'), randomTraderManufacturer());
+    await fillField(textbox('Conveyance/Escalator Model'), randomEscModel());
+    const [machineType] = await checkRandomAvailableCheckboxes(machine, MACHINE_TYPES, {
+      label: 'hoist machine type', min: 1, max: 1, timeout: 3000,
+    });
+    if (!machineType) throw new Error('No supported machine type is available on the hoist form.');
+    await expect(machine.getByRole('checkbox', { name: machineType, exact: true })).toBeChecked();
+
+    await this.fillPrimaryDimensions();
+    if (!await this.fillRiseInInch()) throw new Error('Construction Hoist machine information requires Rise In Inch.');
+    const overloadGroup = machine.locator('[formcontrolname="IsDetectionDeviceProvided"]');
+    const overload = pick(TEST_DATA.yesNoOptions);
+    const radio = overloadGroup.getByRole('radio', { name: overload, exact: true });
+    await radio.check();
+    await expect(radio).toBeChecked();
+
+    const operation = await selectRandomEnabledOption(machine.getByLabel('How is it operated?'), { label: 'Hoist operation' });
+    if (operation === 'OTHR') {
+      await fillField(textbox('Operated Other Description'), pick(options.operatedOther));
+    }
+    const brakeLocation = await selectRandomEnabledOption(machine.getByLabel('Machine/Brake Location'), { label: 'Machine/Brake Location' });
+    const values = {
+      'Type of car governor': pick(options.carGovernor),
+      'Size of Platform': randInt(4, 12),
+      '# of Car entrances/gates': randInt(1, 4),
+      'Type of signals': pick(options.signals),
+      'Type of entrance': pick(options.entranceType),
+      '# of Hoistway entrances': num1to12(),
+      'Net Travel (inches)': num1to12(),
+      'Height of doors or gates': randInt(60, 96),
+      'Type of Drive (geared, etc.)': pick(options.driveType),
+      'Type of Brake': pick(options.brakeType),
+      'Motor Horsepower': num1to99(),
+    };
+    for (const [name, value] of Object.entries(values)) await fillField(textbox(name), value);
+
+    const cable = await this.fillHoistCable(machine, 'Cable');
+    const governorCable = await this.fillHoistCable(machine, 'GovernorCable');
+    logger.info(`Generated hoist machine data: ${JSON.stringify({ machineType, overload, operation, brakeLocation, ...values, cable, governorCable })}`);
+  }
+
+  async fillHoistCable(machine, prefix) {
+    const unit = await selectRandomEnabledOption(machine.locator(`#ddl${prefix}SizeUnitCode`), { label: `${prefix} size unit` });
+    const type = pick(TEST_DATA.constructionHoistOptions.cableType);
+    const number = randInt(1, 8);
+    const size = unit === 'INCH' ? String(randInt(4, 12) / 16) : String(randInt(6, 19));
+    for (const [suffix, value] of Object.entries({ Type: type, Number: number, Size: size })) {
+      await fillField(machine.locator(`#txt${prefix}${suffix}`), value);
+    }
+    return { type, number, size, unit };
   }
 
   // ─── Section Fill Methods ─────────────────────────────────────────────────

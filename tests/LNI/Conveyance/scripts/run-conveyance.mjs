@@ -1,75 +1,30 @@
 #!/usr/bin/env node
 /**
- * Environment wrapper for the Conveyance Playwright framework.
- *
- * Supported examples:
- *   npm run conv -- --env=TEST --headed --project=chromium --repeat-each=2
- *   npm run conv -- --env=ALL --licenseType=ALL --parallel=6
- *   npm run test -- --spec=apply --env=TEST
- *
- * Combinations may run in parallel, but every combination remains serial:
+ * Application/permit combinations may run in parallel, but each remains serial:
  * 01_RegisterUser -> 02_LoginApply -> 03_ApproveApplication.
  */
 
 import { spawn, spawnSync } from 'child_process';
 import { createRequire } from 'module';
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync } from 'fs';
 import { basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import playwrightConfig from '../playwright.config.js';
 import { loadApprovalCredentials, TransactionNumber } from '../config/approvalTransacNumber.js';
 import { normalizeTransactionNumber } from '../utils/transactionStore.js';
 import { assertApprovalSelection, assertMutationRetries, expandFlowTargets, flowAxes, SERIAL_FLOW_SPECS } from './flowPlan.mjs';
-import {
-  endorsementCodesForLicense,
-  resolveEndorsementSelection,
-} from '../config/constants.js';
+import { buildApplicationTargets } from '../config/applicationTypes.js';
+import { appConfig, runSettings, USER_DATA_PATH } from '../config/runConfig.js';
 
 const require = createRequire(import.meta.url);
 const playwrightCli = require.resolve('@playwright/test/cli');
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cleanScript = resolve(projectRoot, 'scripts', 'clean-results.mjs');
-const canonicalUserDataPath = resolve(projectRoot, 'testData', 'userData.json');
-const matrixUserDataRoot = resolve(projectRoot, 'testData', 'by-environment');
 const blobReportDir = resolve(projectRoot, 'test-results', '.blob-reports');
 const matrixArtifactRoot = resolve(projectRoot, 'test-results', 'matrix');
-const runSettingsPath = resolve(projectRoot, 'config', 'runSettings.json');
-
-const DEFAULT_ENVIRONMENTS = ['TEST', 'PROD', 'PREPROD'];
-const DEFAULT_LICENSE_TYPES = ['RESIDENTIAL', 'COMMERCIAL'];
-const runSettings = loadRunSettings();
-const parsed = parseCommandLine(expandConcatenatedOptions(process.argv.slice(2)));
-
-const combinedNpmOptions = splitCombinedEnvironmentOption(
-  valueFromNpmConfig('env', 'environment', 'environments'),
-);
-const npmEnvValue = combinedNpmOptions.environment;
-const environments = parseEnvValues(joinConfigAndLooseValue(npmEnvValue, parsed.rawEnvValue, parseEnvValues))
-  ?? parseEnvValues(parsed.rawEnvValue)
-  ?? parseEnvValues(npmEnvValue)
-  ?? null;
-
-const npmLicenseTypeValue = valueFromNpmConfig('licensetype', 'license_type')
-  ?? combinedNpmOptions.licenseType;
-const licenseTypes = parseLicenseTypeValues(
-  joinConfigAndLooseValue(npmLicenseTypeValue, parsed.rawLicenseTypeValue, parseLicenseTypeValues),
-)
-  ?? parseLicenseTypeValues(parsed.rawLicenseTypeValue)
-  ?? parseLicenseTypeValues(npmLicenseTypeValue)
-  ?? null;
-
-const residentialSelection = resolveConfiguredEndorsement(
-  'RESIDENTIAL',
-  parsed.rawResTypeValue,
-  valueFromNpmConfig('restype', 'res_type'),
-  runSettings.resType,
-);
-const commercialSelection = resolveConfiguredEndorsement(
-  'COMMERCIAL',
-  parsed.rawCommTypeValue,
-  valueFromNpmConfig('commtype', 'comm_type'),
-  runSettings.commType,
-);
+const selectionOptions = { apptype: 'AppType', pertype: 'PerType', restype: 'ResType', commtype: 'CommType' };
+const parsed = parseCommandLine(process.argv.slice(2));
+const appOverride = parsed.selection.AppType ?? valueFromNpmConfig('apptype', 'app_type');
 
 const selectedSpecs = resolveSelectedSpecs(parsed.selectedSpecs, parsed.flowMode);
 const standaloneApproval = selectedSpecs.includes(SERIAL_FLOW_SPECS[2])
@@ -87,36 +42,29 @@ playwrightArgs = applyDefaultProject(playwrightArgs);
 playwrightArgs = applyWorkerOption(playwrightArgs);
 
 const listOnly = playwrightArgs.includes('--list');
-const axes = flowAxes(playwrightArgs, playwrightConfig.projects.map(project => project.name));
-playwrightArgs = axes.remainingArgs;
-const runTargets = expandFlowTargets(buildRunTargets(
-  environments,
-  licenseTypes,
-  residentialSelection,
-  commercialSelection,
-), axes);
-const parallelRuns = resolveParallelRuns(parsed.parallelRuns, runTargets.length, playwrightArgs);
-assertMutationRetries(selectedSpecs, playwrightArgs);
-if (!listOnly) {
-  try {
+let runTargets;
+let parallelRuns;
+try {
+  const axes = flowAxes(playwrightArgs, playwrightConfig.projects.map(project => project.name));
+  playwrightArgs = axes.remainingArgs;
+  runTargets = expandFlowTargets(buildApplicationTargets({
+    AppType: appOverride ?? runSettings.AppType ?? 'NCI',
+    PerType: parsed.selection.PerType ?? valueFromNpmConfig('pertype', 'per_type')
+      ?? (appOverride ? 'ALL' : runSettings.PerType ?? 'Res'),
+    ResType: parsed.selection.ResType ?? valueFromNpmConfig('restype', 'res_type') ?? runSettings.ResType,
+    CommType: parsed.selection.CommType ?? valueFromNpmConfig('commtype', 'comm_type') ?? runSettings.CommType,
+  }), axes);
+  parallelRuns = resolveParallelRuns(parsed.parallelRuns, runTargets.length, playwrightArgs);
+  assertMutationRetries(selectedSpecs, playwrightArgs);
+  if (!listOnly) {
     assertApprovalSelection(selectedSpecs, runTargets, transactionNumber);
-    if (selectedSpecs.includes(SERIAL_FLOW_SPECS[2])) {
-      for (const environment of unique(runTargets.map(target => target.environment))) {
-        await loadApprovalCredentials(environment);
-      }
-    }
-  } catch (error) {
-    console.error(`Configuration error: ${error.message}`);
-    process.exit(1);
+    if (selectedSpecs.includes(SERIAL_FLOW_SPECS[2])) loadApprovalCredentials();
   }
+} catch (error) {
+  exitConfigurationError(error.message);
 }
 
-const envDisplay = runTargets.map(({ environment }) => environment).filter((value, index, values) => values.indexOf(value) === index).join(', ');
-const licenseDisplay = runTargets.map(({ licenseType }) => licenseType).filter((value, index, values) => values.indexOf(value) === index).join(', ');
-console.log(`Running Playwright against environment(s): ${envDisplay}`);
-console.log(`License type(s): ${licenseDisplay}`);
-console.log(formatEndorsementOverride('Residential', residentialSelection));
-console.log(formatEndorsementOverride('Commercial', commercialSelection));
+console.log(`Application / permit: ${unique(runTargets.map(target => target.selectionLabel)).join(', ')}`);
 console.log(`Selected spec(s): ${selectedSpecs.join(' -> ')}`);
 console.log(`Combination(s): ${runTargets.length}; parallel combination limit: ${parallelRuns}`);
 
@@ -154,19 +102,18 @@ if (failedRuns.length > 0) {
 process.exit(0);
 
 async function runTarget(target, targetIndex) {
-  const { environment, licenseType, label, slug } = target;
-  const combinationUserDataPath = resolve(matrixUserDataRoot, environment, licenseType, 'userData.json');
+  const { appType, perType, permit, endorsement, label, slug } = target;
   const includesRegistration = selectedSpecs.includes(SERIAL_FLOW_SPECS[0]);
   const includesApply = selectedSpecs.includes(SERIAL_FLOW_SPECS[1]);
   const flowDirectory = resolve(matrixArtifactRoot, slug, 'handoff', target.runId);
   const freshUserDataPath = resolve(flowDirectory, 'userData.json');
   const resultEnv = {
     ...process.env,
-    ENVIRONMENT: environment,
-    LICENSE_TYPE: licenseType,
-    RES_TYPE: residentialSelection?.code ?? '',
-    COMM_TYPE: commercialSelection?.code ?? '',
-    USER_DATA_PATH: includesRegistration ? freshUserDataPath : resolveUserDataPath(combinationUserDataPath, false),
+    CONVEYANCE_APP_TYPE: appType,
+    CONVEYANCE_PER_TYPE: perType,
+    CONVEYANCE_RES_TYPE: permit.override === 'ResType' ? endorsement?.code ?? '' : '',
+    CONVEYANCE_COMM_TYPE: permit.override === 'CommType' ? endorsement?.code ?? '' : '',
+    USER_DATA_PATH: includesRegistration ? freshUserDataPath : USER_DATA_PATH,
     CONVEYANCE_LOGIN_SOURCE: includesRegistration ? 'registered' : 'standalone',
     CONVEYANCE_RUN_ID: target.runId,
     CONVEYANCE_FLOW_REPEAT: String(target.repeatIndex),
@@ -197,10 +144,8 @@ async function runTarget(target, targetIndex) {
     }
 
     if (!listOnly && spec === SERIAL_FLOW_SPECS[0] && existsSync(freshUserDataPath)) {
-      mkdirSync(dirname(combinationUserDataPath), { recursive: true });
-      copyFileSync(freshUserDataPath, combinationUserDataPath);
-      mkdirSync(dirname(canonicalUserDataPath), { recursive: true });
-      copyFileSync(freshUserDataPath, canonicalUserDataPath);
+      mkdirSync(dirname(USER_DATA_PATH), { recursive: true });
+      copyFileSync(freshUserDataPath, USER_DATA_PATH);
     }
   }
 
@@ -232,6 +177,7 @@ function runPlaywrightSpec({ target, targetIndex, spec, specIndex, env, playwrig
       env: {
         ...env,
         PLAYWRIGHT_BLOB_OUTPUT_FILE: reportFile,
+        PWTEST_BOT_NAME: target.slug,
       },
       cwd: projectRoot,
       stdio: 'inherit',
@@ -253,7 +199,7 @@ function mergeHtmlReports() {
     return false;
   }
 
-  console.log('\nMerging all environment/license results into one Playwright report...');
+  console.log('\nMerging application/permit results into one Playwright report...');
   const result = spawnSync(process.execPath, [
     playwrightCli,
     'merge-reports',
@@ -277,70 +223,17 @@ function mergeHtmlReports() {
   return true;
 }
 
-function buildRunTargets(
-  environmentOverrides,
-  licenseTypeOverrides,
-  configuredResidentialSelection,
-  configuredCommercialSelection,
-) {
-  const selectedEnvironments = environmentOverrides
-    ?? parseEnvValues(runSettings.environment)
-    ?? ['TEST'];
-  const selectedLicenseTypes = licenseTypeOverrides
-    ?? parseLicenseTypeValues(runSettings.licenseType)
-    ?? ['RESIDENTIAL'];
-
-  return selectedEnvironments.flatMap((environment) => selectedLicenseTypes.map((licenseType) => {
-    const endorsement = licenseType === 'RESIDENTIAL'
-      ? configuredResidentialSelection
-      : configuredCommercialSelection;
-    const endorsementSuffix = endorsement ? ` / ${endorsement.code}` : ' / RANDOM';
-
-    return {
-      environment,
-      licenseType,
-      endorsement,
-      label: `${environment} / ${licenseType}${endorsementSuffix}`,
-      slug: `${environment}-${licenseType}-${endorsement?.code ?? 'random'}`.toLowerCase(),
-    };
-  }));
-}
-
-function resolveConfiguredEndorsement(licenseType, ...values) {
-  const rawValue = values.find((value) => (
-    value !== undefined
-    && value !== null
-    && String(value).trim()
-    && String(value).trim().toLowerCase() !== 'true'
-  ));
-  if (!rawValue) return null;
-
-  const selection = resolveEndorsementSelection(licenseType, rawValue);
-  if (selection) return selection;
-
-  const optionName = licenseType === 'RESIDENTIAL' ? 'ResType' : 'CommType';
-  console.error(
-    `Configuration error: Unsupported ${optionName} "${rawValue}". ` +
-    `Supported ${licenseType} codes: ${endorsementCodesForLicense(licenseType).join(', ')}.`,
-  );
-  process.exit(1);
-}
-
-function formatEndorsementOverride(label, selection) {
-  return selection
-    ? `${label} endorsement override: ${selection.code} -> ${selection.conveyanceType}`
-    : `${label} endorsement override: RANDOM`;
-}
-
 function resolveParallelRuns(parsedValue, targetCount, args) {
   if (args.includes('--debug')) return 1;
 
   const npmValue = valueFromNpmConfig('parallel');
   const requestedValue = parsedValue
     ?? (npmValue && !isTrue(npmValue) ? npmValue : null)
-    ?? '1';
-  const requested = parsePositiveInt(requestedValue, 1);
-  return Math.max(1, Math.min(requested, targetCount));
+    ?? (isTrue(npmValue) ? appConfig.parallelWorkers : runSettings.parallel ?? 1);
+  if (!/^\d+$/.test(String(requestedValue)) || !Number.isSafeInteger(Number(requestedValue)) || Number(requestedValue) < 1) {
+    throw new Error('--parallel must be a positive integer.');
+  }
+  return Math.min(Number(requestedValue), targetCount);
 }
 
 async function runWithConcurrency(items, limit, action) {
@@ -363,12 +256,6 @@ async function runWithConcurrency(items, limit, action) {
 
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
   return results;
-}
-
-function resolveUserDataPath(combinationPath, includesRegistration) {
-  if (includesRegistration || existsSync(combinationPath)) return combinationPath;
-  if (existsSync(canonicalUserDataPath)) return canonicalUserDataPath;
-  return combinationPath;
 }
 
 function specName(spec) {
@@ -468,35 +355,10 @@ function orderSelectedSpecs(specs) {
   return [...frameworkSpecs, ...customSpecs];
 }
 
-function expandConcatenatedOptions(args) {
-  return args.flatMap((arg) => {
-    const match = arg.match(/^(--(?:env|environment|environments)=)(.*?)(--(?:licenseType|license-type))(?:=(.*))?$/i);
-    if (!match) return [arg];
-
-    const expanded = [`${match[1]}${match[2]}`, match[3]];
-    if (match[4]) expanded[1] = `${match[3]}=${match[4]}`;
-    return expanded;
-  });
-}
-
-function splitCombinedEnvironmentOption(value) {
-  const rawValue = String(value || '');
-  const match = rawValue.match(/^(.*?)(?:--licenseType|--license-type)(?:=(.*))?$/i);
-  if (!match) return { environment: value, licenseType: null };
-
-  return {
-    environment: match[1],
-    licenseType: match[2] || null,
-  };
-}
-
 function parseCommandLine(args) {
   const result = {
     flowMode: null,
-    rawEnvValue: null,
-    rawLicenseTypeValue: null,
-    rawResTypeValue: null,
-    rawCommTypeValue: null,
+    selection: {},
     rawTransactionValue: null,
     selectedSpecs: [],
     playwrightArgs: [],
@@ -530,50 +392,19 @@ function parseCommandLine(args) {
       continue;
     }
 
-    if (arg === '--env' || arg === '--environment' || arg === '--environments') {
-      const read = readJoinedValue(args, index, 'env');
-      result.rawEnvValue = read.value;
-      index = read.index;
-      continue;
-    }
-    if (arg.startsWith('--env=') || arg.startsWith('--environment=') || arg.startsWith('--environments=')) {
-      const read = readJoinedValue(args, index, 'env', valueAfterEquals(arg));
-      result.rawEnvValue = read.value;
-      index = read.index;
+    const optionMatch = arg.match(/^--(app-?type|per-?type|res-?type|comm-?type)(?:=(.*))?$/i);
+    if (optionMatch) {
+      const name = selectionOptions[optionMatch[1].toLowerCase().replace('-', '')];
+      if (optionMatch[2] === undefined && (!args[index + 1] || args[index + 1].startsWith('--'))) {
+        exitConfigurationError(`--${name} requires a value.`);
+      }
+      result.selection[name] = optionMatch[2] ?? args[++index];
       continue;
     }
 
-    if (arg === '--licenseType' || arg === '--license-type') {
-      const read = readJoinedValue(args, index, 'licenseType');
-      result.rawLicenseTypeValue = read.value;
-      index = read.index;
-      continue;
-    }
-    if (arg.startsWith('--licenseType=') || arg.startsWith('--license-type=')) {
-      const read = readJoinedValue(args, index, 'licenseType', valueAfterEquals(arg));
-      result.rawLicenseTypeValue = read.value;
-      index = read.index;
-      continue;
-    }
-
-    if (['--restype', '--res-type'].includes(arg.toLowerCase())) {
-      result.rawResTypeValue = args[index + 1] ?? '';
-      index += 1;
-      continue;
-    }
-    if (/^--(?:restype|res-type)=/i.test(arg)) {
-      result.rawResTypeValue = valueAfterEquals(arg);
-      continue;
-    }
-
-    if (['--commtype', '--comm-type'].includes(arg.toLowerCase())) {
-      result.rawCommTypeValue = args[index + 1] ?? '';
-      index += 1;
-      continue;
-    }
-    if (/^--(?:commtype|comm-type)=/i.test(arg)) {
-      result.rawCommTypeValue = valueAfterEquals(arg);
-      continue;
+    // Reject old or misspelled CLI options before any result cleanup or browser action.
+    if (/^--(?:env(?:ironments?)?|license-?type)(?:=|$)/i.test(arg)) {
+      exitConfigurationError(`${arg.split('=')[0]} is no longer supported. Select a flow with --AppType and --PerType.`);
     }
 
     if (arg === '--script' || arg === '--spec') {
@@ -589,12 +420,12 @@ function parseCommandLine(args) {
 
     if (arg === '--parallel') {
       const next = args[index + 1];
-      result.parallelRuns = next && !next.startsWith('-') ? next : defaultParallelWorkers();
+      result.parallelRuns = next && !next.startsWith('-') ? next : appConfig.parallelWorkers;
       if (next && !next.startsWith('-')) index += 1;
       continue;
     }
     if (arg.startsWith('--parallel=')) {
-      result.parallelRuns = valueAfterEquals(arg) || defaultParallelWorkers();
+      result.parallelRuns = valueAfterEquals(arg) || appConfig.parallelWorkers;
       continue;
     }
     if (arg === '--serial') {
@@ -604,34 +435,6 @@ function parseCommandLine(args) {
 
     if (!result.parallelRuns && process.env.npm_config_parallel && /^\d+$/.test(arg)) {
       result.parallelRuns = arg;
-      continue;
-    }
-
-    if (!result.rawEnvValue) {
-      const read = readJoinedValue(args, index, 'env', arg);
-      if (parseEnvValues(read.value)) {
-        result.rawEnvValue = read.value;
-        index = read.index;
-        continue;
-      }
-    }
-
-    if (!result.rawLicenseTypeValue) {
-      const read = readJoinedValue(args, index, 'licenseType', arg);
-      if (parseLicenseTypeValues(read.value)) {
-        result.rawLicenseTypeValue = read.value;
-        index = read.index;
-        continue;
-      }
-    }
-
-    if (!result.rawResTypeValue && npmBooleanOption('restype', 'res_type')) {
-      result.rawResTypeValue = arg;
-      continue;
-    }
-
-    if (!result.rawCommTypeValue && npmBooleanOption('commtype', 'comm_type')) {
-      result.rawCommTypeValue = arg;
       continue;
     }
 
@@ -645,82 +448,8 @@ function parseCommandLine(args) {
   return result;
 }
 
-function readJoinedValue(args, index, type, initialValue = null) {
-  let value = initialValue;
-  let nextIndex = index;
-
-  if (value === null) {
-    value = args[index + 1] ?? '';
-    nextIndex = index + 1;
-  }
-
-  const next = args[nextIndex + 1];
-  if (next && !next.startsWith('-')) {
-    const joined = `${value} ${next}`;
-    const isUsefulJoin = type === 'env'
-      ? parseEnvValues(joined) !== null
-      : parseLicenseTypeValues(joined) !== null;
-
-    if (isUsefulJoin) {
-      value = joined;
-      nextIndex += 1;
-    }
-  }
-
-  return { value, index: nextIndex };
-}
-
-function joinConfigAndLooseValue(configValue, looseValue, parser) {
-  if (!configValue || !looseValue) return null;
-
-  const joined = `${configValue} ${looseValue}`;
-  return parser(joined) ? joined : null;
-}
-
 function valueAfterEquals(arg) {
   return arg.split('=').slice(1).join('=');
-}
-
-function normalizeEnvironment(value) {
-  return String(value || '')
-    .trim()
-    .toUpperCase()
-    .replace(/[-_\s]+/g, '');
-}
-
-function normalizeLicenseType(value) {
-  return String(value || '')
-    .trim()
-    .toUpperCase()
-    .replace(/[-_\s]+/g, '');
-}
-
-function parseEnvValues(value) {
-  if (!value || String(value).toLowerCase() === 'true') return null;
-
-  const candidates = String(value)
-    .split(',')
-    .map((part) => normalizeEnvironment(part))
-    .filter(Boolean);
-
-  if (candidates.length === 0) return null;
-  if (candidates.includes('ALL')) return DEFAULT_ENVIRONMENTS;
-  if (!candidates.every((candidate) => DEFAULT_ENVIRONMENTS.includes(candidate))) return null;
-  return unique(candidates);
-}
-
-function parseLicenseTypeValues(value) {
-  if (!value || String(value).toLowerCase() === 'true') return null;
-
-  const candidates = String(value)
-    .split(',')
-    .map((part) => normalizeLicenseType(part))
-    .filter(Boolean);
-
-  if (candidates.length === 0) return null;
-  if (candidates.includes('ALL')) return DEFAULT_LICENSE_TYPES;
-  if (!candidates.every((candidate) => DEFAULT_LICENSE_TYPES.includes(candidate))) return null;
-  return unique(candidates);
 }
 
 function exitConfigurationError(message) {
@@ -832,25 +561,6 @@ function isTrue(value) {
   return ['1', 'true', 'yes', 'y'].includes(String(value || '').trim().toLowerCase());
 }
 
-function parsePositiveInt(value, fallback) {
-  const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function defaultParallelWorkers() {
-  return String(runSettings.parallelWorkers ?? runSettings.workers ?? 3);
-}
-
 function unique(values) {
   return [...new Set(values)];
-}
-
-function loadRunSettings() {
-  if (!existsSync(runSettingsPath)) return {};
-
-  try {
-    return JSON.parse(readFileSync(runSettingsPath, 'utf-8'));
-  } catch {
-    return {};
-  }
 }

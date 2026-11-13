@@ -123,6 +123,21 @@ export async function safeSelect(locator, value, { timeout = 12000 } = {}) {
   }
 }
 
+export async function selectRandomEnabledOption(locator, { label, timeout = 12000 }) {
+  const control = locator.filter({ visible: true });
+  await expect(control, label).toBeEnabled({ timeout });
+  const options = control.locator('option:enabled').filter({ hasNotText: /^\s*(?:--.*--|choose one|select one)\s*$/i });
+  const values = async () => options.evaluateAll(items => items.map(item => item.value).filter(value => value.trim()));
+  await expect.poll(async () => (await values()).length, {
+    message: `${label} must have an enabled option`,
+    timeout,
+  }).toBeGreaterThan(0);
+  const value = pick(await values());
+  await control.selectOption(value, { timeout });
+  await expect(control, label).toHaveValue(value, { timeout });
+  return value;
+}
+
 // ─── Conditional / "If Available" Helpers ────────────────────────────────────
 
 /**

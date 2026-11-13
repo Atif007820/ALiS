@@ -6,13 +6,26 @@ import { LoginPage } from './LoginPage.js';
 
 const MANDATORY = { name: /Mandatory Required\b/i, count: 1, status: 'CPT' };
 const ADDITIONAL = { name: /Additional Supporting\b/i, count: 1, status: 'WOF' };
+const CONTRACT_REVIEW = { name: /\bReview\s+copy\s+of\s+contract\b/i, count: 1, status: 'CPT' };
+const FEE_REVIEW = { name: /\bReview\s+Application\s+Fee\b/i, count: 1, status: 'CPT' };
+const PAYMENT_LINK = { name: /\bEnsure\s+payment\s+linked\s+to\s+permit\b/i, count: 1, status: 'CPT' };
+const OPTIONAL_FEE_PAYMENT = [FEE_REVIEW, PAYMENT_LINK].map(item => ({ ...item, optional: true }));
 const ACCEPTANCE_CHECKLIST = [
   MANDATORY,
-  { name: /\(State Only\)\s+Review\b/i, count: 2, status: 'CPT' },
+  CONTRACT_REVIEW,
   ADDITIONAL,
-  { name: /\(State Only\)\s+Ensure\b/i, count: 1, status: 'CPT' },
+  ...OPTIONAL_FEE_PAYMENT,
 ];
-const APPROVAL_CHECKLIST = [MANDATORY, ADDITIONAL];
+const APPROVAL_CHECKLIST = [
+  MANDATORY,
+  ADDITIONAL,
+  ...OPTIONAL_FEE_PAYMENT,
+  { name: /\bVerify\s+Blind\s+Hoistway\b/i, count: 1, status: 'CPT', optional: true },
+];
+const HOIST_ACCEPTANCE_CHECKLIST = [ADDITIONAL, FEE_REVIEW, PAYMENT_LINK];
+const HOIST_APPROVAL_CHECKLIST = [ADDITIONAL, ...OPTIONAL_FEE_PAYMENT];
+const BUILDING_OFFICIAL = /\bApproval\s+by\s+(?:the\s+)?Building\s+Official\b/i;
+const SAVE_VALIDATION = /please review (?:the )?following errors|validation failed/i;
 
 export class ApproveApplicationPage extends BasePage {
   constructor(page) {
@@ -82,13 +95,15 @@ export class ApproveApplicationPage extends BasePage {
 
   async acceptApplication(application) {
     const entityName = await this.openTransaction(application);
-    await this.saveReview(ACCEPTANCE_CHECKLIST, 'ACP');
+    const checklist = application.appType === 'CHI' ? HOIST_ACCEPTANCE_CHECKLIST : ACCEPTANCE_CHECKLIST;
+    await this.saveReview(application, checklist, 'ACP');
     return entityName;
   }
 
   async approveApplication(application) {
     const entityName = await this.openTransaction(application);
-    await this.saveReview(APPROVAL_CHECKLIST, 'APR');
+    const checklist = application.appType === 'CHI' ? HOIST_APPROVAL_CHECKLIST : APPROVAL_CHECKLIST;
+    await this.saveReview(application, checklist, 'APR');
     return entityName;
   }
 
@@ -227,7 +242,52 @@ export class ApproveApplicationPage extends BasePage {
     return links.nth(candidates[0]);
   }
 
-  async saveReview(checklist, status) {
+  async unresolvedChecklistItems() {
+    const controls = this.reviewDialog.getByLabel('item-status', { exact: true }).filter({ visible: true });
+    return controls.evaluateAll((fields) => fields
+      .filter(field => !['CPT', 'WOF'].includes(field.value))
+      .map(field => {
+        const row = field.closest('tr, [role="row"]');
+        const label = [...(row?.querySelectorAll('td, [role="cell"], [role="gridcell"]') ?? [])]
+          .filter(cell => !cell.contains(field))
+          .map(cell => cell.innerText.replace(/\s+/g, ' ').trim())
+          .filter(Boolean).join(' ');
+        return `${label || 'Unnamed checklist item'} (${field.selectedOptions?.[0]?.textContent.trim() || 'unset'})`;
+      }));
+  }
+
+  async waiveNonApplicableBuildingApproval(application) {
+    const rows = this.reviewDialog.getByRole('row', { name: BUILDING_OFFICIAL }).filter({ visible: true });
+    if (!(await rows.count())) return;
+    await expect(rows, 'Expected one Building Official approval checklist row').toHaveCount(1);
+    const control = rows.getByLabel('item-status', { exact: true });
+    if (!(await control.count())) return;
+    const value = await control.inputValue();
+    if (['CPT', 'WOF'].includes(value)) return;
+    if (value !== 'PEN' || !/^(?:no|n\s*\/?\s*a|not applicable)$/i.test(String(application.existingBuildingAnswer ?? '').trim())) {
+      return;
+    }
+    await control.selectOption('WOF');
+    await expect(control, 'Building Official approval is not applicable to this installation').toHaveValue('WOF');
+  }
+
+  async readSaveValidation(validation) {
+    const details = await validation.evaluate(banner => {
+      const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
+      const dialog = banner.closest('[role="dialog"]');
+      for (let region = banner; region && region !== dialog; region = region.parentElement) {
+        const messages = [...region.querySelectorAll('li')].filter(visible);
+        if (messages.length) return messages.map(item => item.innerText);
+      }
+      return [];
+    });
+    const errors = await this.reviewDialog.locator('[role="alert"], .validation-summary-errors, .field-validation-error, mat-error')
+      .filter({ visible: true }).allInnerTexts();
+    return [...new Set([await validation.innerText(), ...details, ...errors]
+      .map(value => value.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+  }
+
+  async saveReview(application, checklist, status) {
     const applicationStatus = this.reviewDialog.getByLabel('Application Status', { exact: true });
     const statusOption = applicationStatus.locator('option[value="' + status + '"]');
     await expect(statusOption, 'The current Work Queue stage must offer application status ' + status)
@@ -236,6 +296,7 @@ export class ApproveApplicationPage extends BasePage {
     const selections = [];
     for (const item of checklist) {
       const rows = this.reviewDialog.getByRole('row', { name: item.name }).filter({ visible: true });
+      if (item.optional && await rows.count() === 0) continue;
       await expect(rows, 'Review checklist row count for ' + item.name)
         .toHaveCount(item.count, { timeout: appConfig.timeouts.expect });
       for (let index = 0; index < item.count; index++) {
@@ -248,8 +309,28 @@ export class ApproveApplicationPage extends BasePage {
     await expect(applicationStatus).toHaveValue(status);
     for (const selection of selections) await expect(selection.control).toHaveValue(selection.status);
 
+    if (application.appType === 'NCI' && application.perType === 'Comm') {
+      await this.waiveNonApplicableBuildingApproval(application);
+    }
+    const pending = await this.unresolvedChecklistItems();
+    if (pending.length) {
+      throw new Error(`Transaction ${application.transactionNumber} has unresolved approval checklist items for status ${status}: ${pending.join(' | ')}.`);
+    }
+
     await this.reviewDialog.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(this.reviewDialog, 'The review dialog should close after saving application status ' + status)
-      .toBeHidden({ timeout: appConfig.timeouts.expect });
+    const validation = this.reviewDialog.getByText(SAVE_VALIDATION).filter({ visible: true }).first();
+    let message;
+    await expect.poll(async () => {
+      if (!await this.reviewDialog.isVisible()) return 'closed';
+      if (!await validation.isVisible()) return 'waiting';
+      message = await this.readSaveValidation(validation);
+      return 'rejected';
+    }, {
+      message: `ALiS must finish saving status ${status} for transaction ${application.transactionNumber}`,
+      timeout: appConfig.timeouts.expect,
+    }).not.toBe('waiting');
+    if (message) {
+      throw new Error(`ALiS rejected status ${status} for transaction ${application.transactionNumber}: ${message.join(' | ')}`);
+    }
   }
 }
