@@ -1,11 +1,10 @@
 import './runConfig.js';
 
 /**
- * Transaction number for running only Script 3 (03_ApproveApplication.spec.js).
- * Enter the exact transaction number here. The full 01 -> 02 -> 03 flow ignores
- * this value and uses the transaction captured by Script 2.
+ * Default for npm run conv -- --approve when --TransacNum is omitted.
+ * Combined workflows still approve the transaction captured by Apply.
  */
-export const TransactionNumber = '6351';
+export const TransactionNumber = '6474';
 
 export function loadApprovalCredentials({ env = process.env } = {}) {
   const loginName = env.CONVEYANCE_APPROVER_LOGIN_NAME?.trim();

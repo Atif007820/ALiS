@@ -1,11 +1,14 @@
 import { expect } from '@playwright/test';
+import { randomInt } from 'node:crypto';
 import { appConfig } from '../config/runConfig.js';
-import { normalizeTransactionNumber } from '../utils/transactionStore.js';
+import { APPLICATION_TYPES } from '../config/applicationTypes.js';
+import { logger } from '../utils/logger.js';
+import { normalizeConveyanceNumber, normalizeTransactionNumber } from '../utils/transactionStore.js';
 import { BasePage } from './BasePage.js';
 import { LoginPage } from './LoginPage.js';
 
 const MANDATORY = { name: /Mandatory Required\b/i, count: 1, status: 'CPT' };
-const ADDITIONAL = { name: /Additional Supporting\b/i, count: 1, status: 'WOF' };
+const ADDITIONAL = { name: /Additional Supporting\b/i, count: 1, allowedStatuses: ['CPT', 'WOF'] };
 const CONTRACT_REVIEW = { name: /\bReview\s+copy\s+of\s+contract\b/i, count: 1, status: 'CPT' };
 const FEE_REVIEW = { name: /\bReview\s+Application\s+Fee\b/i, count: 1, status: 'CPT' };
 const PAYMENT_LINK = { name: /\bEnsure\s+payment\s+linked\s+to\s+permit\b/i, count: 1, status: 'CPT' };
@@ -24,8 +27,33 @@ const APPROVAL_CHECKLIST = [
 ];
 const HOIST_ACCEPTANCE_CHECKLIST = [ADDITIONAL, FEE_REVIEW, PAYMENT_LINK];
 const HOIST_APPROVAL_CHECKLIST = [ADDITIONAL, ...OPTIONAL_FEE_PAYMENT];
+const VARIANCE_MANDATORY = { ...MANDATORY, name: /Mandatory Required Documents?\b/i, status: 'WOF' };
+const VARIANCE_ACCEPTANCE_CHECKLIST = [
+  { ...PAYMENT_LINK, status: 'WOF' },
+  ADDITIONAL,
+  { ...FEE_REVIEW, status: 'WOF' },
+  VARIANCE_MANDATORY,
+];
+const VARIANCE_APPROVAL_CHECKLIST = [ADDITIONAL, VARIANCE_MANDATORY];
+const CHECKLISTS = {
+  NCI: [ACCEPTANCE_CHECKLIST, APPROVAL_CHECKLIST],
+  CHI: [HOIST_ACCEPTANCE_CHECKLIST, HOIST_APPROVAL_CHECKLIST],
+  CV: [VARIANCE_ACCEPTANCE_CHECKLIST, VARIANCE_APPROVAL_CHECKLIST],
+};
+const TRANSACTION_COLUMN = /^(?:Transaction|TXN)\s*(?:#|Number|No\.?)(?:\s+Filter)?\s*:?$/i;
+const CONVEYANCE_COLUMN = /^Conveyance\s*(?:#|Number|No\.?)(?:\s+Filter)?\s*:?$/i;
+const ASSIGNEE_COLUMN = /^(?:Assigned Staff|Assigned To|Assignee)(?:\s+Filter)?$/i;
+const APPLICATION_COLUMN = /^Application Type(?:\s+Filter)?$/i;
 const BUILDING_OFFICIAL = /\bApproval\s+by\s+(?:the\s+)?Building\s+Official\b/i;
 const SAVE_VALIDATION = /please review (?:the )?following errors|validation failed/i;
+const ALREADY_ASSIGNED = /^Please select task\(s\) not assigned to you\.?$/i;
+const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+export function chooseChecklistStatus(rule, enabledOptions, pickIndex = randomInt) {
+  if (rule.status) return enabledOptions.includes(rule.status) ? rule.status : undefined;
+  const allowed = rule.allowedStatuses.filter(status => enabledOptions.includes(status));
+  return allowed.length > 1 ? allowed[pickIndex(allowed.length)] : allowed[0];
+}
 
 export class ApproveApplicationPage extends BasePage {
   constructor(page) {
@@ -45,6 +73,9 @@ export class ApproveApplicationPage extends BasePage {
 
   async openWorkQueue(credentials) {
     await this.loginPage.login(credentials, { force: true, landing: this.licensingLink });
+    const welcome = this.page.getByText(/^Welcome\s+\S/i).filter({ visible: true });
+    const welcomeText = await welcome.allInnerTexts();
+    this.reviewerName = welcomeText.length === 1 ? normalize(welcomeText[0].replace(/^\s*Welcome\s+/i, '')) : '';
     await this.licensingLink.hover();
     await this.workQueueLink.click();
     await expect(this.transactionField).toBeVisible({ timeout: appConfig.timeouts.expect });
@@ -95,19 +126,61 @@ export class ApproveApplicationPage extends BasePage {
 
   async acceptApplication(application) {
     const entityName = await this.openTransaction(application);
-    const checklist = application.appType === 'CHI' ? HOIST_ACCEPTANCE_CHECKLIST : ACCEPTANCE_CHECKLIST;
+    const [checklist] = CHECKLISTS[application.appType ?? 'NCI'];
     await this.saveReview(application, checklist, 'ACP');
     return entityName;
   }
 
-  async approveApplication(application) {
-    const entityName = await this.openTransaction(application);
-    const checklist = application.appType === 'CHI' ? HOIST_APPROVAL_CHECKLIST : APPROVAL_CHECKLIST;
+  async approveApplication(application, { captureConveyanceNumber = false } = {}) {
+    let conveyanceNumber;
+    const entityName = await this.openTransaction(application, captureConveyanceNumber ? async row => {
+      conveyanceNumber = await this.readQueueColumn(row, CONVEYANCE_COLUMN);
+    } : undefined);
+    const [, checklist] = CHECKLISTS[application.appType ?? 'NCI'];
     await this.saveReview(application, checklist, 'APR');
-    return entityName;
+    if (!captureConveyanceNumber) return entityName;
+    if (!/^\d+$/.test(conveyanceNumber)) {
+      // Some builds only assign the number after APR. Search the exact transaction again.
+      await this.searchButton.click();
+      const row = await this.findExactTransactionRow(application.transactionNumber);
+      conveyanceNumber = await this.readQueueColumn(row, CONVEYANCE_COLUMN);
+    }
+    return normalizeConveyanceNumber(conveyanceNumber);
   }
 
-  async openTransaction({ transactionNumber, entityName }) {
+  async approveExistingTransaction(transactionNumber) {
+    const number = normalizeTransactionNumber(transactionNumber);
+    const row = await this.searchTransactionRow(number);
+    const label = await this.readQueueColumn(row, APPLICATION_COLUMN);
+    const match = Object.entries(APPLICATION_TYPES).find(([key, type]) =>
+      normalize(key) === normalize(label) || normalize(type.label) === normalize(label)
+      || (type.radio instanceof RegExp && type.radio.test(label)));
+    if (!match || !CHECKLISTS[match[0]]) {
+      throw new Error(`Unsupported Work Queue application type "${label}" for transaction ${number}; approval was not attempted.`);
+    }
+    const [appType, type] = match;
+    const conveyanceNumber = await this.readQueueColumn(row, CONVEYANCE_COLUMN, { optional: true });
+    const application = { transactionNumber: number, appType,
+      conveyanceNumber: /^\d+$/.test(conveyanceNumber) ? conveyanceNumber : undefined };
+    const entityName = await this.openTransactionRow(row, application);
+    const status = this.reviewDialog.getByLabel('Application Status', { exact: true });
+    await expect(status, 'The current review status must be available').not.toHaveValue('');
+    const current = await status.inputValue();
+    if (current === 'APR') return { ...application, applicationType: type.label, entityName, alreadyApproved: true };
+
+    const [acceptance, approval] = CHECKLISTS[appType];
+    if (current === 'ACP') {
+      await this.saveReview(application, approval, 'APR');
+    } else if (['PEN', 'UDR'].includes(current)) {
+      await this.saveReview(application, acceptance, 'ACP');
+      await this.approveApplication({ ...application, entityName });
+    } else {
+      throw new Error(`Transaction ${number} has review status "${current}"; approval requires pending, administrative review or technical review.`);
+    }
+    return { ...application, applicationType: type.label, entityName };
+  }
+
+  async searchTransactionRow(transactionNumber) {
     const number = normalizeTransactionNumber(transactionNumber);
     await this.transactionField.fill(number);
     await expect(this.transactionField).toHaveValue(number);
@@ -115,28 +188,60 @@ export class ApproveApplicationPage extends BasePage {
 
     // Search by the value of the Transaction column only. Matching any text in
     // the row could pull the wrong application when another column repeats it.
-    let row = await this.findExactTransactionRow(number);
-    const entityLink = await this.getApplicantLink(row, number, entityName);
+    return this.findExactTransactionRow(number);
+  }
+
+  async openTransaction(application, inspectRow) {
+    const row = await this.searchTransactionRow(application.transactionNumber);
+    return this.openTransactionRow(row, application, inspectRow);
+  }
+
+  async openTransactionRow(row, { transactionNumber: number, entityName, conveyanceNumber, appType }, inspectRow) {
+    if (conveyanceNumber && await this.readQueueColumn(row, CONVEYANCE_COLUMN) !== conveyanceNumber) {
+      throw new Error(`Transaction ${number} does not belong to conveyance ${conveyanceNumber}.`);
+    }
+    if (appType === 'CV') {
+      const expected = APPLICATION_TYPES.CV;
+      const actual = await this.readQueueColumn(row, APPLICATION_COLUMN);
+      if (![normalize(expected.label), 'cv'].includes(normalize(actual))) {
+        throw new Error(`Transaction ${number} is "${actual}", not "${expected.label}". Check the flow or AppType before approving.`);
+      }
+    }
+    const entityLink = await this.getApplicantLink(row, number, entityName, conveyanceNumber);
     await expect(entityLink, 'Expected one applicant link in transaction ' + number)
       .toHaveCount(1, { timeout: appConfig.timeouts.expect });
     const matchedEntityName = (await entityLink.innerText()).trim();
     if (!matchedEntityName) throw new Error('The matched Work Queue application link has no entity name.');
 
-    await row.getByRole('checkbox').check();
-    const checkedRows = this.queueRows.filter({ has: this.page.getByRole('checkbox', { checked: true }) });
-    await expect(checkedRows, 'Pull must target only the matched application').toHaveCount(1);
-    await expect(row.getByRole('checkbox')).toBeChecked();
-    await this.pullLink.click();
-    const confirmPull = this.page.getByRole('button', { name: 'OK', exact: true }).filter({ visible: true });
-    await confirmPull.click();
-    await expect(confirmPull).toBeHidden({ timeout: appConfig.timeouts.expect });
-
-    // Pull may redraw or reorder the grid. Re-resolve the same exact transaction
-    // before opening it so a stale row position can never select a neighbor.
-    row = await this.findExactTransactionRow(number);
+    const assignee = this.reviewerName ? normalize(await this.readQueueColumn(row, ASSIGNEE_COLUMN, { optional: true })) : '';
+    if (!assignee || assignee !== this.reviewerName) {
+      await this.pullTransaction(row);
+      // Pull can reorder the grid, so resolve the exact transaction again.
+      row = await this.findExactTransactionRow(number);
+    }
+    await inspectRow?.(row);
     await row.getByRole('link', { name: matchedEntityName, exact: true }).click();
     await expect(this.reviewDialog).toBeVisible({ timeout: appConfig.timeouts.expect });
     return matchedEntityName;
+  }
+
+  async pullTransaction(row) {
+    const checkbox = row.getByRole('checkbox');
+    await checkbox.check();
+    const checkedRows = this.queueRows.filter({ has: this.page.getByRole('checkbox', { checked: true }) });
+    await expect(checkedRows, 'Pull must target only the matched application').toHaveCount(1);
+    await expect(checkbox).toBeChecked();
+    await this.pullLink.click();
+    const confirmPull = this.page.getByRole('button', { name: 'OK', exact: true }).filter({ visible: true });
+    const alreadyAssigned = this.page.getByText(ALREADY_ASSIGNED).filter({ visible: true });
+    await expect(confirmPull.or(alreadyAssigned).first(), 'Work Queue must confirm Pull or report that the task is already assigned')
+      .toBeVisible({ timeout: appConfig.timeouts.action });
+    if (await alreadyAssigned.isVisible()) {
+      if (await checkbox.isChecked()) await checkbox.uncheck();
+      return;
+    }
+    await confirmPull.click();
+    await expect(confirmPull).toBeHidden({ timeout: appConfig.timeouts.expect });
   }
 
   async findExactTransactionRow(transactionNumber) {
@@ -148,65 +253,8 @@ export class ApproveApplicationPage extends BasePage {
       const count = await this.queueRows.count();
 
       for (let index = 0; index < count; index += 1) {
-        const result = await this.queueRows.nth(index).evaluate((row, expectedNumber) => {
-          const normalize = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
-          const isTransactionHeader = (value) => /^(?:(?:Transaction|TXN)\s*(?:#|Number|No\.?))(?:\s+Filter)?\s*:?$/i.test(normalize(value));
-          const table = row.closest('table');
-          const grid = row.closest('[role="grid"], [role="treegrid"]');
-          let header;
-          let cells;
-
-          if (table) {
-            let headers = [...table.querySelectorAll('thead th, thead [role="columnheader"]')];
-            if (!headers.length) headers = [...table.querySelectorAll('th[scope="col"], [role="columnheader"]')];
-            const transactionHeaders = headers.filter((cell) => isTransactionHeader(cell.innerText || cell.textContent));
-            if (transactionHeaders.length !== 1) {
-              return { error: `Expected one Transaction column header in the result table; found ${transactionHeaders.length}.` };
-            }
-            header = transactionHeaders[0];
-            cells = [...row.children].filter((cell) => /^(TD|TH)$/.test(cell.tagName) || cell.getAttribute('role') === 'gridcell');
-          } else if (grid) {
-            const transactionHeaders = [...grid.querySelectorAll('[role="columnheader"]')]
-              .filter((cell) => isTransactionHeader(cell.innerText || cell.textContent));
-            if (transactionHeaders.length !== 1) {
-              return { error: `Expected one Transaction column header in the result grid; found ${transactionHeaders.length}.` };
-            }
-            header = transactionHeaders[0];
-            cells = [...row.children].filter((cell) => ['gridcell', 'cell'].includes(cell.getAttribute('role')));
-          } else {
-            return { error: 'The Work Queue result rows are not inside a table or accessible grid; refusing to guess the transaction column.' };
-          }
-
-          const ariaColumn = header.getAttribute('aria-colindex');
-          let targetCell;
-          if (ariaColumn) {
-            targetCell = cells.find((cell) => cell.getAttribute('aria-colindex') === ariaColumn);
-          } else {
-            const headerRow = header.closest('tr, [role="row"]');
-            if (!headerRow) return { error: 'The Transaction column header has no row association.' };
-            const headerCells = [...headerRow.children].filter((cell) => (
-              /^(TH|TD)$/.test(cell.tagName) || ['columnheader', 'gridcell', 'cell'].includes(cell.getAttribute('role'))
-            ));
-            let columnIndex = 0;
-            for (const cell of headerCells) {
-              if (cell === header) break;
-              columnIndex += Math.max(1, Number(cell.getAttribute('colspan')) || 1);
-            }
-            let currentColumn = 0;
-            targetCell = cells.find((cell) => {
-              const span = Math.max(1, Number(cell.getAttribute('colspan')) || 1);
-              const containsColumn = columnIndex >= currentColumn && columnIndex < currentColumn + span;
-              currentColumn += span;
-              return containsColumn;
-            });
-          }
-
-          if (!targetCell) return { error: 'Could not map the Transaction header to a result cell; refusing to guess.' };
-          return { value: normalize(targetCell.innerText || targetCell.textContent) === expectedNumber };
-        }, transactionNumber);
-
-        if (result.error) throw new Error(result.error);
-        if (result.value) matches.push(index);
+        const value = await this.readQueueColumn(this.queueRows.nth(index), TRANSACTION_COLUMN);
+        if (value === transactionNumber) matches.push(index);
       }
 
       return matches;
@@ -224,16 +272,63 @@ export class ApproveApplicationPage extends BasePage {
     return this.queueRows.nth(matches[0]);
   }
 
-  async getApplicantLink(row, transactionNumber, entityName) {
+  async readQueueColumn(row, column, { optional = false } = {}) {
+    const result = await row.evaluate((row, { source, flags, optional }) => {
+      const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+      const pattern = new RegExp(source, flags);
+      const table = row.closest('table');
+      const grid = row.closest('[role="grid"], [role="treegrid"]');
+      if (!table && !grid) return { error: 'The result row is not inside a table or accessible grid.' };
+
+      const container = table ?? grid;
+      const primaryHeaders = table ? [...table.querySelectorAll('thead th, thead [role="columnheader"]')] : [];
+      const headers = primaryHeaders.length ? primaryHeaders : [...container.querySelectorAll('th[scope="col"], [role="columnheader"]')];
+      const matches = headers.filter(cell => {
+        const labels = [...cell.querySelectorAll('button, [role="button"]')]
+          .flatMap(button => [button.getAttribute('aria-label'), button.textContent]);
+        return [cell.innerText, cell.textContent, ...labels].some(value => pattern.test(clean(value)));
+      });
+      if (!matches.length && optional) return { value: '' };
+      if (matches.length !== 1) return { error: `Expected one matching column header; found ${matches.length}.` };
+
+      const [header] = matches;
+      const cells = [...row.children].filter(cell => cell.matches('td, th, [role="gridcell"], [role="cell"]'));
+      const ariaColumn = header.getAttribute('aria-colindex');
+      let targetCell;
+      if (ariaColumn) {
+        targetCell = cells.find(cell => cell.getAttribute('aria-colindex') === ariaColumn);
+      } else {
+        const headerRow = header.closest('tr, [role="row"]');
+        if (!headerRow) return { error: 'The column header has no row association.' };
+        const headerCells = [...headerRow.children].filter(cell => cell.matches('th, td, [role="columnheader"], [role="gridcell"], [role="cell"]'));
+        const span = cell => Math.max(1, Number(cell.getAttribute('colspan')) || 1);
+        const position = headerCells.indexOf(header);
+        if (position < 0) return { error: 'Could not locate the header inside its row.' };
+        const columnIndex = headerCells.slice(0, position).reduce((index, cell) => index + span(cell), 0);
+        let currentColumn = 0;
+        targetCell = cells.find(cell => {
+          currentColumn += span(cell);
+          return currentColumn > columnIndex;
+        });
+      }
+
+      if (!targetCell) return { error: 'Could not map the header to the result cell.' };
+      return { value: clean(targetCell.innerText || targetCell.textContent) };
+    }, { source: column.source, flags: column.flags, optional });
+    if (result.error) throw new Error(`Work Queue column ${column}: ${result.error}`);
+    return result.value;
+  }
+
+  async getApplicantLink(row, transactionNumber, entityName, conveyanceNumber) {
     if (entityName) return row.getByRole('link', { name: entityName, exact: true });
 
-    // Standalone approval has no saved entity name. Accept only a single
+    // A reused applicant may have no saved entity name. Accept only a single
     // non-empty link in the already-verified transaction row; ambiguity fails closed.
     const links = row.getByRole('link').filter({ visible: true });
     const candidates = [];
     for (let index = 0; index < await links.count(); index += 1) {
       const label = (await links.nth(index).innerText()).replace(/\s+/g, ' ').trim();
-      if (label && label !== transactionNumber) candidates.push(index);
+      if (label && label !== transactionNumber && label !== conveyanceNumber) candidates.push(index);
     }
 
     if (candidates.length !== 1) {
@@ -300,7 +395,13 @@ export class ApproveApplicationPage extends BasePage {
       await expect(rows, 'Review checklist row count for ' + item.name)
         .toHaveCount(item.count, { timeout: appConfig.timeouts.expect });
       for (let index = 0; index < item.count; index++) {
-        selections.push({ control: rows.nth(index).getByLabel('item-status', { exact: true }), status: item.status });
+        const row = rows.nth(index);
+        const control = row.getByLabel('item-status', { exact: true });
+        const enabledOptions = await control.locator('option:enabled').evaluateAll(options => options.map(option => option.value));
+        const selected = chooseChecklistStatus(item, enabledOptions);
+        if (!selected) throw new Error(`No allowed checklist status is enabled for ${item.name} on transaction ${application.transactionNumber}.`);
+        if (item.allowedStatuses) logger.info(`Checklist ${item.name}: selected ${selected === 'CPT' ? 'Complete' : 'Waived Off'}.`);
+        selections.push({ control, status: selected });
       }
     }
 

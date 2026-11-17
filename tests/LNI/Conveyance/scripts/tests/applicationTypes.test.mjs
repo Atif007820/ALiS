@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium } from '@playwright/test';
-import { buildApplicationTargets } from '../../config/applicationTypes.js';
+import { buildApplicationTargets, selectInstallationTargets, VARIANCE_INSTALLATION_APP_TYPES } from '../../config/applicationTypes.js';
 import { COMMERCIAL_ENDORSEMENT_TYPES, RESIDENTIAL_ENDORSEMENT_TYPES } from '../../config/constants.js';
 import { PermitApplicationPage } from '../../pages/PermitApplicationPage.js';
+import { ConveyanceVariancePage } from '../../pages/ConveyanceVariancePage.js';
 import { addApplyAnnotations } from '../../utils/annotations.js';
 
 test('expands only compatible pairs and scopes endorsement overrides to their own permit', () => {
@@ -24,6 +25,36 @@ test('rejects unknown applications, incompatible permits, and invalid applicable
   assert.throws(() => buildApplicationTargets({ AppType: 'CHI', PerType: 'Comm' }), /Unsupported PerType for CHI/);
   assert.throws(() => buildApplicationTargets({ AppType: 'NCI,CHI', PerType: 'Res' }), /No PerType selected for AppType CHI/);
   assert.throws(() => buildApplicationTargets({ AppType: 'NCI', PerType: 'Comm', CommType: 'ORC' }), /Unsupported CommType/);
+});
+
+test('CV is a single permit-free target and can be mixed with an installation selection', () => {
+  const [target] = buildApplicationTargets({ AppType: 'cv', ResType: 'ALL', CommType: 'ALL' });
+  assert.equal(target.appType, 'CV');
+  assert.equal(target.permit, null);
+  assert.equal(target.endorsement, null);
+  assert.throws(() => buildApplicationTargets({ AppType: 'cv', PerType: 'Res' }), /does not use PerType/);
+  assert.deepEqual(buildApplicationTargets({ AppType: 'cv,nci', PerType: 'Comm', CommType: 'FC' })
+    .map(({ appType, perType }) => [appType, perType]), [['CV', ''], ['NCI', 'Comm']]);
+});
+
+test('installation selections use overrides, compatible settings, then random choices', () => {
+  const last = { pickIndex: length => length - 1 };
+  const configured = { AppType: 'NCI', PerType: 'Res', ResType: 'ORC' };
+  const labels = (overrides, settings, options = last) => selectInstallationTargets(overrides, settings, options).map(target => target.label);
+  assert.deepEqual(labels({}, configured), ['NCI / Res / ORC']);
+  assert.deepEqual(labels({ AppType: 'NCI' }, configured), ['NCI / Res / ORC']);
+  assert.deepEqual(labels({ PerType: 'Comm', CommType: 'FC' }, configured), ['NCI / Comm / FC']);
+  assert.deepEqual(labels({ AppType: 'CHI' }, configured), ['CHI / CMH(A10.5)']);
+  assert.deepEqual(labels({ AppType: '', PerType: '' }, { ...configured, ResType: '' }), ['CHI / CMH(A10.5)']);
+  assert.deepEqual(labels({ AppType: 'NCI', ResType: '' }, configured), ['NCI / Res / RANDOM']);
+  assert.deepEqual(labels({ CommType: 'FC' }, {}), ['NCI / Comm / FC']);
+  assert.deepEqual(labels({ AppType: 'ALL', PerType: 'ALL' }, {}).length, 4);
+  assert.throws(() => labels({ AppType: 'CHI', PerType: 'Res' }, configured), /Unsupported installation PerType/);
+  const variance = { ...last, appTypes: VARIANCE_INSTALLATION_APP_TYPES };
+  assert.deepEqual(labels({}, {}, variance), ['CHI / CMH(A10.5)']);
+  assert.deepEqual(labels({ AppType: 'CHI', PerType: 'ALL' }, {}, variance), ['CHI / CPH(A10.4)', 'CHI / CMH(A10.5)']);
+  assert.deepEqual(labels({ AppType: 'ALL', PerType: 'Comm', CommType: 'FC' }, {}, variance), ['NCI / Comm / FC']);
+  assert.throws(() => labels({ AppType: 'NCI,CHI', PerType: 'Comm' }, {}, variance), /No PerType selected for AppType CHI/);
 });
 
 test('expands ALL and comma lists to distinct endorsement runs for the selected permit', () => {
@@ -61,11 +92,38 @@ let browser;
 before(async () => { browser = await chromium.launch({ channel: 'chrome', headless: true }); });
 after(async () => browser?.close());
 
+test('direct variance selects the provided conveyance number without starting an installation', { timeout: 15_000 }, async (t) => {
+  const page = await browser.newPage({ serviceWorkers: 'block' });
+  t.after(() => page.close());
+  await page.route('**/*', route => route.abort());
+  await page.setContent(`
+    <label><input type="radio" name="app" value="NCI"> New Conveyance Installation</label>
+    <label><input type="radio" name="app" value="CV"> Conveyance Variance</label>
+    <label>Conveyance # <input id="number"></label>
+    <label id="permit" hidden><input type="radio" name="permit"> License Type</label>
+    <button>Next</button>
+    <output></output>
+    <script>
+      const number = document.querySelector('#number');
+      number.onblur = () => {
+        if (number.value === '009790' && document.querySelector('[value="CV"]').checked) {
+          document.querySelector('#permit').hidden = false;
+        }
+      };
+      document.querySelector('button').onclick = () => {
+        if (document.querySelector('[name="permit"]').checked) document.querySelector('output').textContent = number.value;
+      };
+    </script>`);
+  await new ConveyanceVariancePage(page).selectExistingConveyance('009790');
+  assert.equal(await page.locator('output').innerText(), '009790');
+  assert.equal(await page.getByRole('radio', { name: 'New Conveyance Installation' }).isChecked(), false);
+});
+
 test('selects both hoist permits and NCI endorsements through the same page object', { timeout: 30_000 }, async (t) => {
   const page = await browser.newPage({ serviceWorkers: 'block' });
   t.after(() => page.close());
   await page.route('**/*', route => route.abort());
-  const targets = buildApplicationTargets({ AppType: 'ALL', ResType: 'ORC', CommType: 'FC' });
+  const targets = buildApplicationTargets({ AppType: 'NCI,CHI', ResType: 'ORC', CommType: 'FC' });
   for (const [index, target] of targets.entries()) {
     await page.setContent(`
       <label><input type="radio" name="app" value="NCI"> New Conveyance Installation</label>

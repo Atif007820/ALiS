@@ -20,11 +20,15 @@ function upsertAnnotation(testInfo, type, description) {
   testInfo.annotations.push({ type, description });
 }
 
-function addRunAnnotations(testInfo) {
-  const { application, permit } = getApplicationTarget();
+function addRunAnnotations(testInfo, applicationType) {
   upsertAnnotation(testInfo, 'Login URL', LOGIN_URL);
+  if (applicationType) {
+    upsertAnnotation(testInfo, 'Application Type', applicationType);
+    return;
+  }
+  const { application, permit } = getApplicationTarget();
   upsertAnnotation(testInfo, 'Application Type', application.label);
-  upsertAnnotation(testInfo, 'Permit Type', permit.label);
+  upsertAnnotation(testInfo, 'Permit Type', permit?.label);
 }
 
 /**
@@ -64,18 +68,23 @@ export function addUserAnnotations(testInfo, userData) {
  * @param {{ conveyanceType?: string, endorsementCode?: string, transactionNumber?: string }} selection
  */
 export function addApplyAnnotations(testInfo, {
+  applicationType,
   conveyanceType,
   endorsementCode,
   transactionNumber,
+  conveyanceNumber,
+  installationTransactionNumber,
 } = {}) {
-  addRunAnnotations(testInfo);
+  addRunAnnotations(testInfo, applicationType);
   upsertAnnotation(testInfo, 'Endorsement Code', endorsementCode);
   upsertAnnotation(testInfo, 'Conveyance Type', conveyanceType);
   upsertAnnotation(testInfo, 'Transaction Number', transactionNumber);
+  upsertAnnotation(testInfo, 'Conveyance #', conveyanceNumber);
+  upsertAnnotation(testInfo, 'Installation Transaction Number', installationTransactionNumber);
 }
 
-export function addApprovalAnnotations(testInfo, { transactionNumber, entityName, status, conveyanceType, endorsementCode } = {}) {
-  addApplyAnnotations(testInfo, { transactionNumber, conveyanceType, endorsementCode });
+export function addApprovalAnnotations(testInfo, { entityName, status, ...selection } = {}) {
+  addApplyAnnotations(testInfo, selection);
   upsertAnnotation(testInfo, 'Entity', entityName);
   upsertAnnotation(testInfo, 'Application Status', status);
 }

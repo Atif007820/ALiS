@@ -4,6 +4,7 @@ import { RegistrationPage }      from '../pages/RegistrationPage.js';
 import { DashboardPage }         from '../pages/DashboardPage.js';
 import { PermitApplicationPage } from '../pages/PermitApplicationPage.js';
 import { ApproveApplicationPage } from '../pages/ApproveApplicationPage.js';
+import { ConveyanceVariancePage } from '../pages/ConveyanceVariancePage.js';
 
 /**
  * Extended Playwright `test` object.
@@ -19,6 +20,7 @@ import { ApproveApplicationPage } from '../pages/ApproveApplicationPage.js';
  *   registrationPage       — RegistrationPage
  *   dashboardPage          — DashboardPage
  *   permitApplicationPage  — PermitApplicationPage (composes MachineInformationPage + DocumentUploadComponent)
+ *   variancePage           — ConveyanceVariancePage
  *   approvalPage           — ApproveApplicationPage
  */
 export const test = base.extend({
@@ -37,6 +39,10 @@ export const test = base.extend({
 
   permitApplicationPage: async ({ page }, use) => {
     await use(new PermitApplicationPage(page));
+  },
+
+  variancePage: async ({ page }, use) => {
+    await use(new ConveyanceVariancePage(page));
   },
 
   approvalPage: async ({ page }, use) => {

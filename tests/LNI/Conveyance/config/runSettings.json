@@ -1,7 +1,7 @@
 {
-  "AppType": "NCI",
-  "PerType": "Res",
-  "ResType": "",
+  "AppType": "CHI",
+  "PerType": "CMH(A10.5)",
+  "ResType": "RPV",
   "CommType": "",
   "defaultProject": "chromium",
   "workers": 3,

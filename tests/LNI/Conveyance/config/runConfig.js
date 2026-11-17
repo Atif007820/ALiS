@@ -82,9 +82,10 @@ function rootPath(value, fallback) {
 }
 
 export function getApplicationTarget(env = process.env) {
+  const appType = env.CONVEYANCE_APP_TYPE || String(runSettings.AppType ?? '').trim() || 'NCI';
   const targets = buildApplicationTargets({
-    AppType: env.CONVEYANCE_APP_TYPE ?? runSettings.AppType ?? 'NCI',
-    PerType: env.CONVEYANCE_PER_TYPE ?? runSettings.PerType ?? 'Res',
+    AppType: appType,
+    PerType: env.CONVEYANCE_PER_TYPE || (String(appType).trim().toUpperCase() === 'CV' ? 'ALL' : String(runSettings.PerType ?? '').trim() || 'Res'),
     ResType: env.CONVEYANCE_RES_TYPE ?? runSettings.ResType,
     CommType: env.CONVEYANCE_COMM_TYPE ?? runSettings.CommType,
   });

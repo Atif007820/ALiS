@@ -17,7 +17,6 @@
     "test:matrix": "node scripts/run-conveyance.mjs --e2e --AppType=ALL --PerType=ALL --parallel=4",
     "test:register": "node scripts/run-conveyance.mjs --standalone --spec=register",
     "test:apply": "node scripts/run-conveyance.mjs --standalone --spec=apply",
-    "test:approve": "node scripts/run-conveyance.mjs --standalone --spec=approve",
     "test:firefox": "node scripts/run-conveyance.mjs -- --workers=1 --project=firefox",
     "test:edge": "node scripts/run-conveyance.mjs -- --workers=1 --project=\"Microsoft Edge\"",
     "test:chrome": "node scripts/run-conveyance.mjs -- --workers=1 --project=chromium",

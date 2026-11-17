@@ -25,7 +25,6 @@
     "conveyance:e2e:matrix": "node ./tests/LNI/Conveyance/scripts/run-conveyance.mjs --e2e --AppType=ALL --PerType=ALL --parallel=4",
     "conveyance:e2e:headed": "node ./tests/LNI/Conveyance/scripts/run-conveyance.mjs --e2e --headed",
     "conveyance:e2e:list": "node ./tests/LNI/Conveyance/scripts/run-conveyance.mjs --e2e --list",
-    "conveyance:approve": "node ./tests/LNI/Conveyance/scripts/run-conveyance.mjs --standalone --spec=approve",
     "hmb:e2e": "node ./tests/HMB/scripts/run-hmb.mjs",
     "hmb:e2e:headed": "node ./tests/HMB/scripts/run-hmb.mjs --headed",
     "hmb:register": "node ./tests/HMB/scripts/run-hmb.mjs --spec=register",

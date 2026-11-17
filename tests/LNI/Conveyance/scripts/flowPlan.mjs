@@ -6,6 +6,23 @@ export const SERIAL_FLOW_SPECS = [
   'testScripts/03_ApproveApplication.spec.js',
 ];
 
+export function buildFlowStages(target, specs, { reuseApplicant = false, existingConveyance = false } = {}) {
+  if (target.appType !== 'CV') return specs.map(spec => ({ spec, selection: target, phase: '' }));
+  const applyAndApprove = SERIAL_FLOW_SPECS.slice(1);
+  if (existingConveyance && specs.length === 1 && specs[0] === applyAndApprove[0]) {
+    return [{ spec: specs[0], selection: target, phase: 'variance' }];
+  }
+  const installationSpecs = reuseApplicant ? applyAndApprove : SERIAL_FLOW_SPECS;
+  if (specs.length !== installationSpecs.length || specs.some((spec, index) => spec !== installationSpecs[index])) {
+    throw new Error('Use npm run conv var to create an installation and run its variance flow.');
+  }
+
+  const variance = applyAndApprove.map(spec => ({ spec, selection: target, phase: 'variance' }));
+  if (existingConveyance) return variance;
+  if (!target.installation) throw new Error('New variance requires an installation target.');
+  return [...specs.map(spec => ({ spec, selection: target.installation, phase: 'installation' })), ...variance];
+}
+
 export function flowAxes(args, availableProjects) {
   const projects = [];
   let repeat = 1;
@@ -37,19 +54,9 @@ export function expandFlowTargets(targets, axes) {
   }))));
 }
 
-export function assertApprovalSelection(specs, targets, transactionNumber) {
-  const includesApproval = specs.includes(SERIAL_FLOW_SPECS[2]);
-  if (!includesApproval) {
-    if (transactionNumber) throw new Error('A transaction number is only valid when --spec=approve is selected.');
-    return;
-  }
-  if (specs.includes(SERIAL_FLOW_SPECS[1])) {
-    if (transactionNumber) throw new Error('An apply/approve flow uses its freshly captured transaction; omit the standalone transaction number.');
-  } else {
-    if (!transactionNumber) {
-      throw new Error('Standalone approval requires TransactionNumber in config/approvalTransacNumber.js; stale saved transactions are never used.');
-    }
-    if (targets.length !== 1) throw new Error('Standalone approval requires one application/permit, project and repeat to avoid approving the same transaction more than once.');
+export function assertApprovalSelection(specs) {
+  if (specs.includes(SERIAL_FLOW_SPECS[2]) && !specs.includes(SERIAL_FLOW_SPECS[1])) {
+    throw new Error('Standalone approval is no longer supported. Approval needs a transaction captured by Apply in the same run.');
   }
 }
 

@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { USER_DATA_PATH } from '../config/runConfig.js';
-import { STANDALONE_LOGIN_CREDENTIALS } from '../config/script2LoginCredentials.js';
+import { LOGIN_CREDENTIALS } from '../config/LoginCredentials.js';
 import { logger } from './logger.js';
 import { sleep } from './randomData.js';
 
@@ -35,44 +35,32 @@ export async function loadUserData({
   throw new Error(`User data file was not found within ${timeoutMs}ms: ${filePath}`);
 }
 
-/**
- * Load credentials for 02_LoginApply.spec.js.
- * Uses config/script2LoginCredentials.js when loginName/password are provided;
- * otherwise falls back to the latest registered user in testData/userData.json.
- *
- * @returns {Promise<object>} User data containing at least loginName and password.
- */
+export function resolveApplicantCredentials({ overrides = {}, env = process.env, configured = LOGIN_CREDENTIALS } = {}) {
+  const loginName = String(overrides.loginName ?? env.LOGIN_NAME ?? configured.loginName ?? '').trim();
+  const password = String(overrides.password ?? env.LOGIN_PASSWORD ?? configured.password ?? '').trim();
+  if (Boolean(loginName) !== Boolean(password)) {
+    throw new Error('Provide both applicant LoginName and LoginPassword, or leave both blank. You can set these in config/LoginCredentials.js or LOGIN_NAME and LOGIN_PASSWORD.');
+  }
+  return loginName ? { loginName, password } : null;
+}
+
+/** Standalone apply can use the latest saved account only when no explicit applicant is required. */
 export async function loadLoginApplyUserData() {
   if (process.env.CONVEYANCE_LOGIN_SOURCE === 'registered') {
     logger.info('Using the account created by this E2E registration.');
     return loadUserData();
   }
-
-  const configuredLoginName = process.env.LOGIN_NAME || STANDALONE_LOGIN_CREDENTIALS.loginName;
-  const configuredPassword = process.env.LOGIN_PASSWORD || STANDALONE_LOGIN_CREDENTIALS.password;
-  const hasConfiguredLoginName = Boolean(String(configuredLoginName || '').trim());
-  const hasConfiguredPassword = Boolean(String(configuredPassword || '').trim());
-
-  if (hasConfiguredLoginName && hasConfiguredPassword) {
-    logger.info('Using standalone login credentials from config/script2LoginCredentials.js or environment.');
-    return {
-      loginName: String(configuredLoginName).trim(),
-      password: String(configuredPassword).trim(),
-    };
+  const credentials = resolveApplicantCredentials();
+  if (credentials) {
+    logger.info('Using the configured existing applicant account.');
+    return credentials;
   }
-
-  const savedUserData = await loadUserData();
-  if (hasConfiguredLoginName || hasConfiguredPassword) {
-    logger.info('Using partial standalone credentials plus latest saved user data.');
-    return {
-      ...savedUserData,
-      ...(hasConfiguredLoginName ? { loginName: String(configuredLoginName).trim() } : {}),
-      ...(hasConfiguredPassword ? { password: String(configuredPassword).trim() } : {}),
-    };
+  if (process.env.CONVEYANCE_LOGIN_SOURCE === 'existing-applicant') {
+    throw new Error('This flow requires the existing applicant login name and password.');
   }
 
   logger.info('Using latest saved user credentials from testData/userData.json.');
-  return savedUserData;
+  return loadUserData();
 }
 
 /**

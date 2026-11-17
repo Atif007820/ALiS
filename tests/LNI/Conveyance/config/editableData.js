@@ -72,4 +72,25 @@ export const TEST_DATA = {
   ],
   reviewFallbackAnswerOrder: ['N/A', 'NO', 'No'],
   reviewAnswers: ['N/A', 'NO', 'No'],
+
+  variance: {
+    document: { fileName: 'Text2.doc', comments: 'TEST variance supporting document' },
+    justification: 'TEST only: variance justification for automated workflow validation.',
+    description: 'TEST only: variance description for automated workflow validation.',
+    radioAnswers: {
+      'Is the conveyance being installed in an existing building?': 'No',
+      'Is this location on Tribal Nation Lands, Tribal Trust Lands, or on Federal Property?': 'No',
+      'Is this variance request common to more than one conveyance?': 'No',
+      'Has the installation been made?': 'No',
+      'Was the equipment cited for correction?': 'No',
+      'Does ASME A17.1/CSA B44 apply?': 'No',
+      'Does WAC 296-96 apply?': 'No',
+      'Does ASME A18.1 apply?': 'No',
+      'Does ASME A90.1 apply?': 'No',
+      'Does ASME A17.3 apply?': 'No',
+      'Does ASSE A10.4 or A10.5 apply?': 'No',
+      'RCW 70.87 Violation?': 'No',
+      'Is there any additional information not noted above?': 'No',
+    },
+  },
 };
