@@ -6,12 +6,14 @@ import {
   loadLoginApplyUserData,
   logger,
 } from '../framework.js';
-import { loadVarianceConveyance, saveApplicationTransaction } from '../utils/transactionStore.js';
+import { getFollowUpType } from '../config/applicationTypes.js';
+import { loadFollowUpConveyance, saveApplicationTransaction } from '../utils/transactionStore.js';
 
-const isVariance = getApplicationTarget().appType === 'CV';
+const { appType } = getApplicationTarget();
+const followUp = getFollowUpType(appType);
 
-test(isVariance ? 'Conveyance - Login and Apply for Variance' : 'Conveyance - Login and Apply Permit', async (
-  { loginPage, dashboardPage, permitApplicationPage, variancePage },
+test(followUp ? `Conveyance - Login and Apply for ${followUp.label.slice('Conveyance '.length)}` : 'Conveyance - Login and Apply Permit', async (
+  { loginPage, dashboardPage, permitApplicationPage, variancePage, alterationPage },
   testInfo
 ) => {
   const userData = await test.step('Load applicant account', async () => {
@@ -19,8 +21,8 @@ test(isVariance ? 'Conveyance - Login and Apply for Variance' : 'Conveyance - Lo
     addUserAnnotations(testInfo, data);
     return data;
   });
-  const variance = isVariance ? await test.step('Load the target conveyance number', () => {
-    const target = loadVarianceConveyance(testInfo);
+  const followUpContext = followUp ? await test.step('Load the target conveyance number', () => {
+    const target = loadFollowUpConveyance(testInfo);
     addApplyAnnotations(testInfo, target);
     return target;
   }) : null;
@@ -36,14 +38,22 @@ test(isVariance ? 'Conveyance - Login and Apply for Variance' : 'Conveyance - Lo
     await dashboardPage.openNewPermitApplication();
   });
 
-  const applicationPage = isVariance ? variancePage : permitApplicationPage;
-  const selection = isVariance
-    ? await test.step('Complete Conveyance Variance application', async () => ({
-      ...await variancePage.completeVarianceApplication(variance.conveyanceNumber),
-      ...variance,
-    }))
-    : await test.step('Complete selected installation permit application', () =>
+  let applicationPage;
+  let selection;
+  if (followUpContext) {
+    applicationPage = appType === 'CA' ? alterationPage : variancePage;
+    selection = await test.step(`Complete ${followUp.label} application`, async () => {
+      const number = followUpContext.conveyanceNumber;
+      const result = appType === 'CA'
+        ? await alterationPage.completeAlterationApplication(number, { preserveInformation: process.env.CONVEYANCE_NO_INFORMATION_CHANGES === '1' })
+        : await variancePage.completeVarianceApplication(number);
+      return { ...result, ...followUpContext };
+    });
+  } else {
+    applicationPage = permitApplicationPage;
+    selection = await test.step('Complete selected installation permit application', () =>
       permitApplicationPage.completePermitApplication({ onSelection: value => addApplyAnnotations(testInfo, value) }));
+  }
 
   await test.step('Attach permit application result', async () => {
     addApplyAnnotations(testInfo, selection);

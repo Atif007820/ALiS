@@ -107,15 +107,15 @@ function queueFixture(resultMode) {
           row.cells[1].textContent = applicationId;
           row.cells[2].textContent = key === 'target' ? '001563' : '001562';
           row.cells[3].textContent = number;
-          row.cells[5].textContent = resultMode === 'variance' ? 'Conveyance Variance'
+          row.cells[5].textContent = resultMode === 'alteration' ? 'Conveyance Alteration' : resultMode === 'variance' ? 'Conveyance Variance'
             : resultMode.startsWith('hoist') ? 'Construction Hoist' : resultMode === 'unknown-type'
               ? 'Unrecognized Application' : 'New Conveyance Installation';
-          row.cells[6].textContent = resultMode === 'variance' ? 'Fixture Admin' : '';
+          row.cells[6].textContent = ['variance', 'alteration'].includes(resultMode) ? 'Fixture Admin' : '';
           row.querySelector('a').textContent = name;
           row.querySelector('a').onclick = (event) => {
             event.preventDefault();
             state.opened.push(key);
-            if (key === 'target' && (resultMode === 'variance' || state.pulls.at(-1)?.join() === 'target')) openStatus();
+            if (key === 'target' && (['variance', 'alteration'].includes(resultMode) || state.pulls.at(-1)?.join() === 'target')) openStatus();
           };
           return row;
         }));
@@ -146,6 +146,12 @@ function queueFixture(resultMode) {
             ? [['mandatory', '4 All (State Only) Mandatory Required Documents'], ['additional', '2 All Additional Supporting Documents'],
               ['ensure', '1 All (State Only) Ensure payment linked to permit #'], ['review', '3 All (State Only) Review Application Fee']]
             : [['mandatory', '2 All (State Only) Mandatory Required Documents'], ['additional', '1 All Additional Supporting Documents']];
+        }
+        if (resultMode === 'alteration') {
+          items = state.saved.length === 0
+            ? [['ensure', '7 All (State Only) Ensure payment linked to permit #'], ['review', '9 All (State Only) Review Application Fee'],
+              ['additional', '6 All Additional Supporting Documents']]
+            : [['additional', '1 All Additional Supporting Documents']];
         }
         if (state.saved.length && resultMode === 'commercial') {
           items.unshift(['blind-hoistway', '19 (State Only) Verify Blind Hoistway value is correct on Conveyance Information tab']);
@@ -181,7 +187,7 @@ function queueFixture(resultMode) {
     </script>`;
 }
 
-async function setup(t, resultMode = 'default') {
+async function setup(t, resultMode = 'default', pickIndex) {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   t.after(() => context.close());
   // Fulfill the configured login URL locally. No other request can reach the portal.
@@ -194,40 +200,44 @@ async function setup(t, resultMode = 'default') {
   const page = await context.newPage();
   page.setDefaultTimeout(2_000);
   page.setDefaultNavigationTimeout(10_000);
-  const workflow = new ApproveApplicationPage(page);
+  const workflow = new ApproveApplicationPage(page, { pickIndex });
   await workflow.openWorkQueue(credentials);
   return { page, workflow };
 }
 
 function assertChecklistSaves(actual, expected) {
-  for (const save of actual) {
-    assert.ok(['CPT', 'WOF'].includes(save.items.additional));
-  }
-  assert.deepEqual(actual.map(({ status, items: { additional, ...items } }) => ({ status, items })), expected);
+  assert.deepEqual(actual.map(({ status, items }) => {
+    for (const value of Object.values(items)) assert.ok(['CPT', 'WOF'].includes(value));
+    return [status, ...Object.keys(items).sort()];
+  }), expected.map(([status, ...keys]) => [status, ...keys.sort()]));
 }
 
-test('checklist selection randomizes only configured choices and ignores disabled options', () => {
-  const optional = { allowedStatuses: ['CPT', 'WOF'] };
-  assert.equal(chooseChecklistStatus(optional, ['CPT', 'WOF', 'PEN'], () => 0), 'CPT');
-  assert.equal(chooseChecklistStatus(optional, ['CPT', 'WOF', 'PEN'], () => 1), 'WOF');
-  assert.equal(chooseChecklistStatus(optional, ['WOF', 'PEN'], () => assert.fail('no random choice')), 'WOF');
-  assert.equal(chooseChecklistStatus(optional, ['PEN']), undefined);
-  assert.equal(chooseChecklistStatus({ status: 'CPT' }, ['CPT', 'WOF'], () => assert.fail('required outcome')), 'CPT');
-  assert.equal(chooseChecklistStatus({ status: 'CPT' }, ['WOF']), undefined);
+test('checklist selection randomizes enabled terminal statuses and never selects Pending', () => {
+  assert.equal(chooseChecklistStatus(['CPT', 'WOF', 'PEN'], () => 0), 'CPT');
+  assert.equal(chooseChecklistStatus(['CPT', 'WOF', 'PEN'], () => 1), 'WOF');
+  assert.equal(chooseChecklistStatus(['WOF', 'PEN'], () => assert.fail('no random choice')), 'WOF');
+  assert.equal(chooseChecklistStatus(['CPT', 'PEN'], () => assert.fail('no random choice')), 'CPT');
+  assert.equal(chooseChecklistStatus(['PEN']), undefined);
 });
 
-for (const [variant, appType, expected] of [
-  ['default', 'NCI', ['ACP', 'APR']],
-  ['hoist-technical', 'CHI', ['APR']],
-  ['variance', 'CV', ['ACP', 'APR']],
+for (const [variant, appType, expected, choice] of [
+  ['default', 'NCI', ['ACP', 'APR'], 1],
+  ['hoist-technical', 'CHI', ['APR'], 0],
+  ['variance', 'CV', ['ACP', 'APR'], 0],
+  ['alteration', 'CA', ['ACP', 'APR'], 1],
 ]) {
   test(`approval-only detects ${appType} and saves only the required review stages`, { timeout: 25_000 }, async (t) => {
-    const { page, workflow } = await setup(t, variant);
+    const { page, workflow } = await setup(t, variant, () => choice);
     const result = await workflow.approveExistingTransaction(application.transactionNumber);
     assert.equal(result.appType, appType);
     const state = await page.evaluate(() => window.approvalState);
     assert.deepEqual(state.opened, expected.map(() => 'target'));
     assert.deepEqual(state.saved.map(({ status }) => status), expected);
+    for (const { items } of state.saved) {
+      assert.ok(Object.keys(items).length > 0);
+      assert.ok(Object.values(items).every(value => value === ['CPT', 'WOF'][choice]));
+    }
+    if (appType === 'CA') assertChecklistSaves(state.saved, [['ACP', 'ensure', 'review', 'additional'], ['APR', 'additional']]);
   });
 }
 
@@ -254,18 +264,18 @@ test('accepts then approves only the exact transaction with the correct checklis
   assert.deepEqual(state.pulls, [['target'], ['target']]);
   assert.deepEqual(state.opened, ['target', 'target']);
   assertChecklistSaves(state.saved, [
-    { status: 'ACP', items: { mandatory: 'CPT', 'review-a': 'CPT', 'review-b': 'CPT', ensure: 'CPT' } },
-    { status: 'APR', items: { mandatory: 'CPT' } },
+    ['ACP', 'mandatory', 'review-a', 'review-b', 'ensure', 'additional'],
+    ['APR', 'mandatory', 'additional'],
   ]);
   assert.equal(state.closedDialogs, 2);
 });
 
-test('marks the Commercial Blind Hoistway checklist item Complete before approval', { timeout: 15_000 }, async (t) => {
+test('resolves the Commercial Blind Hoistway checklist item before approval', { timeout: 15_000 }, async (t) => {
   const { page, workflow } = await setup(t, 'commercial');
   await workflow.acceptApplication(application);
   await workflow.approveApplication(application);
   const state = await page.evaluate(() => window.approvalState);
-  assertChecklistSaves(state.saved.slice(-1), [{ status: 'APR', items: { 'blind-hoistway': 'CPT', mandatory: 'CPT' } }]);
+  assertChecklistSaves(state.saved.slice(-1), [['APR', 'blind-hoistway', 'mandatory', 'additional']]);
   assert.equal(state.closedDialogs, 2);
 });
 
@@ -275,8 +285,8 @@ test('accepts and approves a hoist transaction without requiring an NCI plan row
   await workflow.acceptApplication(target);
   await workflow.approveApplication(target);
   assertChecklistSaves(await page.evaluate(() => window.approvalState.saved), [
-    { status: 'ACP', items: { payment: 'CPT', fee: 'CPT' } },
-    { status: 'APR', items: {} },
+    ['ACP', 'payment', 'fee', 'additional'],
+    ['APR', 'additional'],
   ]);
 });
 
@@ -289,8 +299,8 @@ test('CV approval checks the conveyance number before pull and uses its own chec
   await workflow.approveApplication({ ...target, entityName });
   assert.deepEqual(await page.evaluate(() => window.approvalState.pulls), []);
   assertChecklistSaves(await page.evaluate(() => window.approvalState.saved), [
-    { status: 'ACP', items: { mandatory: 'WOF', ensure: 'WOF', review: 'WOF' } },
-    { status: 'APR', items: { mandatory: 'WOF' } },
+    ['ACP', 'mandatory', 'ensure', 'review', 'additional'],
+    ['APR', 'mandatory', 'additional'],
   ]);
 });
 
@@ -327,8 +337,8 @@ test('handles NCI fee and payment rows by name across stage variants', { timeout
   await workflow.acceptApplication(application);
   await workflow.approveApplication(application);
   assertChecklistSaves(await page.evaluate(() => window.approvalState.saved), [
-    { status: 'ACP', items: { mandatory: 'CPT', 'review-a': 'CPT' } },
-    { status: 'APR', items: { fee: 'CPT', mandatory: 'CPT' } },
+    ['ACP', 'mandatory', 'review-a', 'additional'],
+    ['APR', 'fee', 'mandatory', 'additional'],
   ]);
 });
 

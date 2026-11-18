@@ -1,15 +1,12 @@
 import { expect } from '@playwright/test';
-import { join } from 'node:path';
-import { APPLICATION_TYPES } from '../config/applicationTypes.js';
 import { TEST_DATA } from '../config/editableData.js';
-import { UPLOAD_FILES_DIR } from '../config/runConfig.js';
 import { randomEnglishName } from '../utils/randomData.js';
 import { normalizeConveyanceNumber } from '../utils/transactionStore.js';
-import { PermitApplicationPage } from './PermitApplicationPage.js';
+import { ConveyanceFollowUpPage } from './ConveyanceFollowUpPage.js';
 
 const details = TEST_DATA.variance;
 
-export class ConveyanceVariancePage extends PermitApplicationPage {
+export class ConveyanceVariancePage extends ConveyanceFollowUpPage {
   async completeVarianceApplication(conveyanceNumber) {
     const number = normalizeConveyanceNumber(conveyanceNumber);
     await this.selectExistingConveyance(number);
@@ -23,38 +20,12 @@ export class ConveyanceVariancePage extends PermitApplicationPage {
       .filter({ visible: true }).fill(randomEnglishName());
     await this.next();
 
-    const documents = this.page.getByRole('link', { name: /^Documents\s*\(\s*\d+\s*\)$/i }).filter({ visible: true });
-    await this.documents.uploadExistingFile({
-      trigger: documents,
-      filePath: join(UPLOAD_FILES_DIR, details.document.fileName),
-      comments: details.document.comments,
-    });
+    await this.uploadSupportingDocument(details.uploadComments);
     await this.next();
     await this.answerVarianceQuestions();
     await this.attestSubmitAndPayLater();
     await this.expectConfirmation();
     return { appType: 'CV', conveyanceNumber: number };
-  }
-
-  async selectExistingConveyance(number) {
-    await this.page.getByRole('radio', { name: APPLICATION_TYPES.CV.radio, exact: true }).check();
-    const input = this.page.getByRole('textbox', { name: 'Conveyance #', exact: true });
-    await input.fill(number);
-    await input.press('Tab');
-
-    const permit = this.page.getByRole('radio', { name: 'License Type', exact: true }).filter({ visible: true });
-    await expect(permit, `Conveyance ${number} must resolve to exactly one eligible permit for variance`)
-      .toBeVisible();
-    await permit.check();
-    await expect(permit).toBeChecked();
-    await expect(input).toHaveValue(number);
-    await this.next();
-  }
-
-  async next() {
-    // The wizard repeats its Next control; use the enabled bottom action, not a fixed index.
-    await this.page.getByRole('button', { name: 'Next', exact: true, disabled: false })
-      .filter({ visible: true }).last().click();
   }
 
   async answerVarianceQuestions() {

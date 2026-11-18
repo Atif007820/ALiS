@@ -4,7 +4,7 @@ import './runConfig.js';
  * Default for npm run conv -- --approve when --TransacNum is omitted.
  * Combined workflows still approve the transaction captured by Apply.
  */
-export const TransactionNumber = '6474';
+export const TransactionNumber = '6475';
 
 export function loadApprovalCredentials({ env = process.env } = {}) {
   const loginName = env.CONVEYANCE_APPROVER_LOGIN_NAME?.trim();

@@ -5,7 +5,6 @@ export const APPLICATION_TYPES = Object.freeze({
   NCI: {
     label: 'New Conveyance Installation',
     radio: 'New Conveyance Installation',
-    supportsVariance: true,
     permits: {
       Res: { label: 'RESIDENTIAL CONVEYANCE - NEW INSTALLATION', radioIndex: 0, endorsementFor: 'RESIDENTIAL', override: 'ResType' },
       Comm: { label: 'COMMERCIAL CONVEYANCE - NEW INSTALLATION', radioIndex: 1, endorsementFor: 'COMMERCIAL', override: 'CommType' },
@@ -14,7 +13,6 @@ export const APPLICATION_TYPES = Object.freeze({
   CHI: {
     label: 'Construction Hoist Installation',
     radio: /^(?:Construction Hoist|Construction Hoist Installation)$/i,
-    supportsVariance: true,
     permits: {
       'CPH(A10.4)': { label: 'Construction Personnel Hoist (A10.4) - New Installation', radioIndex: 0 },
       'CMH(A10.5)': {
@@ -24,15 +22,28 @@ export const APPLICATION_TYPES = Object.freeze({
       },
     },
   },
-  CV: { label: 'Conveyance Variance', radio: 'Conveyance Variance' },
+  CV: { label: 'Conveyance Variance', radio: 'Conveyance Variance', flow: 'var', phase: 'variance' },
+  CA: { label: 'Conveyance Alteration', radio: 'Conveyance Alteration', flow: 'alt', phase: 'alteration' },
 });
 
-function selectionKeys(value, keys, option) {
+export const FOLLOW_UP_TYPES = Object.fromEntries(Object.entries(APPLICATION_TYPES).filter(([, type]) => type.flow));
+
+const PERMIT_ALIASES = {
+  'CPH(A10.4)': 'CPH-A10.4',
+  'CMH(A10.5)': 'CMH-A10.5',
+};
+
+export function getFollowUpType(appType) {
+  const code = String(appType ?? '').trim().toUpperCase();
+  return Object.hasOwn(FOLLOW_UP_TYPES, code) ? FOLLOW_UP_TYPES[code] : undefined;
+}
+
+function selectionKeys(value, keys, option, aliases = {}) {
   const tokens = String(value).split(',').map(token => token.trim().toUpperCase());
   if (tokens.length === 1 && tokens[0] === 'ALL') return keys;
   const selected = tokens.map(token => {
-    const key = keys.find(candidate => candidate.toUpperCase() === token);
-    if (!key) throw new Error(`Unsupported ${option} "${token}". Use ${keys.join(', ')} or ALL.`);
+    const key = keys.find(candidate => candidate.toUpperCase() === token || aliases[candidate] === token);
+    if (!key) throw new Error(`Unsupported ${option} "${token}". Use ${keys.map(candidate => aliases[candidate] ?? candidate).join(', ')} or ALL.`);
     return key;
   });
   return [...new Set(selected)];
@@ -57,9 +68,9 @@ export function buildApplicationTargets({ AppType = 'NCI', PerType = 'ALL', ResT
   const applications = selectionKeys(AppType, Object.keys(APPLICATION_TYPES), 'AppType');
   const permitKeys = applications.flatMap(key => Object.keys(APPLICATION_TYPES[key].permits ?? {}));
   if (!permitKeys.length && String(PerType).trim().toUpperCase() !== 'ALL') {
-    throw new Error('Conveyance Variance does not use PerType. Omit it or use --PerType=ALL.');
+    throw new Error(`${applications.map(key => APPLICATION_TYPES[key].label).join(', ')} does not use PerType. Omit it or use --PerType=ALL.`);
   }
-  const permits = selectionKeys(PerType, permitKeys, `PerType for ${applications.join(', ')}`);
+  const permits = selectionKeys(PerType, permitKeys, `PerType for ${applications.join(', ')}`, PERMIT_ALIASES);
   const overrides = { ResType, CommType };
 
   return applications.flatMap(appType => {
@@ -70,7 +81,7 @@ export function buildApplicationTargets({ AppType = 'NCI', PerType = 'ALL', ResT
     }
     const selected = Object.entries(application.permits).filter(([key]) => permits.includes(key));
     if (!selected.length) {
-      throw new Error(`No PerType selected for AppType ${appType}. Use ${Object.keys(application.permits).join(', ')} or ALL.`);
+      throw new Error(`No PerType selected for AppType ${appType}. Use ${Object.keys(application.permits).map(key => PERMIT_ALIASES[key] ?? key).join(', ')} or ALL.`);
     }
     return selected.flatMap(([perType, permit]) => endorsementSelections(permit, overrides[permit.override]).map(endorsement => {
       const suffix = permit.endorsementFor ? (endorsement?.code ?? 'RANDOM') : '';
@@ -85,8 +96,6 @@ export function buildApplicationTargets({ AppType = 'NCI', PerType = 'ALL', ResT
 }
 
 export const INSTALLATION_APP_TYPES = Object.keys(APPLICATION_TYPES).filter(key => APPLICATION_TYPES[key].permits);
-export const VARIANCE_INSTALLATION_APP_TYPES = INSTALLATION_APP_TYPES
-  .filter(key => APPLICATION_TYPES[key].supportsVariance);
 
 export function selectInstallationTargets(selection = {}, settings = {}, {
   appTypes = INSTALLATION_APP_TYPES,
@@ -103,7 +112,7 @@ export function selectInstallationTargets(selection = {}, settings = {}, {
   const useAllApps = /^ALL$/i.test(app);
   const inheritedPermit = !useAllApps && selection.PerType == null && selection.AppType != null;
   const permitScope = inheritedPermit ? INSTALLATION_APP_TYPES : requestedApps;
-  const requestedPermits = selectionKeys(permit || 'ALL', permitScope.flatMap(keysFor), 'installation PerType');
+  const requestedPermits = selectionKeys(permit || 'ALL', permitScope.flatMap(keysFor), 'installation PerType', PERMIT_ALIASES);
   const useAllPermits = /^ALL$/i.test(permit);
 
   let choices = requestedApps.map(key => {
@@ -112,7 +121,7 @@ export function selectInstallationTargets(selection = {}, settings = {}, {
   });
   if (app && !useAllApps) {
     const invalid = choices.find(choice => !choice.permits.length);
-    if (invalid) throw new Error(`No PerType selected for AppType ${invalid.key}. Use ${keysFor(invalid.key).join(', ')} or ALL.`);
+    if (invalid) throw new Error(`No PerType selected for AppType ${invalid.key}. Use ${keysFor(invalid.key).map(key => PERMIT_ALIASES[key] ?? key).join(', ')} or ALL.`);
   } else {
     choices = choices.filter(choice => choice.permits.length);
     if (!app && (!permit || useAllPermits)) {

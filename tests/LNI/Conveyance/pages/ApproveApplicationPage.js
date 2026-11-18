@@ -1,17 +1,18 @@
 import { expect } from '@playwright/test';
 import { randomInt } from 'node:crypto';
 import { appConfig } from '../config/runConfig.js';
-import { APPLICATION_TYPES } from '../config/applicationTypes.js';
+import { APPLICATION_TYPES, getFollowUpType } from '../config/applicationTypes.js';
 import { logger } from '../utils/logger.js';
 import { normalizeConveyanceNumber, normalizeTransactionNumber } from '../utils/transactionStore.js';
 import { BasePage } from './BasePage.js';
 import { LoginPage } from './LoginPage.js';
 
-const MANDATORY = { name: /Mandatory Required\b/i, count: 1, status: 'CPT' };
-const ADDITIONAL = { name: /Additional Supporting\b/i, count: 1, allowedStatuses: ['CPT', 'WOF'] };
-const CONTRACT_REVIEW = { name: /\bReview\s+copy\s+of\s+contract\b/i, count: 1, status: 'CPT' };
-const FEE_REVIEW = { name: /\bReview\s+Application\s+Fee\b/i, count: 1, status: 'CPT' };
-const PAYMENT_LINK = { name: /\bEnsure\s+payment\s+linked\s+to\s+permit\b/i, count: 1, status: 'CPT' };
+const CHECKLIST_OUTCOMES = Object.freeze({ CPT: 'Complete', WOF: 'Waived Off' });
+const MANDATORY = { name: /Mandatory Required\b/i, count: 1 };
+const ADDITIONAL = { name: /Additional Supporting\b/i, count: 1 };
+const CONTRACT_REVIEW = { name: /\bReview\s+copy\s+of\s+contract\b/i, count: 1 };
+const FEE_REVIEW = { name: /\bReview\s+Application\s+Fee\b/i, count: 1 };
+const PAYMENT_LINK = { name: /\bEnsure\s+payment\s+linked\s+to\s+permit\b/i, count: 1 };
 const OPTIONAL_FEE_PAYMENT = [FEE_REVIEW, PAYMENT_LINK].map(item => ({ ...item, optional: true }));
 const ACCEPTANCE_CHECKLIST = [
   MANDATORY,
@@ -23,22 +24,28 @@ const APPROVAL_CHECKLIST = [
   MANDATORY,
   ADDITIONAL,
   ...OPTIONAL_FEE_PAYMENT,
-  { name: /\bVerify\s+Blind\s+Hoistway\b/i, count: 1, status: 'CPT', optional: true },
+  { name: /\bVerify\s+Blind\s+Hoistway\b/i, count: 1, optional: true },
 ];
 const HOIST_ACCEPTANCE_CHECKLIST = [ADDITIONAL, FEE_REVIEW, PAYMENT_LINK];
 const HOIST_APPROVAL_CHECKLIST = [ADDITIONAL, ...OPTIONAL_FEE_PAYMENT];
-const VARIANCE_MANDATORY = { ...MANDATORY, name: /Mandatory Required Documents?\b/i, status: 'WOF' };
+const VARIANCE_MANDATORY = { ...MANDATORY, name: /Mandatory Required Documents?\b/i };
 const VARIANCE_ACCEPTANCE_CHECKLIST = [
-  { ...PAYMENT_LINK, status: 'WOF' },
+  PAYMENT_LINK,
   ADDITIONAL,
-  { ...FEE_REVIEW, status: 'WOF' },
+  FEE_REVIEW,
   VARIANCE_MANDATORY,
 ];
 const VARIANCE_APPROVAL_CHECKLIST = [ADDITIONAL, VARIANCE_MANDATORY];
+const ALTERATION_ACCEPTANCE_CHECKLIST = [PAYMENT_LINK, ADDITIONAL, FEE_REVIEW];
+const ALTERATION_APPROVAL_CHECKLIST = [
+  { ...ADDITIONAL, optional: true },
+  { ...VARIANCE_MANDATORY, optional: true },
+];
 const CHECKLISTS = {
   NCI: [ACCEPTANCE_CHECKLIST, APPROVAL_CHECKLIST],
   CHI: [HOIST_ACCEPTANCE_CHECKLIST, HOIST_APPROVAL_CHECKLIST],
   CV: [VARIANCE_ACCEPTANCE_CHECKLIST, VARIANCE_APPROVAL_CHECKLIST],
+  CA: [ALTERATION_ACCEPTANCE_CHECKLIST, ALTERATION_APPROVAL_CHECKLIST],
 };
 const TRANSACTION_COLUMN = /^(?:Transaction|TXN)\s*(?:#|Number|No\.?)(?:\s+Filter)?\s*:?$/i;
 const CONVEYANCE_COLUMN = /^Conveyance\s*(?:#|Number|No\.?)(?:\s+Filter)?\s*:?$/i;
@@ -49,15 +56,15 @@ const SAVE_VALIDATION = /please review (?:the )?following errors|validation fail
 const ALREADY_ASSIGNED = /^Please select task\(s\) not assigned to you\.?$/i;
 const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
-export function chooseChecklistStatus(rule, enabledOptions, pickIndex = randomInt) {
-  if (rule.status) return enabledOptions.includes(rule.status) ? rule.status : undefined;
-  const allowed = rule.allowedStatuses.filter(status => enabledOptions.includes(status));
+export function chooseChecklistStatus(enabledOptions, pickIndex = randomInt) {
+  const allowed = Object.keys(CHECKLIST_OUTCOMES).filter(status => enabledOptions.includes(status));
   return allowed.length > 1 ? allowed[pickIndex(allowed.length)] : allowed[0];
 }
 
 export class ApproveApplicationPage extends BasePage {
-  constructor(page) {
+  constructor(page, { pickIndex = randomInt } = {}) {
     super(page);
+    this.pickIndex = pickIndex;
     this.loginPage = new LoginPage(page);
     this.licensingLink = page.getByRole('link', { name: 'Licensing', exact: true });
     this.workQueueLink = page.getByRole('link', { name: 'Work Queue', exact: true });
@@ -200,10 +207,10 @@ export class ApproveApplicationPage extends BasePage {
     if (conveyanceNumber && await this.readQueueColumn(row, CONVEYANCE_COLUMN) !== conveyanceNumber) {
       throw new Error(`Transaction ${number} does not belong to conveyance ${conveyanceNumber}.`);
     }
-    if (appType === 'CV') {
-      const expected = APPLICATION_TYPES.CV;
+    const expected = getFollowUpType(appType);
+    if (expected) {
       const actual = await this.readQueueColumn(row, APPLICATION_COLUMN);
-      if (![normalize(expected.label), 'cv'].includes(normalize(actual))) {
+      if (![normalize(expected.label), normalize(appType)].includes(normalize(actual))) {
         throw new Error(`Transaction ${number} is "${actual}", not "${expected.label}". Check the flow or AppType before approving.`);
       }
     }
@@ -339,8 +346,8 @@ export class ApproveApplicationPage extends BasePage {
 
   async unresolvedChecklistItems() {
     const controls = this.reviewDialog.getByLabel('item-status', { exact: true }).filter({ visible: true });
-    return controls.evaluateAll((fields) => fields
-      .filter(field => !['CPT', 'WOF'].includes(field.value))
+    return controls.evaluateAll((fields, resolved) => fields
+      .filter(field => !resolved.includes(field.value))
       .map(field => {
         const row = field.closest('tr, [role="row"]');
         const label = [...(row?.querySelectorAll('td, [role="cell"], [role="gridcell"]') ?? [])]
@@ -348,7 +355,7 @@ export class ApproveApplicationPage extends BasePage {
           .map(cell => cell.innerText.replace(/\s+/g, ' ').trim())
           .filter(Boolean).join(' ');
         return `${label || 'Unnamed checklist item'} (${field.selectedOptions?.[0]?.textContent.trim() || 'unset'})`;
-      }));
+      }), Object.keys(CHECKLIST_OUTCOMES));
   }
 
   async waiveNonApplicableBuildingApproval(application) {
@@ -358,7 +365,7 @@ export class ApproveApplicationPage extends BasePage {
     const control = rows.getByLabel('item-status', { exact: true });
     if (!(await control.count())) return;
     const value = await control.inputValue();
-    if (['CPT', 'WOF'].includes(value)) return;
+    if (Object.hasOwn(CHECKLIST_OUTCOMES, value)) return;
     if (value !== 'PEN' || !/^(?:no|n\s*\/?\s*a|not applicable)$/i.test(String(application.existingBuildingAnswer ?? '').trim())) {
       return;
     }
@@ -398,9 +405,9 @@ export class ApproveApplicationPage extends BasePage {
         const row = rows.nth(index);
         const control = row.getByLabel('item-status', { exact: true });
         const enabledOptions = await control.locator('option:enabled').evaluateAll(options => options.map(option => option.value));
-        const selected = chooseChecklistStatus(item, enabledOptions);
+        const selected = chooseChecklistStatus(enabledOptions, this.pickIndex);
         if (!selected) throw new Error(`No allowed checklist status is enabled for ${item.name} on transaction ${application.transactionNumber}.`);
-        if (item.allowedStatuses) logger.info(`Checklist ${item.name}: selected ${selected === 'CPT' ? 'Complete' : 'Waived Off'}.`);
+        logger.info(`Checklist ${item.name}: selected ${CHECKLIST_OUTCOMES[selected]}.`);
         selections.push({ control, status: selected });
       }
     }

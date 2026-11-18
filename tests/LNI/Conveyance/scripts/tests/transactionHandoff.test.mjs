@@ -6,7 +6,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { assertApprovalSelection, assertMutationRetries, expandFlowTargets, flowAxes, SERIAL_FLOW_SPECS } from '../flowPlan.mjs';
-import { loadApprovalTransaction, loadVarianceConveyance, normalizeTransactionNumber, saveApplicationTransaction, saveApprovedInstallation } from '../../utils/transactionStore.js';
+import { loadApprovalTransaction, loadFollowUpConveyance, normalizeTransactionNumber, saveApplicationTransaction, saveApprovedInstallation } from '../../utils/transactionStore.js';
+import { CONVEYANCE_ALTERATION_DETAILS } from '../../config/ConveyanceAlterationDetails.js';
 import { CONVEYANCE_VARIANCE_DETAILS } from '../../config/ConveyanceVarianceDetails.js';
 import { TransactionNumber } from '../../config/approvalTransacNumber.js';
 
@@ -98,38 +99,44 @@ test('fresh handoff cannot fall back to an explicit or stale transaction when mi
   assert.throws(() => loadApprovalTransaction(chromium, { env }), /No valid transaction captured/);
 });
 
-test('CV takes an exact approved installation number and stores its own transaction separately', t => {
-  const installEnv = fixture(t);
+for (const [appType, phase] of [['CV', 'variance'], ['CA', 'alteration']]) {
+test(`${appType} takes an exact approved installation number and stores its own transaction separately`, t => {
+  const installEnv = { ...fixture(t), CONVEYANCE_FOLLOW_UP_APP_TYPE: appType };
   installEnv.CONVEYANCE_APPROVED_INSTALLATION_PATH = path.join(path.dirname(installEnv.CONVEYANCE_TRANSACTION_PATH), 'approved-installation.json');
-  const env = { ...installEnv, CONVEYANCE_APP_TYPE: 'CV', CONVEYANCE_PER_TYPE: '',
-    CONVEYANCE_TRANSACTION_PATH: path.join(path.dirname(installEnv.CONVEYANCE_TRANSACTION_PATH), 'variance-transaction.json') };
-  assert.throws(() => loadVarianceConveyance(chromium, { env }), /No approved installation handoff/);
+  const env = { ...installEnv, CONVEYANCE_APP_TYPE: appType, CONVEYANCE_PER_TYPE: '',
+    CONVEYANCE_TRANSACTION_PATH: path.join(path.dirname(installEnv.CONVEYANCE_TRANSACTION_PATH), `${phase}-transaction.json`) };
+  assert.throws(() => loadFollowUpConveyance(chromium, { env }), /No approved installation handoff/);
   saveApplicationTransaction({ transactionNumber: '00100' }, chromium, { env: installEnv });
   const install = loadApprovalTransaction(chromium, { env: installEnv });
   saveApprovedInstallation(install, '00912', chromium, { env: installEnv });
-  const variance = loadVarianceConveyance(chromium, { env });
-  assert.deepEqual(variance, { conveyanceNumber: '00912', installationTransactionNumber: '00100' });
-  assert.throws(() => loadVarianceConveyance(chromium, { env: { ...env, CONVEYANCE_RUN_ID: 'another-run' } }), /does not belong/);
-  saveApplicationTransaction({ ...variance, transactionNumber: '00101' }, chromium, { env });
+  const followUp = loadFollowUpConveyance(chromium, { env });
+  assert.deepEqual(followUp, { conveyanceNumber: '00912', installationTransactionNumber: '00100' });
+  assert.throws(() => loadFollowUpConveyance(chromium, { env: { ...env, CONVEYANCE_RUN_ID: 'another-run' } }), /does not belong/);
+  const otherType = appType === 'CV' ? 'CA' : 'CV';
+  assert.throws(() => loadFollowUpConveyance(chromium, {
+    env: { ...env, CONVEYANCE_APP_TYPE: otherType, CONVEYANCE_FOLLOW_UP_APP_TYPE: otherType },
+  }), /does not belong/);
+  saveApplicationTransaction({ ...followUp, transactionNumber: '00101' }, chromium, { env });
   assert.equal(loadApprovalTransaction(chromium, { env }).transactionNumber, '00101');
   assert.equal(loadApprovalTransaction(chromium, { env }).conveyanceNumber, '00912');
   assert.equal(loadApprovalTransaction(chromium, { env: installEnv }).transactionNumber, '00100');
-  assert.deepEqual(loadVarianceConveyance(chromium, { env: { ...env, CONVEYANCE_VARIANCE_CONVEYANCE_NUMBER: '00123' } }), variance);
+  assert.deepEqual(loadFollowUpConveyance(chromium, { env: { ...env, CONVEYANCE_VARIANCE_CONVEYANCE_NUMBER: '00123' } }), followUp);
 });
+}
 
 for (const perType of ['CPH(A10.4)', 'CMH(A10.5)']) {
   test(`CV uses the approved conveyance number from the planned ${perType} run`, t => {
     const install = { ...fixture(t), CONVEYANCE_APP_TYPE: 'CHI', CONVEYANCE_PER_TYPE: perType,
-      CONVEYANCE_VARIANCE_INSTALLATION_APP_TYPE: 'CHI' };
+      CONVEYANCE_FOLLOW_UP_INSTALLATION_APP_TYPE: 'CHI', CONVEYANCE_FOLLOW_UP_APP_TYPE: 'CV' };
     install.CONVEYANCE_APPROVED_INSTALLATION_PATH = path.join(path.dirname(install.CONVEYANCE_TRANSACTION_PATH), 'approved-installation.json');
     saveApplicationTransaction({ appType: 'CHI', perType, transactionNumber: '00110' }, chromium, { env: install });
     saveApprovedInstallation(loadApprovalTransaction(chromium, { env: install }), '00932', chromium, { env: install });
     const variance = { ...install, CONVEYANCE_APP_TYPE: 'CV', CONVEYANCE_PER_TYPE: '' };
-    assert.deepEqual(loadVarianceConveyance(chromium, { env: variance }), {
+    assert.deepEqual(loadFollowUpConveyance(chromium, { env: variance }), {
       conveyanceNumber: '00932', installationTransactionNumber: '00110',
     });
-    assert.throws(() => loadVarianceConveyance(chromium, {
-      env: { ...variance, CONVEYANCE_VARIANCE_INSTALLATION_APP_TYPE: 'NCI' },
+    assert.throws(() => loadFollowUpConveyance(chromium, {
+      env: { ...variance, CONVEYANCE_FOLLOW_UP_INSTALLATION_APP_TYPE: 'NCI' },
     }), /does not belong/);
   });
 }
@@ -142,15 +149,19 @@ test('direct apply remains usable, but approval cannot fall back to a manual num
   }
 });
 
-test('direct variance uses only the validated conveyance selected by its own runner', () => {
-  const env = {
-    CONVEYANCE_APP_TYPE: 'CV', CONVEYANCE_RUN_ID: 'current-variance',
-    CONVEYANCE_LOGIN_SOURCE: 'existing-applicant', CONVEYANCE_EXISTING_CONVEYANCE_NUMBER: '009790',
-  };
-  assert.deepEqual(loadVarianceConveyance(chromium, { env }), { conveyanceNumber: '009790' });
-  assert.throws(() => loadVarianceConveyance(chromium, { env: { ...env, CONVEYANCE_APP_TYPE: 'NCI' } }), /requires a variance run/);
-  assert.throws(() => loadVarianceConveyance(chromium, { env: { ...env, CONVEYANCE_RUN_ID: '' } }), /requires a variance run/);
-});
+for (const appType of ['CV', 'CA']) {
+  test(`direct ${appType} uses only the validated conveyance selected by its own runner`, () => {
+    const env = {
+      CONVEYANCE_APP_TYPE: appType, CONVEYANCE_FOLLOW_UP_APP_TYPE: appType, CONVEYANCE_RUN_ID: 'current-follow-up',
+      CONVEYANCE_LOGIN_SOURCE: 'existing-applicant', CONVEYANCE_EXISTING_CONVEYANCE_NUMBER: '009790',
+    };
+    assert.deepEqual(loadFollowUpConveyance(chromium, { env }), { conveyanceNumber: '009790' });
+    assert.throws(() => loadFollowUpConveyance(chromium, {
+      env: { ...env, CONVEYANCE_APP_TYPE: 'NCI', CONVEYANCE_PER_TYPE: 'Res', CONVEYANCE_RES_TYPE: '' },
+    }), /requires a variance or alteration run/);
+    assert.throws(() => loadFollowUpConveyance(chromium, { env: { ...env, CONVEYANCE_RUN_ID: '' } }), /requires a variance or alteration run/);
+  });
+}
 
 function listRunner(args, overrides = {}, expectedStatus = 0) {
   // --list is unconditional: this integration check cannot launch a browser/approval.
@@ -183,7 +194,8 @@ test('the E2E entry point lists all three tests with the exact report titles', (
 
 test('E2E plans all three scripts for every selected application/permit pair', () => {
   const output = listRunner(['--e2e', '--AppType=ALL', '--PerType=ALL', '--ResType=', '--CommType=', '--project=chromium', '--parallel=4']);
-  assert.match(output, /Combination\(s\): 5; parallel combination limit: 4/);
+  assert.match(output, /Combination\(s\): 6; parallel combination limit: 4/);
+  assert.match(output, /Application \/ permit: .*CV, CA/);
   for (const selection of ['NCI / Res / RANDOM', 'NCI / Comm / RANDOM', 'CHI / CPH(A10.4)', 'CHI / CMH(A10.5)']) {
     const steps = output.split(/\r?\n/).filter(line => line.startsWith('Running 0') && line.includes(' for ' + selection + ' /'));
     assert.deepEqual(steps.map(line => line.split(' ')[1]), SERIAL_FLOW_SPECS.map(value => path.basename(value)));
@@ -206,7 +218,7 @@ test('initial and var subcommands keep each run in the selected workflow', () =>
   assert.equal([...initial.matchAll(/^Running 0[123]_/gm)].length, 3);
   assert.doesNotMatch(initial, /\[variance\]/);
 
-  const variance = listRunner([...varArgs, '--PerType=Comm', '--CommType=FC']);
+  const variance = listRunner([...varArgs, '--AppType=NCI', '--PerType=Comm', '--CommType=FC']);
   assert.match(variance, /Application \/ permit: CV \/ NCI \/ Comm \/ FC/);
   assert.equal([...variance.matchAll(/^Running [^\r\n]*\[installation\]$/gm)].length, 3);
   assert.equal([...variance.matchAll(/^Running [^\r\n]*\[variance\]$/gm)].length, 2);
@@ -216,7 +228,7 @@ test('initial and var subcommands keep each run in the selected workflow', () =>
 
 test('var plans both CHI permits and filters ALL by compatible permits', () => {
   const args = ['--e2e', 'var', '--project=chromium'];
-  const mixed = listRunner([...args, '--AppType=ALL', '--PerType=ALL', '--parallel', '4']);
+  const mixed = listRunner([...args, '--AppType=ALL', '--PerType=ALL', '--ResType=', '--CommType=', '--parallel', '4']);
   assert.match(mixed, /Combination\(s\): 4; parallel combination limit: 4/);
   for (const label of ['NCI / Res / RANDOM', 'NCI / Comm / RANDOM', 'CHI / CPH(A10.4)', 'CHI / CMH(A10.5)']) {
     const stages = mixed.split(/\r?\n/).filter(line => line.startsWith('Running 0') && line.includes(' for CV / ' + label + ' /'));
@@ -322,7 +334,7 @@ test('register and its spelling alias select only the registration script', () =
 test('initial apply only uses the configured applicant and accepts installation overrides', () => {
   const args = ['--e2e', 'initial', '--apply'];
   const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
-  const output = listRunner([...args, '--AppType', '--PerType=Comm,CommType', '--CommType=FC'], login);
+  const output = listRunner([...args, '--AppType=NCI', '--PerType=Comm,CommType', '--CommType=FC'], login);
   assert.match(output, /Flow: initial \(apply only\)/);
   assert.match(output, /Application \/ permit: NCI \/ Comm \/ FC/);
   assert.deepEqual([...output.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage), ['02']);
@@ -372,13 +384,55 @@ test('approval-only uses the configured transaction unless TransacNum overrides 
   assert.deepEqual([...output.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage), ['03']);
 });
 
+test('alt plans new, existing-applicant, existing-conveyance, and apply-only combinations', () => {
+  const args = ['--e2e', 'alt', '--project=chromium'];
+  const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
+  const stages = value => [...value.matchAll(/^Running (0[123])_[^\r\n]*\[(installation|alteration)\]$/gm)]
+    .map(([, stage, phase]) => stage + ':' + phase);
+  const full = ['01:installation', '02:installation', '03:installation', '02:alteration', '03:alteration'];
+  assert.deepEqual(stages(listRunner(args)), full);
+  assert.deepEqual(stages(listRunner(['--e2e', '--AppType=CA', '--project=chromium'])), full);
+  assert.deepEqual(stages(listRunner([...args, '--ExistingUser', '--AppType=NCI', '--PerType=Comm', '--CommType=FC'], login)), full.slice(1));
+  const direct = listRunner([...args, '--ExistingConveyance', '--ConvNum=004749', '--NoConveyanceChanges'], login);
+  assert.match(direct, /Conveyance #: 004749/);
+  assert.match(direct, /Conveyance Information: unchanged/);
+  assert.deepEqual(stages(direct), full.slice(3));
+  const configured = listRunner([...args, '--apply'], login);
+  assert.ok(configured.includes('Conveyance #: ' + CONVEYANCE_ALTERATION_DETAILS.conveyanceNumber));
+  assert.match(configured, /Conveyance Information: random subset/);
+  assert.deepEqual(stages(configured), ['02:alteration']);
+  const override = listRunner([...args, '--apply', 'ConvNum=0092', '--NoConveyanceChanges'], login);
+  assert.match(override, /Conveyance #: 0092/);
+  assert.match(override, /Conveyance Information: unchanged/);
+  assert.deepEqual(stages(override), ['02:alteration']);
+});
+
+test('alt rejects invalid modes and options before listing any stage', () => {
+  const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
+  for (const [argv, error] of [
+    [['alt', '--ConvNum=4749'], /--ConvNum requires/],
+    [['alt', '--apply', '--AppType=CHI'], /does not take installation selectors/],
+    [['alt', '--ExistingConveyance', '--PerType=Comm'], /does not take installation/],
+    [['alt', '--apply', '--ConvNum='], /alt --apply requires --ConvNum/],
+    [['alt', '--apply', '--ConvNum=abc'], /digits only/],
+    [['alt', '--apply', '--repeat-each=2'], /one browser project and one repeat/],
+    [['alt', '--ExistingConveyance', '--project=chromium', '--project=firefox'], /one browser project and one repeat/],
+    [['alt', '--apply', '--ExistingUser'], /Choose either --apply/],
+    [['alt', '--apply', '--retries=1'], /require --retries=0/],
+    [['alt', '--approve'], /--approve runs by itself/],
+    [['alt', '--AppType=CA'], /Unsupported installation AppType/],
+    [['var', '--NoConveyanceChanges'], /only supported with Conveyance Alteration/],
+    [['initial', '--NoConveyanceChanges'], /only supported with Conveyance Alteration/],
+  ]) assert.match(listRunner(['--e2e', ...argv], login, 1), error);
+});
+
 test('rejects incompatible and unsafe command options before launching Playwright', () => {
   assert.match(listRunner(['--e2e', 'var', '--ConvNum=4567'], {}, 1), /--ConvNum requires var --ExistingConveyance/);
   assert.match(listRunner(['--e2e', 'initial', '--TransacNum=4324'], {}, 1), /--TransacNum requires --approve/);
   assert.match(listRunner(['--e2e', 'var', '--ExistingConveyance', '--ConvNum=4567', '--PerType=Comm'], {}, 1), /does not take installation/);
   assert.match(listRunner(['--e2e', '--approve', '--TransacNum=4324', '--AppType=NCI'], {}, 1), /--approve runs by itself/);
   assert.match(listRunner(['--e2e', 'initial', '--AppType=NCI', '--PerType=Res', '--CommType=FC'], {}, 1), /--CommType requires a matching NCI Comm/);
-  assert.match(listRunner(['--e2e', 'var', '--PerType=Comm', '--ResType=ORC'], {}, 1), /--ResType requires a matching NCI Res/);
+  assert.match(listRunner(['--e2e', 'var', '--AppType=NCI', '--PerType=Comm', '--ResType=ORC'], {}, 1), /--ResType requires a matching NCI Res/);
   assert.match(listRunner(['--e2e', '--approve', '--TransacNum=4324', '--repeat-each=2'], {}, 1), /requires one browser project and one repeat/);
   assert.match(listRunner(['--e2e', '--approve', '--TransacNum=no'], {}, 1), /contain digits only/);
   assert.match(listRunner(['--e2e', 'initial'], { npm_config_transaction: '6331' }, 1), /after npm's -- separator/);

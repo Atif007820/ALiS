@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getFollowUpType } from '../config/applicationTypes.js';
 
 export const SERIAL_FLOW_SPECS = [
   'testScripts/01_RegisterUser.spec.js',
@@ -7,20 +8,21 @@ export const SERIAL_FLOW_SPECS = [
 ];
 
 export function buildFlowStages(target, specs, { reuseApplicant = false, existingConveyance = false } = {}) {
-  if (target.appType !== 'CV') return specs.map(spec => ({ spec, selection: target, phase: '' }));
+  const followUp = getFollowUpType(target.appType);
+  if (!followUp) return specs.map(spec => ({ spec, selection: target, phase: '' }));
   const applyAndApprove = SERIAL_FLOW_SPECS.slice(1);
   if (existingConveyance && specs.length === 1 && specs[0] === applyAndApprove[0]) {
-    return [{ spec: specs[0], selection: target, phase: 'variance' }];
+    return [{ spec: specs[0], selection: target, phase: followUp.phase }];
   }
   const installationSpecs = reuseApplicant ? applyAndApprove : SERIAL_FLOW_SPECS;
   if (specs.length !== installationSpecs.length || specs.some((spec, index) => spec !== installationSpecs[index])) {
-    throw new Error('Use npm run conv var to create an installation and run its variance flow.');
+    throw new Error(`Use npm run conv ${followUp.flow} to create an installation and run its ${followUp.phase} flow.`);
   }
 
-  const variance = applyAndApprove.map(spec => ({ spec, selection: target, phase: 'variance' }));
-  if (existingConveyance) return variance;
-  if (!target.installation) throw new Error('New variance requires an installation target.');
-  return [...specs.map(spec => ({ spec, selection: target.installation, phase: 'installation' })), ...variance];
+  const followUpStages = applyAndApprove.map(spec => ({ spec, selection: target, phase: followUp.phase }));
+  if (existingConveyance) return followUpStages;
+  if (!target.installation) throw new Error(`New ${followUp.phase} requires an installation target.`);
+  return [...specs.map(spec => ({ spec, selection: target.installation, phase: 'installation' })), ...followUpStages];
 }
 
 export function flowAxes(args, availableProjects) {

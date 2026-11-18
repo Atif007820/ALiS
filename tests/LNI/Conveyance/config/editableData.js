@@ -26,10 +26,7 @@ export const TEST_DATA = {
   ownerExistingUbi: '222-555-888',
   ownerComments: 'Testing the Comments field',
 
-  uploadDocuments: [
-    { fileName: 'Text1.doc', comments: 'test1' },
-    { fileName: 'Text2.doc', comments: 'test2' },
-  ],
+  uploadComments: 'TEST supporting document',
 
   slowFieldRetryCount: 3,
   slowFieldRetryDelayMs: 500,
@@ -74,7 +71,7 @@ export const TEST_DATA = {
   reviewAnswers: ['N/A', 'NO', 'No'],
 
   variance: {
-    document: { fileName: 'Text2.doc', comments: 'TEST variance supporting document' },
+    uploadComments: 'TEST variance supporting document',
     justification: 'TEST only: variance justification for automated workflow validation.',
     description: 'TEST only: variance description for automated workflow validation.',
     radioAnswers: {
@@ -92,5 +89,12 @@ export const TEST_DATA = {
       'RCW 70.87 Violation?': 'No',
       'Is there any additional information not noted above?': 'No',
     },
+  },
+  alteration: {
+    uploadComments: '',
+    contractValue: { min: 1000, max: 10000 },
+    contractorCopySource: 'SLAAPP',
+    restriction: 'Test',
+    operatedOtherDescription: 'Testing',
   },
 };

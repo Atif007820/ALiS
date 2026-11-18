@@ -1,6 +1,6 @@
 /**
  * Applicant credentials for --ExistingUser, --ExistingConveyance, and standalone Login Apply.
- * Plain initial and var register a new user.
+ * Plain initial, var, and alt register a new user.
  *
  * With both blank, standalone apply can reuse the last saved registration in
  * testData/userData.json.

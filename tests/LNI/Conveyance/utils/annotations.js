@@ -74,6 +74,8 @@ export function addApplyAnnotations(testInfo, {
   transactionNumber,
   conveyanceNumber,
   installationTransactionNumber,
+  contractValue,
+  informationChanges,
 } = {}) {
   addRunAnnotations(testInfo, applicationType);
   upsertAnnotation(testInfo, 'Endorsement Code', endorsementCode);
@@ -81,6 +83,8 @@ export function addApplyAnnotations(testInfo, {
   upsertAnnotation(testInfo, 'Transaction Number', transactionNumber);
   upsertAnnotation(testInfo, 'Conveyance #', conveyanceNumber);
   upsertAnnotation(testInfo, 'Installation Transaction Number', installationTransactionNumber);
+  upsertAnnotation(testInfo, 'Contract Value', contractValue);
+  if (Number.isInteger(informationChanges)) upsertAnnotation(testInfo, 'Conveyance fields changed', String(informationChanges));
 }
 
 export function addApprovalAnnotations(testInfo, { entityName, status, ...selection } = {}) {

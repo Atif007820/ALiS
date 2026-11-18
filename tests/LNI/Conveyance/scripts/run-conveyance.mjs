@@ -13,12 +13,13 @@ import { fileURLToPath } from 'url';
 import playwrightConfig from '../playwright.config.js';
 import { loadApprovalCredentials, TransactionNumber } from '../config/approvalTransacNumber.js';
 import { CONVEYANCE_VARIANCE_DETAILS } from '../config/ConveyanceVarianceDetails.js';
-import { TEST_DATA } from '../config/editableData.js';
+import { CONVEYANCE_ALTERATION_DETAILS } from '../config/ConveyanceAlterationDetails.js';
 import { normalizeConveyanceNumber, normalizeTransactionNumber } from '../utils/transactionStore.js';
 import { resolveApplicantCredentials } from '../utils/userStore.js';
+import { listUploadFiles } from '../utils/uploadFilePool.js';
 import { assertApprovalSelection, assertMutationRetries, buildFlowStages, expandFlowTargets, flowAxes, SERIAL_FLOW_SPECS } from './flowPlan.mjs';
-import { buildApplicationTargets, selectInstallationTargets, VARIANCE_INSTALLATION_APP_TYPES } from '../config/applicationTypes.js';
-import { appConfig, runSettings, UPLOAD_FILES_DIR, USER_DATA_PATH } from '../config/runConfig.js';
+import { buildApplicationTargets, FOLLOW_UP_TYPES, getFollowUpType, selectInstallationTargets } from '../config/applicationTypes.js';
+import { appConfig, runSettings, USER_DATA_PATH } from '../config/runConfig.js';
 
 const require = createRequire(import.meta.url);
 const playwrightCli = require.resolve('@playwright/test/cli');
@@ -34,9 +35,11 @@ const inputOptions = {
   convnum: 'conveyanceNumber', transacnum: 'transactionNumber',
 };
 const retiredNumberOptions = new Set(['conveyancenumber', 'transacnumber', 'transaction', 'transactionnumber']);
-const numberUsage = 'Use --ConvNum with var --ExistingConveyance or var --apply, or --TransacNum with --approve, after npm\'s -- separator.';
+const numberUsage = 'Use --ConvNum with var or alt in --ExistingConveyance or --apply mode, or --TransacNum with --approve, after npm\'s -- separator.';
+const followUpCodes = Object.fromEntries(Object.entries(FOLLOW_UP_TYPES).map(([code, type]) => [type.flow, code]));
+const followUpDetails = { CV: CONVEYANCE_VARIANCE_DETAILS, CA: CONVEYANCE_ALTERATION_DETAILS };
 if (Object.entries(process.env).some(([key, value]) => value !== '' && /^npm_config_/i.test(key)
-  && ['apply', 'register', 'regsiter', 'approve', 'existingconveyance', 'convnum', 'transacnum', ...retiredNumberOptions].includes(
+  && ['apply', 'register', 'regsiter', 'approve', 'existingconveyance', 'noconveyancechanges', 'convnum', 'transacnum', ...retiredNumberOptions].includes(
     key.slice('npm_config_'.length).toLowerCase().replace(/[-_]/g, ''),
   ))) {
   exitConfigurationError('Pass workflow and number options after npm\'s -- separator. ' + numberUsage);
@@ -49,17 +52,19 @@ const overrides = {
   CommType: parsed.selection.CommType ?? valueFromNpmConfig('commtype', 'comm_type') ?? undefined,
 };
 const requestedSpecs = resolveSelectedSpecs(parsed.selectedSpecs, parsed.flowMode);
-const legacyVariance = !parsed.subcommand && !parsed.register && requestedSpecs.length === SERIAL_FLOW_SPECS.length
-  && /^CV$/i.test(String(overrides.AppType ?? runSettings.AppType ?? '').trim());
-const flow = parsed.subcommand ?? (legacyVariance ? 'var' : null);
+const legacyFollowUp = !parsed.subcommand && !parsed.approve && !parsed.register && requestedSpecs.length === SERIAL_FLOW_SPECS.length
+  ? getFollowUpType(overrides.AppType ?? runSettings.AppType) : undefined;
+const flow = parsed.subcommand ?? legacyFollowUp?.flow ?? null;
+const followUpCode = flow ? followUpCodes[flow] : undefined;
+const followUp = getFollowUpType(followUpCode);
 const loginOverrides = {
   loginName: parsed.inputs.loginName,
   password: parsed.inputs.password,
 };
 const hasLoginOverrides = Object.values(loginOverrides).some(value => String(value ?? '').trim());
 const existingRequested = parsed.existingUser || isTrue(valueFromNpmConfig('existinguser', 'existing_user', 'existing'));
-const directVariance = parsed.existingConveyance || (parsed.subcommand === 'var' && parsed.apply);
-const reuseApplicant = Boolean(flow) && (parsed.apply || existingRequested || directVariance || hasLoginOverrides);
+const directFollowUp = parsed.existingConveyance || (Boolean(followUp) && parsed.apply);
+const reuseApplicant = Boolean(flow) && (parsed.apply || existingRequested || directFollowUp || hasLoginOverrides);
 
 let playwrightArgs = [...parsed.playwrightArgs];
 playwrightArgs = applyNpmConfigPlaywrightOptions(playwrightArgs);
@@ -76,15 +81,18 @@ let transactionNumber;
 const ignoredEndorsements = [];
 try {
   const hasSelection = Object.values(overrides).some(value => String(value ?? '').trim());
+  if (parsed.noConveyanceChanges && followUpCode !== 'CA') {
+    throw new Error('--NoConveyanceChanges is only supported with Conveyance Alteration (alt).');
+  }
   if (parsed.register) {
-    if (parsed.subcommand || parsed.apply || parsed.approve || directVariance || existingRequested
+    if (parsed.subcommand || parsed.apply || parsed.approve || directFollowUp || existingRequested
       || hasLoginOverrides || hasSelection || parsed.selectedSpecs.length) {
       throw new Error('--register runs by itself. Omit the flow, applicant, installation and script selection options.');
     }
     selectedSpecs = [SERIAL_FLOW_SPECS[0]];
   }
   if (parsed.apply && !parsed.subcommand) {
-    throw new Error('--apply requires npm run conv initial or npm run conv var.');
+    throw new Error('--apply requires npm run conv initial or npm run conv var or npm run conv alt.');
   }
   if (parsed.apply && existingRequested) {
     throw new Error('Choose either --apply (submit only) or --ExistingUser (submit and approve).');
@@ -102,25 +110,26 @@ try {
     assertApprovalSelection(requestedSpecs);
     if (parsed.inputs.transactionNumber !== undefined) throw new Error('--TransacNum requires --approve.');
   }
-  if (directVariance) {
-    if (parsed.existingConveyance && (parsed.subcommand !== 'var' || hasSelection)) {
-      throw new Error('--ExistingConveyance requires var and does not take installation type, permit or endorsement options.');
+  if (directFollowUp) {
+    if (parsed.existingConveyance && (!parsed.subcommand || !followUp || hasSelection)) {
+      throw new Error('--ExistingConveyance requires var or alt and does not take installation type, permit or endorsement options.');
     }
     if (hasSelection) {
-      throw new Error('var --apply submits a variance on an existing conveyance and does not take installation selectors. Use --ConvNum to choose the conveyance.');
+      throw new Error(`${flow} --apply submits a ${followUp.phase} application on an existing conveyance and does not take installation selectors. Use --ConvNum to choose the conveyance.`);
     }
-    const value = parsed.inputs.conveyanceNumber ?? CONVEYANCE_VARIANCE_DETAILS.conveyanceNumber;
+    const value = parsed.inputs.conveyanceNumber ?? followUpDetails[followUpCode].conveyanceNumber;
     if (!String(value ?? '').trim()) {
-      const mode = parsed.apply ? 'var --apply' : '--ExistingConveyance';
-      throw new Error(`${mode} requires --ConvNum or conveyanceNumber in config/ConveyanceVarianceDetails.js.`);
+      const mode = parsed.apply ? `${flow} --apply` : '--ExistingConveyance';
+      const name = followUp.label.replaceAll(' ', '');
+      throw new Error(`${mode} requires --ConvNum or conveyanceNumber in config/${name}Details.js.`);
     }
     conveyanceNumber = normalizeConveyanceNumber(value);
   } else if (parsed.inputs.conveyanceNumber !== undefined) {
-    throw new Error('--ConvNum requires var --ExistingConveyance or var --apply.');
+    throw new Error('--ConvNum requires var --ExistingConveyance or var --apply, or the equivalent alt mode.');
   }
   const standaloneApply = requestedSpecs.includes(SERIAL_FLOW_SPECS[1]) && !requestedSpecs.includes(SERIAL_FLOW_SPECS[0]);
   if (existingRequested && !flow) {
-    throw new Error('--ExistingUser requires npm run conv initial or npm run conv var.');
+    throw new Error('--ExistingUser requires npm run conv initial, var, or alt.');
   }
   if (reuseApplicant || standaloneApply) {
     applicantCredentials = resolveApplicantCredentials({ overrides: loginOverrides });
@@ -129,7 +138,7 @@ try {
       throw new Error(`${mode} mode requires an applicant login and password in config/LoginCredentials.js or LOGIN_NAME and LOGIN_PASSWORD.`);
     }
   } else if (hasLoginOverrides) {
-    throw new Error('Applicant login overrides are for initial, var, or standalone apply.');
+    throw new Error('Applicant login overrides are for initial, var, alt, or standalone apply.');
   }
   if (parsed.apply) selectedSpecs = [SERIAL_FLOW_SPECS[1]];
   else if (reuseApplicant) selectedSpecs = SERIAL_FLOW_SPECS.slice(1);
@@ -137,7 +146,7 @@ try {
   const axes = flowAxes(playwrightArgs, playwrightConfig.projects.map(project => project.name));
   playwrightArgs = axes.remainingArgs;
   runTargets = expandFlowTargets(resolveApplicationTargets(), axes).map(target => ({
-    ...target, stages: buildFlowStages(target, selectedSpecs, { reuseApplicant, existingConveyance: directVariance }),
+    ...target, stages: buildFlowStages(target, selectedSpecs, { reuseApplicant, existingConveyance: directFollowUp }),
   }));
   const allSelection = parsed.subcommand && ['AppType', 'PerType'].some(option =>
     /^ALL$/i.test(String(overrides[option] ?? runSettings[option] ?? '').trim()));
@@ -149,18 +158,16 @@ try {
     if (!allSelection) throw new Error(`--${option} requires a matching NCI ${permit} permit in this run.`);
     ignoredEndorsements.push(`Ignoring --${option}: no NCI ${permit} target in this run.`);
   }
-  if ((parsed.approve || directVariance) && runTargets.length !== 1) {
+  if ((parsed.approve || directFollowUp) && runTargets.length !== 1) {
     throw new Error('A run for one existing transaction or conveyance requires one browser project and one repeat.');
   }
   parallelRuns = resolveParallelRuns(parsed.parallelRuns, runTargets.length, playwrightArgs);
   assertMutationRetries(selectedSpecs, playwrightArgs);
   if (!listOnly) {
     if (selectedSpecs.includes(SERIAL_FLOW_SPECS[2])) loadApprovalCredentials();
-    if (runTargets.some(target => target.stages.some(({ spec, phase }) => phase === 'variance' && spec === SERIAL_FLOW_SPECS[1]))) {
-      const { fileName } = TEST_DATA.variance.document;
-      if (!fileName || basename(fileName) !== fileName || !existsSync(resolve(UPLOAD_FILES_DIR, fileName))) {
-        throw new Error('The configured CV document must exist in UploadFiles. Check variance.document in config/editableData.js.');
-      }
+    if (runTargets.some(({ stages }) => stages.some(({ spec, selection }) =>
+      spec === SERIAL_FLOW_SPECS[1] && selection.appType !== 'CHI'))) {
+      listUploadFiles();
     }
   }
 } catch (error) {
@@ -171,11 +178,12 @@ for (const message of ignoredEndorsements) console.warn(message);
 console.log(`Application / permit: ${unique(runTargets.map(target => target.selectionLabel)).join(', ')}`);
 if (parsed.register || parsed.approve || flow) {
   const stages = runTargets[0].stages.map(({ spec, phase }) => phase ? `${specName(spec)} [${phase}]` : specName(spec));
-  const label = parsed.apply ? 'apply only' : directVariance ? 'existing conveyance' : applicantCredentials ? 'existing applicant' : 'full flow';
+  const label = parsed.apply ? 'apply only' : directFollowUp ? 'existing conveyance' : applicantCredentials ? 'existing applicant' : 'full flow';
   const flowLabel = parsed.register ? 'registration only'
     : parsed.approve ? `approval only (Transaction # ${transactionNumber})` : `${flow} (${label})`;
   console.log(`Flow: ${flowLabel}`);
   if (conveyanceNumber) console.log(`Conveyance #: ${conveyanceNumber}`);
+  if (followUpCode === 'CA') console.log(`Conveyance Information: ${parsed.noConveyanceChanges ? 'unchanged' : 'random subset'}`);
   console.log(`Planned stages: ${stages.join(' -> ')}`);
 } else {
   console.log(`Selected spec(s): ${selectedSpecs.join(' -> ')}`);
@@ -215,9 +223,9 @@ if (failedRuns.length > 0) {
 
 process.exit(0);
 
-function varianceInstallations(selection = {}) {
-  const AppType = /^CV$/i.test(String(runSettings.AppType ?? '').trim()) ? undefined : runSettings.AppType;
-  return selectInstallationTargets(selection, { ...runSettings, AppType }, { appTypes: VARIANCE_INSTALLATION_APP_TYPES });
+function followUpInstallations(selection = {}) {
+  const AppType = getFollowUpType(runSettings.AppType) ? undefined : runSettings.AppType;
+  return selectInstallationTargets(selection, { ...runSettings, AppType });
 }
 
 function resolveApplicationTargets() {
@@ -225,12 +233,12 @@ function resolveApplicationTargets() {
   if (parsed.approve) return [{ label: 'Detect from Work Queue', slug: 'approve' }];
   if (flow === 'initial') return selectInstallationTargets(overrides, runSettings);
 
-  if (flow === 'var') {
-    const [variance] = buildApplicationTargets({ AppType: 'CV' });
-    if (directVariance) return [variance];
-    const installationOverrides = legacyVariance ? { ...overrides, AppType: undefined } : overrides;
-    return varianceInstallations(installationOverrides).map(installation => ({
-      ...variance, installation, label: `${variance.label} / ${installation.label}`, slug: `${variance.slug}-${installation.slug}`,
+  if (followUpCode) {
+    const [target] = buildApplicationTargets({ AppType: followUpCode });
+    if (directFollowUp) return [target];
+    const installationOverrides = legacyFollowUp ? { ...overrides, AppType: undefined } : overrides;
+    return followUpInstallations(installationOverrides).map(installation => ({
+      ...target, installation, label: `${target.label} / ${installation.label}`, slug: `${target.slug}-${installation.slug}`,
     }));
   }
 
@@ -239,12 +247,12 @@ function resolveApplicationTargets() {
   return buildApplicationTargets({
     ...overrides,
     AppType: app,
-    PerType: overrides.PerType ?? (overrides.AppType || /^CV$/i.test(app) ? 'ALL' : runSettings.PerType || 'Res'),
+    PerType: overrides.PerType ?? (overrides.AppType || getFollowUpType(app) ? 'ALL' : runSettings.PerType || 'Res'),
     ResType: overrides.ResType ?? runSettings.ResType,
     CommType: overrides.CommType ?? runSettings.CommType,
   }).map(target => {
-    if (target.appType !== 'CV') return target;
-    const candidates = varianceInstallations();
+    if (!getFollowUpType(target.appType)) return target;
+    const candidates = followUpInstallations();
     return { ...target, installation: candidates[randomInt(candidates.length)] };
   });
 }
@@ -264,9 +272,11 @@ async function runTarget(target, targetIndex) {
       : reuseApplicant ? 'existing-applicant' : 'standalone',
     CONVEYANCE_RUN_ID: target.runId,
     CONVEYANCE_FLOW_REPEAT: String(target.repeatIndex),
-    CONVEYANCE_APPROVED_INSTALLATION_PATH: target.appType === 'CV' && !directVariance
+    CONVEYANCE_APPROVED_INSTALLATION_PATH: getFollowUpType(target.appType) && !directFollowUp
       ? resolve(flowDirectory, 'approved-installation.json') : '',
-    CONVEYANCE_VARIANCE_INSTALLATION_APP_TYPE: target.installation?.appType ?? '',
+    CONVEYANCE_FOLLOW_UP_INSTALLATION_APP_TYPE: target.installation?.appType ?? '',
+    CONVEYANCE_FOLLOW_UP_APP_TYPE: getFollowUpType(target.appType) ? target.appType : '',
+    CONVEYANCE_NO_INFORMATION_CHANGES: parsed.noConveyanceChanges ? '1' : '',
     CONVEYANCE_EXISTING_CONVEYANCE_NUMBER: conveyanceNumber ?? '',
     CONVEYANCE_APPROVAL_ONLY_TRANSACTION: transactionNumber ?? '',
     FULLY_PARALLEL: 'false',
@@ -290,8 +300,8 @@ async function runTarget(target, targetIndex) {
         CONVEYANCE_PER_TYPE: perType ?? '',
         CONVEYANCE_RES_TYPE: permit?.override === 'ResType' ? endorsement?.code ?? '' : '',
         CONVEYANCE_COMM_TYPE: permit?.override === 'CommType' ? endorsement?.code ?? '' : '',
-        CONVEYANCE_CV_PHASE: phase,
-        CONVEYANCE_TRANSACTION_PATH: resolve(flowDirectory, phase === 'variance' ? 'variance-transaction.json' : 'transaction.json'),
+        CONVEYANCE_FOLLOW_UP_PHASE: phase,
+        CONVEYANCE_TRANSACTION_PATH: resolve(flowDirectory, getFollowUpType(appType) ? `${phase}-transaction.json` : 'transaction.json'),
       },
       playwrightArgs,
     });
@@ -529,6 +539,7 @@ function parseCommandLine(rawArgs) {
     subcommand: null,
     existingUser: false,
     existingConveyance: false,
+    noConveyanceChanges: false,
     approve: false,
   };
   const subcommandIndex = args.findIndex(arg => !['--', '--e2e', '--standalone'].includes(arg));
@@ -537,7 +548,7 @@ function parseCommandLine(rawArgs) {
     const arg = args[index];
     if (arg === '--') continue;
 
-    if (index === subcommandIndex && ['initial', 'var'].includes(arg.toLowerCase())) {
+    if (index === subcommandIndex && ['initial', ...Object.keys(followUpCodes)].includes(arg.toLowerCase())) {
       result.subcommand = arg.toLowerCase();
       continue;
     }
@@ -557,6 +568,10 @@ function parseCommandLine(rawArgs) {
     }
     if (/^--existing-?conveyance$/i.test(arg)) {
       result.existingConveyance = true;
+      continue;
+    }
+    if (/^--no-?conveyance-?changes$/i.test(arg)) {
+      result.noConveyanceChanges = true;
       continue;
     }
     if (/^--apply$/i.test(arg)) continue;
@@ -644,7 +659,7 @@ function parseCommandLine(rawArgs) {
   }
 
   if (result.subcommand && result.flowMode === 'standalone') {
-    exitConfigurationError('Use npm run conv initial or npm run conv var for these flows.');
+    exitConfigurationError('Use npm run conv initial, var, or alt for these flows.');
   }
 
   return result;

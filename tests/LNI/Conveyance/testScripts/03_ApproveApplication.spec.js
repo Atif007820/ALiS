@@ -1,15 +1,16 @@
 import { test, addApprovalAnnotations, getApplicationTarget, logger } from '../framework.js';
 import { loadApprovalCredentials } from '../config/approvalTransacNumber.js';
+import { getFollowUpType } from '../config/applicationTypes.js';
 import { loadApprovalTransaction, normalizeTransactionNumber, saveApprovedInstallation } from '../utils/transactionStore.js';
 
 // Artifacts could include the approver login form and privileged application data.
 test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 
 const approvalOnly = process.env.CONVEYANCE_APPROVAL_ONLY_TRANSACTION;
-const isVariance = !approvalOnly && getApplicationTarget().appType === 'CV';
-const installationForVariance = process.env.CONVEYANCE_CV_PHASE === 'installation';
+const followUp = !approvalOnly && getFollowUpType(getApplicationTarget().appType);
+const installationForFollowUp = process.env.CONVEYANCE_FOLLOW_UP_PHASE === 'installation';
 
-test(isVariance ? 'Conveyance - Approve Variance' : 'Conveyance - Approve Application', async ({ approvalPage }, testInfo) => {
+test(followUp ? `Conveyance - Approve ${followUp.label.slice('Conveyance '.length)}` : 'Conveyance - Approve Application', async ({ approvalPage }, testInfo) => {
   if (approvalOnly) {
     const transactionNumber = normalizeTransactionNumber(approvalOnly);
     testInfo.annotations.push({ type: 'Transaction Number', description: transactionNumber });
@@ -40,10 +41,10 @@ test(isVariance ? 'Conveyance - Approve Variance' : 'Conveyance - Approve Applic
 
   await test.step('Open and approve the accepted application', async () => {
     const approvalResult = await approvalPage.approveApplication({ ...application, entityName }, {
-      captureConveyanceNumber: installationForVariance,
+      captureConveyanceNumber: installationForFollowUp,
     });
-    const conveyanceNumber = installationForVariance ? approvalResult : application.conveyanceNumber;
-    if (installationForVariance) saveApprovedInstallation(application, conveyanceNumber, testInfo);
+    const conveyanceNumber = installationForFollowUp ? approvalResult : application.conveyanceNumber;
+    if (installationForFollowUp) saveApprovedInstallation(application, conveyanceNumber, testInfo);
     addApprovalAnnotations(testInfo, { ...application, entityName, conveyanceNumber, status: 'Approved (APR)' });
     logger.success('Approved transaction ' + application.transactionNumber);
   });

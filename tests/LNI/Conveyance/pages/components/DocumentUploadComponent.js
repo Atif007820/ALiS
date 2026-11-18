@@ -1,8 +1,10 @@
-import { basename, join } from 'path';
+import { randomInt } from 'node:crypto';
+import { basename } from 'node:path';
 import { BasePage } from '../BasePage.js';
 import { TEST_DATA } from '../../config/editableData.js';
 import { appConfig, UPLOAD_FILES_DIR } from '../../config/runConfig.js';
 import { logger } from '../../utils/logger.js';
+import { listUploadFiles } from '../../utils/uploadFilePool.js';
 
 const DOCUMENT_COUNT = /^Documents\s*\(\s*(\d+)\s*\)$/i;
 const MISSING_FILE = /Please select file\(s\) for upload/i;
@@ -10,8 +12,12 @@ const UPLOAD_REJECTION = /Invalid file format|Please select a valid document|Ple
 
 export class DocumentUploadComponent extends BasePage {
   /** @param {import('@playwright/test').Page} page */
-  constructor(page) {
+  constructor(page, { directory = UPLOAD_FILES_DIR, pickIndex = randomInt } = {}) {
     super(page);
+    this.directory = directory;
+    this.pickIndex = pickIndex;
+    this.availableFiles = [];
+    this.fileByRow = new Map();
     this.mandatoryDocs = page.locator(':is(a, button, [role="link"], [role="button"])[id^="mandatoryDoc"]')
       .filter({ hasText: DOCUMENT_COUNT, visible: true });
     this.dialog = page.locator('mat-dialog-container');
@@ -20,15 +26,16 @@ export class DocumentUploadComponent extends BasePage {
   /**
    * Upload a file if the mandatory document row is still empty.
    *
-   * @param {{ trigger: import('@playwright/test').Locator, filePath: string, comments: string }} options
+   * @param {{ trigger: import('@playwright/test').Locator, comments?: string, rowKey?: string }} options
    * @returns {Promise<boolean>} Whether this run uploaded a file for the row.
    */
-  async uploadExistingFile({ trigger, filePath, comments }) {
+  async uploadExistingFile({ trigger, comments = '', rowKey }) {
     await this.waitForVisible(trigger, 150000);
     const beforeCount = await this.readDocumentCount(trigger);
     if (beforeCount === null) throw new Error('The mandatory document row did not show a unique document count.');
     if (beforeCount > 0) return false;
 
+    const filePath = this.pickUploadFile(rowKey);
     const dialog = this.dialog.filter({ hasText: 'Document Upload', visible: true });
     const maxAttempts = appConfig.documentUploadRetryLimit;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -56,6 +63,14 @@ export class DocumentUploadComponent extends BasePage {
     }
 
     throw new Error('Document upload retry limit must be at least 1.');
+  }
+
+  pickUploadFile(rowKey) {
+    if (this.fileByRow.has(rowKey)) return this.fileByRow.get(rowKey);
+    if (!this.availableFiles.length) this.availableFiles = listUploadFiles(this.directory);
+    const [file] = this.availableFiles.splice(this.pickIndex(this.availableFiles.length), 1);
+    if (rowKey) this.fileByRow.set(rowKey, file);
+    return file;
   }
 
   async ensurePendingUploadRow(dialog) {
@@ -125,7 +140,7 @@ export class DocumentUploadComponent extends BasePage {
   }
 
   /**
-   * Verify every visible mandatory document row and upload its configured file if needed.
+   * Verify every visible mandatory document row and upload a random file if needed.
    *
    * @returns {Promise<number>} Count of new uploads.
    */
@@ -133,18 +148,14 @@ export class DocumentUploadComponent extends BasePage {
     await this.waitForVisible(this.mandatoryDocs.first(), 150000);
     const rowIds = await this.mandatoryDocs.evaluateAll((elements) => elements.map((element) => element.id));
     if (!rowIds.length) throw new Error('No mandatory document upload controls were visible.');
-    if (rowIds.length > TEST_DATA.uploadDocuments.length) {
-      throw new Error('More mandatory documents were found than configured upload files.');
-    }
     let uploaded = 0;
 
-    for (const [index, id] of rowIds.entries()) {
+    for (const id of rowIds) {
       const trigger = this.mandatoryDocs.and(this.page.locator(`[id=${JSON.stringify(id)}]`));
-      const uploadFile = TEST_DATA.uploadDocuments[index];
       const didUpload = await this.uploadExistingFile({
         trigger,
-        filePath: join(UPLOAD_FILES_DIR, uploadFile.fileName),
-        comments: uploadFile.comments,
+        rowKey: id,
+        comments: TEST_DATA.uploadComments,
       });
       if (didUpload) uploaded++;
     }

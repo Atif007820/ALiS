@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium } from '@playwright/test';
-import { buildApplicationTargets, selectInstallationTargets, VARIANCE_INSTALLATION_APP_TYPES } from '../../config/applicationTypes.js';
+import { buildApplicationTargets, selectInstallationTargets, INSTALLATION_APP_TYPES } from '../../config/applicationTypes.js';
 import { COMMERCIAL_ENDORSEMENT_TYPES, RESIDENTIAL_ENDORSEMENT_TYPES } from '../../config/constants.js';
 import { PermitApplicationPage } from '../../pages/PermitApplicationPage.js';
 import { ConveyanceVariancePage } from '../../pages/ConveyanceVariancePage.js';
@@ -18,6 +18,19 @@ test('expands only compatible pairs and scopes endorsement overrides to their ow
   }).map(target => target.perType), ['CMH(A10.5)', 'Comm']);
   assert.equal(buildApplicationTargets({ AppType: 'NCI', PerType: 'Res', ResType: ' ' })[0].endorsement, null);
   assert.doesNotThrow(() => buildApplicationTargets({ AppType: 'CHI', ResType: 'ignored', CommType: 'ignored' }));
+});
+
+test('accepts shell-friendly hoist aliases in overrides and settings without changing target keys', () => {
+  const targets = buildApplicationTargets({ AppType: 'CHI', PerType: 'cph-a10.4,CPH(A10.4),CMH-A10.5' });
+  assert.deepEqual(targets.map(({ perType }) => perType), ['CPH(A10.4)', 'CMH(A10.5)']);
+
+  const selected = selectInstallationTargets(
+    { AppType: 'NCI,CHI', PerType: 'Comm,CPH-A10.4', CommType: 'FC' },
+    { PerType: 'CMH-A10.5' },
+  );
+  assert.deepEqual(selected.map(({ label }) => label), ['NCI / Comm / FC', 'CHI / CPH(A10.4)']);
+  assert.equal(selectInstallationTargets({}, { AppType: 'CHI', PerType: 'CMH-A10.5' })[0].perType, 'CMH(A10.5)');
+  assert.throws(() => selectInstallationTargets({ AppType: 'NCI', PerType: 'CPH-A10.4' }), /Unsupported installation PerType/);
 });
 
 test('rejects unknown applications, incompatible permits, and invalid applicable endorsements', () => {
@@ -50,7 +63,7 @@ test('installation selections use overrides, compatible settings, then random ch
   assert.deepEqual(labels({ CommType: 'FC' }, {}), ['NCI / Comm / FC']);
   assert.deepEqual(labels({ AppType: 'ALL', PerType: 'ALL' }, {}).length, 4);
   assert.throws(() => labels({ AppType: 'CHI', PerType: 'Res' }, configured), /Unsupported installation PerType/);
-  const variance = { ...last, appTypes: VARIANCE_INSTALLATION_APP_TYPES };
+  const variance = { ...last, appTypes: INSTALLATION_APP_TYPES };
   assert.deepEqual(labels({}, {}, variance), ['CHI / CMH(A10.5)']);
   assert.deepEqual(labels({ AppType: 'CHI', PerType: 'ALL' }, {}, variance), ['CHI / CPH(A10.4)', 'CHI / CMH(A10.5)']);
   assert.deepEqual(labels({ AppType: 'ALL', PerType: 'Comm', CommType: 'FC' }, {}, variance), ['NCI / Comm / FC']);

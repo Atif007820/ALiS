@@ -5,6 +5,7 @@ import { DashboardPage }         from '../pages/DashboardPage.js';
 import { PermitApplicationPage } from '../pages/PermitApplicationPage.js';
 import { ApproveApplicationPage } from '../pages/ApproveApplicationPage.js';
 import { ConveyanceVariancePage } from '../pages/ConveyanceVariancePage.js';
+import { ConveyanceAlterationPage } from '../pages/ConveyanceAlterationPage.js';
 
 /**
  * Extended Playwright `test` object.
@@ -43,6 +44,10 @@ export const test = base.extend({
 
   variancePage: async ({ page }, use) => {
     await use(new ConveyanceVariancePage(page));
+  },
+
+  alterationPage: async ({ page }, use) => {
+    await use(new ConveyanceAlterationPage(page));
   },
 
   approvalPage: async ({ page }, use) => {

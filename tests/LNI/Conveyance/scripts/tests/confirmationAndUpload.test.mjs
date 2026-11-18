@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from '@playwright/test';
 import { appConfig } from '../../config/runConfig.js';
 import { PermitApplicationPage } from '../../pages/PermitApplicationPage.js';
 import { DocumentUploadComponent } from '../../pages/components/DocumentUploadComponent.js';
+import { ConveyanceFollowUpPage } from '../../pages/ConveyanceFollowUpPage.js';
 import { addApplyAnnotations } from '../../utils/annotations.js';
+import { listUploadFiles } from '../../utils/uploadFilePool.js';
 
 let browser;
 
@@ -56,10 +61,23 @@ test('rejects unrelated numbers when the confirmation has no transaction value',
   );
 });
 
-async function setupUploadPage(page, mode) {
-  await page.setContent(`
-    <span id="mandatoryDoc00"><a id="mandatoryDoc0-2" href="javascript:void(0)">Documents (0)</a></span>
-    <span id="mandatoryDoc01"><a id="mandatoryDoc1-2" href="javascript:void(0)">Documents (0)</a></span>`);
+function uploadDirectory(t) {
+  const directory = mkdtempSync(join(tmpdir(), 'conveyance-upload-'));
+  t.after(() => {
+    for (const item of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, item.name);
+      if (item.isDirectory()) rmdirSync(path);
+      else unlinkSync(path);
+    }
+    rmdirSync(directory);
+  });
+  for (let i = 1; i <= 4; i++) writeFileSync(join(directory, `Text${i}.doc`), 'TEST document');
+  return directory;
+}
+
+async function setupUploadPage(page, mode, count = 2) {
+  await page.setContent(Array.from({ length: count }, (_, i) =>
+    `<span><a id="mandatoryDoc${i}-2" href="javascript:void(0)">Documents (0)</a></span>`).join(''));
   await page.evaluate((mode) => {
     window.uploads = [];
     window.closeClicks = 0;
@@ -96,18 +114,39 @@ async function setupUploadPage(page, mode) {
 test('waits for the row count after auto close and preserves the file mapping on resume', { timeout: 10000 }, async (t) => {
   const page = await browser.newPage();
   t.after(() => page.close());
-  await setupUploadPage(page, 'success');
-  const documents = new DocumentUploadComponent(page);
+  await setupUploadPage(page, 'success', 4);
+  const documents = new DocumentUploadComponent(page, { directory: uploadDirectory(t), pickIndex: count => count - 1 });
 
-  assert.equal(await documents.uploadVisibleMandatoryDocuments(), 2);
+  assert.equal(await documents.uploadVisibleMandatoryDocuments(), 4);
   await page.locator('#mandatoryDoc1-2').evaluate((row) => { row.textContent = 'Documents (0)'; });
   assert.equal(await documents.uploadVisibleMandatoryDocuments(), 1);
   assert.deepEqual(await page.evaluate(() => window.uploads), [
-    ['mandatoryDoc0-2', 'Text1.doc'],
-    ['mandatoryDoc1-2', 'Text2.doc'],
-    ['mandatoryDoc1-2', 'Text2.doc'],
+    ['mandatoryDoc0-2', 'Text4.doc'],
+    ['mandatoryDoc1-2', 'Text3.doc'],
+    ['mandatoryDoc2-2', 'Text2.doc'],
+    ['mandatoryDoc3-2', 'Text1.doc'],
+    ['mandatoryDoc1-2', 'Text3.doc'],
   ]);
   assert.equal(await page.evaluate(() => window.closeClicks), 0);
+});
+
+test('discovers regular upload files and ignores hidden files, lock files, and directories', t => {
+  const directory = uploadDirectory(t);
+  writeFileSync(join(directory, '.keep'), '');
+  writeFileSync(join(directory, '~$Text1.doc'), '');
+  mkdirSync(join(directory, 'subdirectory'));
+  assert.deepEqual(listUploadFiles(directory).map(file => basename(file)), ['Text1.doc', 'Text2.doc', 'Text3.doc', 'Text4.doc']);
+  assert.throws(() => listUploadFiles(join(directory, 'subdirectory')), /No upload files found/);
+});
+
+test('variance and alteration supporting documents use the shared random file pool', { timeout: 10000 }, async (t) => {
+  const page = await browser.newPage();
+  t.after(() => page.close());
+  await setupUploadPage(page, 'success', 1);
+  const followUp = new ConveyanceFollowUpPage(page);
+  followUp.documents = new DocumentUploadComponent(page, { directory: uploadDirectory(t), pickIndex: () => 2 });
+  await followUp.uploadSupportingDocument('TEST follow-up');
+  assert.deepEqual(await page.evaluate(() => window.uploads), [['mandatoryDoc0-2', 'Text3.doc']]);
 });
 
 for (const [mode, error] of [
@@ -119,7 +158,8 @@ for (const [mode, error] of [
     t.after(() => page.close());
     await setupUploadPage(page, mode);
 
-    await assert.rejects(() => new DocumentUploadComponent(page).uploadVisibleMandatoryDocuments(), error);
+    const documents = new DocumentUploadComponent(page, { directory: uploadDirectory(t) });
+    await assert.rejects(() => documents.uploadVisibleMandatoryDocuments(), error);
     assert.equal(await page.evaluate(() => window.uploads.length), 1);
   });
 }
@@ -129,9 +169,10 @@ test('retries an explicit missing file rejection with a fresh upload dialog', { 
   t.after(() => page.close());
   await setupUploadPage(page, 'missing');
 
-  assert.equal(await new DocumentUploadComponent(page).uploadVisibleMandatoryDocuments(), 2);
-  assert.deepEqual(await page.evaluate(() => window.uploads.map(([id]) => id)), [
-    'mandatoryDoc0-2', 'mandatoryDoc0-2', 'mandatoryDoc1-2',
+  const documents = new DocumentUploadComponent(page, { directory: uploadDirectory(t), pickIndex: count => count - 1 });
+  assert.equal(await documents.uploadVisibleMandatoryDocuments(), 2);
+  assert.deepEqual(await page.evaluate(() => window.uploads), [
+    ['mandatoryDoc0-2', 'Text4.doc'], ['mandatoryDoc0-2', 'Text4.doc'], ['mandatoryDoc1-2', 'Text3.doc'],
   ]);
   assert.equal(await page.evaluate(() => window.closeClicks), 1);
 });

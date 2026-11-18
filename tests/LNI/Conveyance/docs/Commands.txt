@@ -1,349 +1,159 @@
-Conveyance Playwright Commands
-==============================
+Conveyance Commands
+===================
+Run npm run conv from the workspace root or tests/LNI/Conveyance.
+Run the framework shortcuts below from tests/LNI/Conveyance.
+Add --list after npm's -- separator to preview without signing in, submitting,
+approving, or clearing existing reports. IDs in examples are for preview only.
+Preview checks command parsing, workflow planning and test discovery. It does not
+exercise ALiS forms, credentials, uploads or approval saves.
 
-Run from the workspace root or tests/LNI/Conveyance.
-
-The runner uses the single TEST URL in config/URL.js. Edit that file when
-the TEST build URL changes.
-
-Full Flow E2E (New Applicant)
------------------------------
-  npm run conv initial
-    Register -> Login Apply -> Approve for a new installation.
-    Randomly chooses a compatible installation when no selections are set.
-
-  npm run conv var
-    Register -> Installation Apply -> Installation Approve -> Variance Apply
-    -> Variance Approve. Uses the same new applicant and captured conveyance
-    number. Randomly chooses a compatible NCI or CHI installation when no
-    selection is set.
-
-Both commands run fresh by default. They ignore numbers saved for standalone
-commands and pass their new transaction and conveyance numbers within the run.
-
-Full Flow with an Existing User
--------------------------------
-LoginName and LoginPassword use config/LoginCredentials.js or the
-LOGIN_NAME/LOGIN_PASSWORD environment variables. Approver login is separate.
-
-  npm run conv initial -- --ExistingUser
-    Skip registration and run Login Apply -> Approve with the saved applicant.
-
-  npm run conv var -- --ExistingUser
-    Use the saved applicant for Installation Apply -> Installation Approve
-    -> Variance Apply -> Variance Approve. The variance uses the new
-    conveyance number captured during installation approval.
-
-  npm run conv var -- --ExistingUser --AppType=NCI --PerType=Comm --CommType=FC
-    Run the same four stages using a commercial freight cable installation.
-
-Put flags after npm's -- separator.
-
-  npm run conv initial -- --LoginName=TEST_USER --LoginPassword='TEST_PASSWORD'
-    Submit an installation and approve it with an explicitly selected applicant.
-
-The credentials above are examples. Prefer local credentials or
-environment variables: command-line passwords can appear in npm output,
-shell history and process listings. Never commit real passwords.
-
-Variance on an Existing Conveyance
-----------------------------------
-  npm run conv var -- --ExistingConveyance
-    Use conveyanceNumber in config/ConveyanceVarianceDetails.js.
-
-  npm run conv var -- --ExistingConveyance --ConvNum=9790
-    Use Conveyance # 9790 instead of the number in the file.
-    ConvNum=9790 is also accepted as a forwarded argument.
-
-Both run Variance Apply -> Approve with the configured applicant. They do not
-register a user or create an installation. Use a TEST conveyance the applicant
-can access. Only one browser project and one repeat are allowed.
-
-Approve an Existing Transaction
--------------------------------
-  npm run conv -- --approve
-    Use TransactionNumber in config/approvalTransacNumber.js.
-
-  npm run conv -- --approve --TransacNum=4324
-    Use Transaction # 4324 instead of the number in the file.
-
-Both run Approve only, using the separate approver login. The runner selects
-the checklist from the application type in the exact Work Queue row. Only
-one browser project and one repeat are allowed. Use an eligible TEST record.
-
-Override Compatibility
-----------------------
-AppType and PerType select an installation. Use them with initial or var
-when the run creates a new installation, with or without ExistingUser.
-Both initial and var can start from NCI or CHI. CHI takes a hoist permit,
-not Comm or Res.
-CommType applies only to NCI / Comm; ResType applies only to NCI / Res.
-Both can be used in one run if both NCI permits are selected. In an initial
-or var run using ALL for AppType or PerType, an endorsement with no matching
-permit is skipped with a warning. An incompatible endorsement in a specific
-selection is still rejected. CHI never takes an NCI endorsement.
-ConvNum works only with var --apply or var --ExistingConveyance.
-TransacNum works only with --approve.
-Installation overrides are not valid for ExistingConveyance, var --apply,
---register, or --approve.
-An explicit number overrides the matching file; the two numbers are not interchangeable.
-
-Application and permit combinations
------------------------------------
-AppType   PerType                 Application
-NCI       Comm, Res               New Conveyance Installation
-CHI       CPH(A10.4), CMH(A10.5)   Construction Hoist Installation
-CV        Not applicable         Conveyance Variance
-
-Select one specific flow:
-  npm run conv initial -- --AppType=NCI --PerType=Comm --CommType=FC
-  npm run conv initial -- --AppType=NCI --PerType=Res --ResType=ORC
-  npm run conv initial -- --AppType=CHI "--PerType=CPH(A10.4)"
-  npm run conv initial -- --AppType=CHI "--PerType=CMH(A10.5)"
-
-Run both New Conveyance permits with specific endorsements:
-  npm run conv initial -- --AppType=NCI --PerType=Comm,Res --CommType=FC --ResType=ORC --parallel=2
-
-Run both hoist permits:
-  npm run conv initial -- --AppType=CHI --PerType=ALL --parallel=2
-
-Run all installation types, without variance:
-  npm run conv initial -- --AppType=ALL --PerType=ALL --parallel=4
-
-Legacy mixed matrix (includes CV):
-  npm run conv -- --AppType=ALL --PerType=ALL --parallel=4
-
-Run one permit from each application type:
-  npm run conv initial -- --AppType=NCI,CHI "--PerType=Comm,CMH(A10.5)" --CommType=FC --parallel=2
-
-Use quotes around permit arguments containing parentheses. Lists are comma-
-separated and case-insensitive. ALL selects all supported choices. With
-AppType=ALL, PerType filters to the matching application types. Each explicitly
-named AppType must have at least one compatible PerType. Invalid combinations
-stop before Playwright opens a browser. For initial and var, command-line values
-override compatible defaults in config/runSettings.json. A missing or blank
-choice picks one compatible option; ALL expands the requested choice. An app
-override can replace an incompatible configured permit with a compatible random
-permit. AppType, PerType, ResType and CommType are blank by default. To ignore
-configured application and permit selections for one run:
-
-  npm run conv initial -- --AppType= --PerType=
-
-Conveyance Variance (CV)
-------------------------
-CV itself has no permit or endorsement. The installation before a new variance
-can be NCI or CHI. ResType and CommType apply only to an NCI installation.
-
-  npm run conv var -- --AppType=NCI --PerType=Comm --CommType=FC
-    Run full CV E2E with a commercial freight cable installation first.
-
-  npm run conv var -- --AppType=CHI "--PerType=CPH(A10.4)"
-    Run full CV E2E starting from a personnel hoist installation.
-
-  npm run conv var -- --ExistingUser --AppType=CHI "--PerType=CMH(A10.5)"
-    Reuse the configured applicant, install a material hoist, then run its variance.
-
-  npm run conv var -- --AppType=CHI --PerType=ALL --parallel=2
-    Run both hoist installation and variance combinations together.
-
-  npm run conv var -- --AppType=ALL --PerType=ALL --parallel=2
-    Run every NCI and CHI permit, up to two complete flows at a time.
-
-  npm run conv var -- --AppType=ALL --PerType=Comm --CommType=FC --parallel=2
-    Run only NCI Commercial Freight Cable. The permit filter excludes CHI.
-
-  npm run conv var -- --PerType=
-    Run full CV E2E with a compatible random installation permit.
-
-Add --list to preview without signing in. Variance questions and the
-supporting file are set in config/editableData.js under variance.
-The file must be in UploadFiles.
-
-Endorsements
-------------
-ResType applies only to NCI / Res, and CommType only to NCI / Comm.
-Blank selects one available endorsement randomly; use --ResType= or
---CommType= to clear a configured override. CHI never selects an endorsement.
-Use a comma-separated list for specific endorsements, or ALL to run each
-configured endorsement as its own complete flow:
-
-  npm run conv initial -- --AppType=NCI --PerType=Comm --CommType=ALL --parallel=4
-  npm run conv initial -- --AppType=NCI --PerType=Comm --CommType=FC,LULA --parallel=2
-  npm run conv initial -- --AppType=NCI --PerType=Res --ResType=ALL --parallel=4
-
-Residential codes:
-  ORC     OTHER RESIDENTIAL CONVEYANCE
-  RD      RESIDENTIAL DUMBWAITER
-  RE      RESIDENTIAL ELEVATOR
-  RIC     RESIDENTIAL INCLINED CHAIR
-  RIE     RESIDENTIAL INCLINED ELEVATOR
-  RPV     RESIDENTIAL PNEUMATIC VACUUM
-  RVPL    RESIDENTIAL VERTICAL PLATFORM LIFT
-  RIPL    RESIDENTIAL INCLINED PLATFORM LIFT
-
-Residential compatibility alias:
-  RC      Same selection as ORC
-
-Commercial codes:
-  FC       FREIGHT CABLE
-  FH       FREIGHT HYDRAULIC
-  FRHE     FREIGHT ROPED HYDRAULIC ELEVATOR
-  IE       INCLINED ELEVATOR
-  LULA     LIMITED-USE/LIMITED-APPLICATION (LULA)
-  PC       PASSENGER CABLE
-  PH       PASSENGER HYDRAULIC
-  PRHE     PASSENGER ROPED HYDRAULIC ELEVATOR
-  BML      BELT MAN LIFT
-  DOTR     DUMBWAITER IN OTHER THAN RESIDENCE
-  HPFE     HAND POWERED FREIGHT ELEVATOR
-  HPML     HAND POWERED MAN LIFT
-  IPL      INCLINED PLATFORM LIFT
-  ISCL     INCLINED STAIR CHAIR LIFT
-  RL       RELOCATABLE LIFT
-  SE       SIDEWALK ELEVATOR
-  SP       SPECIAL PURPOSE
-  TYPEAML  TYPE A MATERIAL LIFT
-  TYPEBML  TYPE B MATERIAL LIFT
-  VPL      VERTICAL PLATFORM LIFT
-  WACML    WAC MATERIAL LIFT
-  ESC      ESCALATOR
-  MW       MOVING WALK
-  PASS     PASSENGER
-
-Parallel, browser and repeat options
-------------------------------------
-Steps inside each target stay in order. --parallel N and --parallel=N both
-limit concurrent full flows. They do not add targets. Projects and
---repeat-each expand the target list for new
-installations. Each target passes its own transaction between stages.
-Variance on an existing conveyance and --approve cannot repeat or span multiple browser
-projects. The latest run is merged into one Playwright report.
-
-Separate --Key=value options are recommended. Comma-separated assignments
-also work, including when PowerShell forwards them together:
-
-  npm run conv initial -- --AppType=ALL, PerType=ALL, CommType=FC --parallel 3
-    All four installation permits; at most three flows at a time. FC applies
-    only to the commercial NCI flow.
-  npm run conv var -- --AppType=ALL, PerType=Res, CommType=FC
-    Only the residential NCI installation and its variance. FC is skipped
-    with a warning because there is no commercial target.
-  npm run conv initial -- --AppType=NCI, PerType=ALL, CommType=FC --parallel 2
-    Residential and commercial NCI installations, with FC on commercial only.
-  npm run conv var -- --AppType=ALL --PerType=ALL --CommType=FC --parallel 4
-    All four installation permits, each followed by its own variance.
-    At most four complete flows run at a time.
-
-  npm run conv initial -- --AppType=ALL --PerType=ALL --parallel=4 --list
-  npm run conv initial -- --headed --project=chromium
-  npm run conv initial -- --project=firefox
-  npm run conv initial -- --project="Microsoft Edge"
-  npm run conv initial -- --repeat-each=2 --parallel=2
-  npm run conv initial -- --debug --project=chromium
-
---list shows the plan without signing in, changing records, or replacing the
-previous report. In runSettings.json, parallel sets the default concurrency
-and parallelWorkers is the limit used by a bare --parallel flag.
---headed shows the browser; --debug opens Playwright Inspector.
---project chooses the browser; --repeat-each repeats each selected combination.
---serial forces one combination at a time, and --workers controls Playwright
-workers within each combination. Use npm's -- separator before these flags.
-Apply and approval require retries=0 to prevent duplicate submissions.
-Approval opens transactions already assigned to the signed-in reviewer
-without Pull. For NCI, CHI and CV, flexible checklist rows (such as Additional
-Supporting Documents) choose randomly between enabled Complete and Waived
-Off options. Rows with a required outcome keep it; unknown pending rows are
-reported for manual review.
-
-Registration Only
------------------
-  npm run conv -- --register
-  npm run conv -- --regsiter
-
-Both spellings run Register only and save the new applicant credentials.
-Do not combine --register with a workflow, approval, or application selectors.
-
-Login Apply Only
-----------------
-  npm run conv initial -- --apply
-  npm run conv initial -- --apply --AppType=NCI --PerType=Comm --CommType=FC
-  npm run conv initial -- --apply --AppType=CHI "--PerType=CMH(A10.5)"
-  npm run conv initial -- --apply --AppType --PerType=Comm, CommType
-
-These submit an installation with the standalone applicant credentials.
-AppType, PerType, ResType and CommType work as in the full initial flow.
-An option without a value is treated like an omitted option for --apply:
-use the compatible runSettings.json default, or a compatible random choice.
-Use --Key= to explicitly clear a default. Separate --Key=value options are
-recommended.
-
-  npm run conv var -- --apply
-    Submit a variance using conveyanceNumber in ConveyanceVarianceDetails.js.
-  npm run conv var -- --apply --ConvNum=4749 --list
-    Preview the CLI override. 4749 is a reference number only, not a valid
-    target for submission. Replace it with an approved TEST conveyance number
-    before removing --list. The spaced form --ConvNum =4749 also works.
-
-No --apply command registers a user or approves a transaction. Use a TEST
-applicant with access to the approved conveyance for var --apply. This
-variance-only path does not use installation type, permit or endorsement
-values. It permits one browser project and one repeat. Configure the
-variance document in UploadFiles before a live run.
-
-Both apply-only paths require config/LoginCredentials.js (or
-LOGIN_NAME and LOGIN_PASSWORD, or explicit --LoginName and --LoginPassword).
-Apply-only credentials use CLI first, then environment, then config. Do not
-combine --apply with --ExistingUser; the latter also runs approval.
-Add --list to preview without submitting anything.
-
-Legacy standalone scripts
--------------------------
-  npm run test -- --spec=register
-  npm run test -- --spec=apply --AppType=CHI "--PerType=CPH(A10.4)"
-
-The first command registers only, and the second applies only. Standalone
-apply accepts --LoginName and --LoginPassword and can reuse the last account
-from testData/userData.json when both fields are blank. To approve a submitted
-transaction without reapplying, use the Approve an Existing Transaction commands.
-
-Set CONVEYANCE_APPROVER_LOGIN_NAME and CONVEYANCE_APPROVER_PASSWORD in the
-Conveyance .env file for approval. Keep actual credentials out of commands.
-
-Framework shortcuts (run inside tests/LNI/Conveyance)
-----------------------------------------------------
-  npm ci                  Install local dependencies from package-lock.json.
-  npm run setup           Install Playwright browsers.
-  npm run validate:flows  Run local regression checks, without creating TEST records.
-  npm run test:register   Run just register.
-  npm run test:apply      Run just login and apply.
-  npm run test:serial     Run the legacy flow one combination at a time.
-  npm run test:headed     Run the legacy flow with browsers visible.
-  npm run test:debug      Run the legacy flow with Playwright Inspector.
-  npm run test:list       Preview the legacy flow without submitting anything.
-  npm run test:all        Run the legacy mixed installation and variance matrix.
-  npm run test:matrix     Run that matrix with up to four combinations at once.
-  npm run test:chrome     Run the legacy default flow with Chromium.
-  npm run test:firefox    Run the legacy default flow with Firefox.
-  npm run test:edge       Run the legacy default flow with Microsoft Edge.
-  npm run report          Open the last generated Playwright report.
-  npm run clean           Remove generated results and the Playwright report.
-
-Workspace aliases (run from the workspace root)
------------------------------------------------
-  npm run conveyance:e2e         Run the legacy default full flow.
-  npm run conveyance:e2e:headed  Run it in a visible browser.
-  npm run conveyance:e2e:list    Preview it without signing in.
-  npm run conveyance:e2e:matrix  Run the mixed matrix with up to four combinations.
-
-Legacy full commands keep their installation matrix behavior. The old single
---AppType=CV full command is an alias for var.
-
-Configuration
+FLOW COMMANDS
 -------------
-config/URL.js              Single TEST URL
-config/runSettings.json    AppType, PerType, ResType, CommType and run options
-config/applicationTypes.js Supported application/permit pairs and UI labels
-config/editableData.js     Shared inputs, Construction Hoist and Variance fields
-config/LoginCredentials.js Existing applicant login
-config/ConveyanceVarianceDetails.js Default number for var --apply and ExistingConveyance
-config/approvalTransacNumber.js Default number for --approve and approver login setup
+New applicant and new installation:
+  npm run conv initial
+  npm run conv var
+  npm run conv alt
+
+Existing applicant, new installation:
+  npm run conv initial -- --ExistingUser
+  npm run conv var -- --ExistingUser
+  npm run conv alt -- --ExistingUser
+
+Existing conveyance, apply and approve:
+  npm run conv var -- --ExistingConveyance
+  npm run conv alt -- --ExistingConveyance
+  npm run conv var -- --ExistingConveyance --ConvNum=9790 --list
+  npm run conv alt -- --ExistingConveyance --ConvNum=9790 --list
+
+One action only:
+  npm run conv -- --register
+  npm run conv initial -- --apply
+  npm run conv var -- --apply
+  npm run conv alt -- --apply
+  npm run conv var -- --apply --ConvNum=4749 --list
+  npm run conv alt -- --apply --ConvNum=4749 --list
+  npm run conv -- --approve
+  npm run conv -- --approve --TransacNum=4324 --list
+
+SELECT, PREVIEW, AND RUN
+-----------------------
+  npm run conv initial -- --apply --AppType=NCI --PerType=Comm --list
+  npm run conv initial -- --AppType=NCI --PerType=Res --ResType=ORC --list
+  npm run conv var -- --AppType=NCI --PerType=Comm --CommType=FC --list
+  npm run conv alt -- --AppType=CHI --PerType=CPH-A10.4 --NoConveyanceChanges --headed --list
+  npm run conv alt -- --AppType=CHI --PerType=CMH-A10.5 --list
+  npm run conv alt -- --AppType=NCI,CHI --PerType=Comm,CPH-A10.4 --CommType=FC --parallel=2 --list
+  npm run conv initial -- --AppType=ALL, PerType=ALL, CommType=FC --parallel 3 --list
+  npm run conv alt -- --AppType=ALL --PerType=ALL --ResType=ALL --CommType=ALL --parallel=4 --list
+  npm run conv alt -- --apply --NoConveyanceChanges --list
+  npm run conv alt -- --ExistingConveyance --NoConveyanceChanges --list
+  npm run conv initial -- --AppType= --PerType= --ResType= --CommType= --list
+  npm run conv initial -- --headed --project="Microsoft Edge" --list
+  npm run conv initial -- --project=chromium --repeat-each=2 --parallel=2 --list
+  npm run conv initial -- --debug --project=chromium --list
+
+HOW THE MODES WORK
+------------------
+initial registers, applies for an installation, and approves it. var and alt
+then use the approved Conveyance # to apply for and approve the follow-up.
+--ExistingUser skips registration but still creates and approves an installation.
+--ExistingConveyance applies for and approves only the variance or alteration.
+--apply submits the selected application without approval. With var or alt it
+starts on an approved existing conveyance. Do not combine --apply with --ExistingUser.
+--approve finds the exact Work Queue transaction and uses its application checklist.
+It does not register or apply. --regsiter is a legacy alias for --register.
+
+Alteration fills a random contract value and may change zero or more editable
+Conveyance Information fields. --NoConveyanceChanges leaves that section unchanged;
+it does not disable the random contract value. This flag only applies to alt.
+
+SELECTION AND CONFIGURATION
+---------------------------
+NCI: PerType=Comm or Res. CHI: PerType=CPH-A10.4 or CMH-A10.5 (no quotes needed).
+The legacy codes CPH(A10.4) and CMH(A10.5) still work, but require quotes in PowerShell.
+Use AppType, PerType, ResType and CommType for installations only. CV (Variance)
+and CA (Alteration) have no installation selectors of their own.
+Lists are case-insensitive and comma-separated. ALL expands the selected axis;
+with AppType=ALL, a specific PerType filters the applications. A specific
+incompatible endorsement is rejected; ALL warns if it cannot use an endorsement.
+CLI choices override runSettings.json. To clear a saved choice, use --Key=.
+A valueless selector with --apply inherits the configured choice.
+
+Use an explicit code from ENDORSEMENT TYPES below, a comma-separated list,
+or ALL for ResType and CommType.
+
+Existing applicants: config/LoginCredentials.js or LOGIN_NAME / LOGIN_PASSWORD.
+CLI --LoginName and --LoginPassword take priority; prefer local config or env,
+because command-line passwords can be visible in logs and shell history.
+Existing conveyances: config/ConveyanceVarianceDetails.js for var, or
+config/ConveyanceAlterationDetails.js for alt. --ConvNum overrides the selected file.
+Approval only: config/approvalTransacNumber.js; --TransacNum overrides the file.
+Approver login: local .env, CONVEYANCE_APPROVER_LOGIN_NAME and CONVEYANCE_APPROVER_PASSWORD.
+Forms and upload comments: config/editableData.js. Upload steps choose from
+the files in UploadFiles at runtime; place only supported files there.
+Approval checks randomly choose Complete or Waived Off when both are enabled.
+If only one is enabled it is used. Pending is never selected.
+TEST URL: config/URL.js. Browsers, parallel defaults and timeouts: config/runSettings.json.
+
+--parallel=N or --parallel N caps concurrent combinations. Each combination's
+stages run in order. --serial limits combinations to one. --workers sets
+Playwright workers per stage. --project selects chromium, firefox or "Microsoft Edge";
+--repeat-each repeats each target. Direct follow-ups on an existing conveyance
+and approval-only accept one browser project and one repeat. Apply and approval require retries=0.
+
+SHORTCUTS AND REPORTS
+--------------------
+  npm ci
+  npm run setup
+  npm run validate:flows
+  npm run report
+  npm run clean
+  npm run test -- --spec=register --list
+  npm run test -- --spec=apply --AppType=CHI --PerType=CPH-A10.4 --list
+  npm run test:list
+  npm run test:matrix -- --list
+
+Legacy aliases: npm run test:register, test:apply, test:serial, test:headed,
+test:debug, test:all, test:chrome, test:firefox and test:edge. The old mixed
+matrix includes NCI, CHI, CV and CA. --AppType=CV and --AppType=CA are shorthand
+for var and alt when used without a flow name. Workspace-root aliases:
+conveyance:e2e, conveyance:e2e:headed, conveyance:e2e:list and conveyance:e2e:matrix.
+The latest test results are merged into one HTML report; npm run report reopens it.
+
+ENDORSEMENT TYPES
+-----------------
+Residential (--ResType; RC is an alias for ORC)
+  ORC      Other Residential Conveyance
+  RD       Residential Dumbwaiter
+  RE       Residential Elevator
+  RIC      Residential Inclined Chair
+  RIE      Residential Inclined Elevator
+  RPV      Residential Pneumatic Vacuum
+  RVPL     Residential Vertical Platform Lift
+  RIPL     Residential Inclined Platform Lift
+
+Commercial (--CommType)
+  FC       Freight Cable
+  FH       Freight Hydraulic
+  FRHE     Freight Roped Hydraulic Elevator
+  IE       Inclined Elevator
+  LULA     Limited-Use/Limited-Application (LULA)
+  PC       Passenger Cable
+  PH       Passenger Hydraulic
+  PRHE     Passenger Roped Hydraulic Elevator
+  BML      Belt Man Lift
+  DOTR     Dumbwaiter in Other Than Residence
+  HPFE     Hand Powered Freight Elevator
+  HPML     Hand Powered Man Lift
+  IPL      Inclined Platform Lift
+  ISCL     Inclined Stair Chair Lift
+  RL       Relocatable Lift
+  SE       Sidewalk Elevator
+  SP       Special Purpose
+  TYPEAML  Type A Material Lift
+  TYPEBML  Type B Material Lift
+  VPL      Vertical Platform Lift
+  WACML    WAC Material Lift
+  ESC      Escalator
+  MW       Moving Walk
+  PASS     Passenger

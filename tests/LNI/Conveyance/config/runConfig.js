@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { dirname, isAbsolute, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { buildApplicationTargets } from './applicationTypes.js';
+import { buildApplicationTargets, getFollowUpType } from './applicationTypes.js';
 
 export const FRAMEWORK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RUN_SETTINGS_PATH = join(FRAMEWORK_ROOT, 'config', 'runSettings.json');
@@ -85,7 +85,7 @@ export function getApplicationTarget(env = process.env) {
   const appType = env.CONVEYANCE_APP_TYPE || String(runSettings.AppType ?? '').trim() || 'NCI';
   const targets = buildApplicationTargets({
     AppType: appType,
-    PerType: env.CONVEYANCE_PER_TYPE || (String(appType).trim().toUpperCase() === 'CV' ? 'ALL' : String(runSettings.PerType ?? '').trim() || 'Res'),
+    PerType: env.CONVEYANCE_PER_TYPE || (getFollowUpType(appType) ? 'ALL' : String(runSettings.PerType ?? '').trim() || 'Res'),
     ResType: env.CONVEYANCE_RES_TYPE ?? runSettings.ResType,
     CommType: env.CONVEYANCE_COMM_TYPE ?? runSettings.CommType,
   });

@@ -1,6 +1,6 @@
 {
-  "AppType": "CHI",
-  "PerType": "CMH(A10.5)",
+  "AppType": "",
+  "PerType": "",
   "ResType": "RPV",
   "CommType": "",
   "defaultProject": "chromium",
