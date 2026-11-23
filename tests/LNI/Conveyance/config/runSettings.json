@@ -1,8 +1,8 @@
 {
-  "AppType": "",
-  "PerType": "",
-  "ResType": "RPV",
-  "CommType": "",
+  "AppType": "NCI",
+  "PerType": "Comm",
+  "ResType": "",
+  "CommType": "LULA",
   "defaultProject": "chromium",
   "workers": 3,
   "parallelWorkers": 3,

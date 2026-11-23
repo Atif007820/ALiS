@@ -1,4 +1,4 @@
 export const CONVEYANCE_VARIANCE_DETAILS = {
-  // Used by var --apply and var --ExistingConveyance when --ConvNum is omitted.
+  // Used by var commands with --ExistingConveyance.
   conveyanceNumber: '202878',
 };

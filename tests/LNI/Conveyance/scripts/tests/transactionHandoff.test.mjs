@@ -156,6 +156,13 @@ for (const appType of ['CV', 'CA']) {
       CONVEYANCE_LOGIN_SOURCE: 'existing-applicant', CONVEYANCE_EXISTING_CONVEYANCE_NUMBER: '009790',
     };
     assert.deepEqual(loadFollowUpConveyance(chromium, { env }), { conveyanceNumber: '009790' });
+    const registeredEnv = {
+      ...env, CONVEYANCE_LOGIN_SOURCE: 'registered', CONVEYANCE_FOLLOW_UP_PHASE: appType === 'CV' ? 'variance' : 'alteration',
+    };
+    assert.deepEqual(loadFollowUpConveyance(chromium, { env: registeredEnv }), { conveyanceNumber: '009790' });
+    assert.throws(() => loadFollowUpConveyance(chromium, {
+      env: { ...registeredEnv, CONVEYANCE_FOLLOW_UP_PHASE: 'installation' },
+    }), /requires a variance or alteration run/);
     assert.throws(() => loadFollowUpConveyance(chromium, {
       env: { ...env, CONVEYANCE_APP_TYPE: 'NCI', CONVEYANCE_PER_TYPE: 'Res', CONVEYANCE_RES_TYPE: '' },
     }), /requires a variance or alteration run/);
@@ -273,14 +280,14 @@ test('initial retains explicit reuse of a complete applicant login', () => {
   });
   assert.match(existing, /Flow: initial \(existing applicant\)/);
   assert.doesNotMatch(existing, /FixtureSecret|^Running 01_/m);
-  const reused = listRunner([...initialArgs, '--ExistingUser'], { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' });
+  const reused = listRunner([...initialArgs, '--user=existing'], { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' });
   assert.match(reused, /Flow: initial \(existing applicant\)/);
   assert.deepEqual([...reused.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage), ['02', '03']);
   assert.match(listRunner([...initialArgs, '--LoginName=fixture-name'], {}, 1), /Provide both applicant/);
 });
 
 test('existing variance skips registration but keeps both apply and approval pairs and selection overrides', () => {
-  const args = ['--e2e', 'var', '--ExistingUser', '--AppType=NCI', '--PerType=Comm', '--CommType=FC'];
+  const args = ['--e2e', 'var', '--user=existing', '--AppType=NCI', '--PerType=Comm', '--CommType=FC'];
   const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
   const output = listRunner(args, login);
   assert.match(output, /Flow: var \(existing applicant\)/);
@@ -300,10 +307,10 @@ test('plain initial and var plan full flows even with saved records and applican
     CONVEYANCE_TRANSACTION_NUMBER: '00123', CONVEYANCE_VARIANCE_CONVEYANCE_NUMBER: '00456',
     LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret',
   };
-  const initial = listRunner(['--e2e', 'initial'], savedInputs);
+  const initial = listRunner(['--e2e', 'initial', '--user=new'], savedInputs);
   assert.match(initial, /Flow: initial \(full flow\)/);
   assert.equal([...initial.matchAll(/^Running 0[123]_/gm)].length, 3);
-  const variance = listRunner(['--e2e', 'var'], savedInputs);
+  const variance = listRunner(['--e2e', 'var', '--user=new'], savedInputs);
   assert.match(variance, /Flow: var \(full flow\)/);
   assert.equal([...variance.matchAll(/^Running 0[123]_/gm)].length, 5);
 });
@@ -340,10 +347,83 @@ test('initial apply only uses the configured applicant and accepts installation 
   assert.deepEqual([...output.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage), ['02']);
   assert.doesNotMatch(output, /FixtureSecret/);
   assert.match(listRunner(args, {}, 1), /Apply-only mode requires an applicant login and password/);
-  assert.match(listRunner([...args, '--ExistingUser'], login, 1), /Choose either --apply.*--ExistingUser/);
+  assert.match(listRunner([...args, '--user=existing'], login, 1), /Choose either --apply.*--user=existing/);
 });
 
-test('var apply only uses an existing conveyance, taking CLI number before config', () => {
+test('regapply handles initial submission, installation approval, and direct follow-ups', () => {
+  const run = args => listRunner(['--e2e', ...args, '--regapply']);
+  const stages = output => [...output.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage);
+  assert.deepEqual(stages(run([])), ['01', '02']);
+  assert.deepEqual(stages(run(['initial', '--user=new', '--AppType=NCI', '--PerType=Res'])), ['01', '02']);
+
+  const followUps = [
+    ['var', 'variance', CONVEYANCE_VARIANCE_DETAILS.conveyanceNumber],
+    ['alt', 'alteration', CONVEYANCE_ALTERATION_DETAILS.conveyanceNumber],
+  ];
+  for (const [flow, phase, numberFromConfig] of followUps) {
+    const plain = run([flow]);
+    assert.ok(plain.includes(
+      `Planned stages: 01_RegisterUser [installation] -> 02_LoginApply [installation] -> 03_ApproveApplication [installation] -> 02_LoginApply [${phase}]`,
+    ));
+    assert.deepEqual(stages(plain), ['01', '02', '03', '02']);
+    assert.doesNotMatch(plain, /^Conveyance #:/m);
+
+    const output = run([flow, '--ConvNum=004749']);
+    assert.match(output, /Conveyance #: 004749/);
+    const directPlan = `Planned stages: 01_RegisterUser -> 02_LoginApply [${phase}]`;
+    assert.ok(output.includes(directPlan));
+    assert.deepEqual(stages(output), ['01', '02']);
+
+    const configArgs = ['--e2e', flow, '--regapply', '--ExistingConveyance'];
+    if (numberFromConfig) {
+      const configured = listRunner(configArgs);
+      assert.ok(configured.includes(directPlan));
+      assert.ok(configured.includes(`Conveyance #: ${numberFromConfig}`));
+      assert.deepEqual(stages(configured), ['01', '02']);
+    } else {
+      assert.match(listRunner(configArgs, {}, 1), /--ExistingConveyance requires conveyanceNumber/);
+    }
+  }
+
+  const hoist = run(['alt', '--AppType=CHI', '--PerType=CPH-A10.4']);
+  assert.match(hoist, /Application \/ permit: CA \/ CHI \/ CPH\(A10.4\)/);
+  assert.deepEqual(stages(hoist), ['01', '02', '03', '02']);
+});
+
+test('applicant and register-apply flags reject conflicting selections', () => {
+  for (const [args, error] of [
+    [['initial', '--user=other'], /Use --user=new or --user=existing/],
+    [['initial', '--user=new', '--user=existing'], /Choose one --user mode/],
+    [['initial', '--user=new', '--LoginName=fixture-name'], /--user=new registers an applicant/],
+    [['initial', '--regapply', '--user=existing'], /--regapply registers a new applicant/],
+    [['initial', '--regapply', '--apply'], /--regapply registers a new applicant/],
+    [['var', '--regapply', '--ConvNum='], /var --regapply requires --ConvNum/],
+    [['alt', '--regapply', '--ExistingConveyance', '--ConvNum=202866'], /Choose either --ExistingConveyance.*or --ConvNum/],
+    [['var', '--regapply', '--ConvNum=202866', '--AppType=NCI'], /does not take installation selectors/],
+    [['alt', '--regapply', '--ExistingConveyance', '--AppType=CHI'], /does not take installation selectors/],
+  ]) assert.match(listRunner(['--e2e', ...args], {}, 1), error);
+});
+
+test('plain follow-up apply submits and approves an installation before the follow-up submission', () => {
+  const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
+  for (const [flow, phase] of [['var', 'variance'], ['alt', 'alteration']]) {
+    const output = listRunner(['--e2e', flow, '--apply'], login);
+    assert.ok(output.includes(`Flow: ${flow} (apply after installation approval)`));
+    assert.ok(output.includes(
+      `Planned stages: 02_LoginApply [installation] -> 03_ApproveApplication [installation] -> 02_LoginApply [${phase}]`,
+    ));
+    const steps = [...output.matchAll(/^Running (0[123])_[^\r\n]*\[(installation|variance|alteration)\]$/gm)];
+    assert.deepEqual(steps.map(([, stage, stepPhase]) => `${stage}:${stepPhase}`), [
+      '02:installation', '03:installation', `02:${phase}`,
+    ]);
+    assert.doesNotMatch(output, /^Conveyance #:|^Running 01_/m);
+  }
+
+  const hoist = listRunner(['--e2e', 'alt', '--apply', '--AppType=CHI', '--PerType=CPH-A10.4'], login);
+  assert.match(hoist, /Application \/ permit: CA \/ CHI \/ CPH\(A10.4\)/);
+});
+
+test('var apply with a selector submits a variance on the configured or specified conveyance', () => {
   const args = ['--e2e', 'var', '--apply'];
   const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
   const output = listRunner([...args, '--AppType', '--PerType', '--ConvNum', '=004749'], login);
@@ -352,14 +432,18 @@ test('var apply only uses an existing conveyance, taking CLI number before confi
   assert.deepEqual([...output.matchAll(/^Running (0[123])_[^\r\n]*\[variance\]$/gm)].map(([, stage]) => stage), ['02']);
   assert.doesNotMatch(output, /^Running (?:01|03)_|\[installation\]/m);
   const configured = String(CONVEYANCE_VARIANCE_DETAILS.conveyanceNumber ?? '').trim();
-  if (configured) assert.ok(listRunner(args, login).includes(`Conveyance #: ${configured}`));
-  else assert.match(listRunner(args, login, 1), /var --apply requires --ConvNum/);
+  const configuredArgs = [...args, '--ExistingConveyance'];
+  if (configured) {
+    const configPlan = listRunner(configuredArgs, login);
+    assert.ok(configPlan.includes(`Conveyance #: ${configured}`));
+    assert.match(configPlan, /Planned stages: 02_LoginApply \[variance\]\r?$/m);
+  } else assert.match(listRunner(configuredArgs, login, 1), /--ExistingConveyance requires conveyanceNumber/);
   assert.match(listRunner([...args, '--ConvNum='], login, 1), /var --apply requires --ConvNum/);
   assert.match(listRunner([...args, '--AppType=NCI', '--ConvNum=4749'], login, 1), /does not take installation selectors/);
 });
 
-test('ExistingConveyance plans variance apply then approval, using CLI before config', () => {
-  const args = ['--e2e', 'var', '--ExistingConveyance'];
+test('variance apply and approval accept either the configured conveyance or a CLI number', () => {
+  const args = ['--e2e', 'var', '--user=existing'];
   const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
   const output = listRunner([...args, 'ConvNum=009790'], login);
   assert.match(output, /Flow: var \(existing conveyance\)/);
@@ -368,9 +452,11 @@ test('ExistingConveyance plans variance apply then approval, using CLI before co
   assert.doesNotMatch(output, /^Running 01_|\[installation\]/m);
   const configured = String(CONVEYANCE_VARIANCE_DETAILS.conveyanceNumber ?? '').trim();
   if (configured) {
-    assert.ok(listRunner(args, login).includes(`Conveyance #: ${configured}`));
+    const configPlan = listRunner([...args, '--ExistingConveyance'], login);
+    assert.ok(configPlan.includes(`Conveyance #: ${configured}`));
+    assert.match(configPlan, /Planned stages: 02_LoginApply \[variance\] -> 03_ApproveApplication \[variance\]/);
   } else {
-    assert.match(listRunner(args, login, 1), /requires --ConvNum or conveyanceNumber/);
+    assert.match(listRunner([...args, '--ExistingConveyance'], login, 1), /--ExistingConveyance requires conveyanceNumber/);
   }
 });
 
@@ -390,14 +476,17 @@ test('alt plans new, existing-applicant, existing-conveyance, and apply-only com
   const stages = value => [...value.matchAll(/^Running (0[123])_[^\r\n]*\[(installation|alteration)\]$/gm)]
     .map(([, stage, phase]) => stage + ':' + phase);
   const full = ['01:installation', '02:installation', '03:installation', '02:alteration', '03:alteration'];
-  assert.deepEqual(stages(listRunner(args)), full);
+  assert.deepEqual(stages(listRunner([...args, '--user=new'])), full);
   assert.deepEqual(stages(listRunner(['--e2e', '--AppType=CA', '--project=chromium'])), full);
-  assert.deepEqual(stages(listRunner([...args, '--ExistingUser', '--AppType=NCI', '--PerType=Comm', '--CommType=FC'], login)), full.slice(1));
-  const direct = listRunner([...args, '--ExistingConveyance', '--ConvNum=004749', '--NoConveyanceChanges'], login);
+  assert.deepEqual(stages(listRunner([...args, '--user=existing', '--AppType=NCI', '--PerType=Comm', '--CommType=FC'], login)), full.slice(1));
+  const direct = listRunner([...args, '--user=existing', '--ConvNum=004749', '--NoConveyanceChanges'], login);
   assert.match(direct, /Conveyance #: 004749/);
   assert.match(direct, /Conveyance Information: unchanged/);
   assert.deepEqual(stages(direct), full.slice(3));
-  const configured = listRunner([...args, '--apply'], login);
+  const configuredDirect = listRunner([...args, '--user=existing', '--ExistingConveyance'], login);
+  assert.ok(configuredDirect.includes('Conveyance #: ' + CONVEYANCE_ALTERATION_DETAILS.conveyanceNumber));
+  assert.deepEqual(stages(configuredDirect), full.slice(3));
+  const configured = listRunner([...args, '--apply', '--ExistingConveyance'], login);
   assert.ok(configured.includes('Conveyance #: ' + CONVEYANCE_ALTERATION_DETAILS.conveyanceNumber));
   assert.match(configured, /Conveyance Information: random subset/);
   assert.deepEqual(stages(configured), ['02:alteration']);
@@ -410,12 +499,13 @@ test('alt plans new, existing-applicant, existing-conveyance, and apply-only com
 test('alt rejects invalid modes and options before listing any stage', () => {
   const login = { LOGIN_NAME: 'fixture-name', LOGIN_PASSWORD: 'FixtureSecret' };
   for (const [argv, error] of [
-    [['alt', '--ConvNum=4749'], /--ConvNum requires/],
-    [['alt', '--apply', '--AppType=CHI'], /does not take installation selectors/],
+    [['alt', '--ConvNum='], /--ConvNum requires a conveyance number/],
+    [['alt', '--user=new', '--ConvNum=4749'], /--user=new registers an applicant/],
+    [['alt', '--apply', '--ExistingConveyance', '--AppType=CHI'], /does not take installation selectors/],
     [['alt', '--ExistingConveyance', '--PerType=Comm'], /does not take installation/],
     [['alt', '--apply', '--ConvNum='], /alt --apply requires --ConvNum/],
     [['alt', '--apply', '--ConvNum=abc'], /digits only/],
-    [['alt', '--apply', '--repeat-each=2'], /one browser project and one repeat/],
+    [['alt', '--apply', '--ExistingConveyance', '--repeat-each=2'], /one browser project and one repeat/],
     [['alt', '--ExistingConveyance', '--project=chromium', '--project=firefox'], /one browser project and one repeat/],
     [['alt', '--apply', '--ExistingUser'], /Choose either --apply/],
     [['alt', '--apply', '--retries=1'], /require --retries=0/],
@@ -427,9 +517,10 @@ test('alt rejects invalid modes and options before listing any stage', () => {
 });
 
 test('rejects incompatible and unsafe command options before launching Playwright', () => {
-  assert.match(listRunner(['--e2e', 'var', '--ConvNum=4567'], {}, 1), /--ConvNum requires var --ExistingConveyance/);
+  assert.match(listRunner(['--e2e', 'initial', '--ConvNum=4567'], {}, 1), /--ConvNum requires npm run conv var or npm run conv alt/);
   assert.match(listRunner(['--e2e', 'initial', '--TransacNum=4324'], {}, 1), /--TransacNum requires --approve/);
-  assert.match(listRunner(['--e2e', 'var', '--ExistingConveyance', '--ConvNum=4567', '--PerType=Comm'], {}, 1), /does not take installation/);
+  assert.match(listRunner(['--e2e', 'var', '--ExistingConveyance', '--ConvNum=4567'], {}, 1), /Choose either --ExistingConveyance.*or --ConvNum/);
+  assert.match(listRunner(['--e2e', 'var', '--ConvNum=4567', '--PerType=Comm'], {}, 1), /does not take installation/);
   assert.match(listRunner(['--e2e', '--approve', '--TransacNum=4324', '--AppType=NCI'], {}, 1), /--approve runs by itself/);
   assert.match(listRunner(['--e2e', 'initial', '--AppType=NCI', '--PerType=Res', '--CommType=FC'], {}, 1), /--CommType requires a matching NCI Comm/);
   assert.match(listRunner(['--e2e', 'var', '--AppType=NCI', '--PerType=Comm', '--ResType=ORC'], {}, 1), /--ResType requires a matching NCI Res/);

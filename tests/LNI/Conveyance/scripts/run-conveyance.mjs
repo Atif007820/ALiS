@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Application/permit combinations may run in parallel, but each remains serial:
- * 01_RegisterUser -> 02_LoginApply -> 03_ApproveApplication.
+ * Registration, application and approval run in that order when selected.
  */
 
 import { spawn, spawnSync } from 'child_process';
@@ -35,16 +35,19 @@ const inputOptions = {
   convnum: 'conveyanceNumber', transacnum: 'transactionNumber',
 };
 const retiredNumberOptions = new Set(['conveyancenumber', 'transacnumber', 'transaction', 'transactionnumber']);
-const numberUsage = 'Use --ConvNum with var or alt in --ExistingConveyance or --apply mode, or --TransacNum with --approve, after npm\'s -- separator.';
+const numberUsage = 'Use --ConvNum with var or alt, or --TransacNum with --approve, after npm\'s -- separator.';
 const followUpCodes = Object.fromEntries(Object.entries(FOLLOW_UP_TYPES).map(([code, type]) => [type.flow, code]));
 const followUpDetails = { CV: CONVEYANCE_VARIANCE_DETAILS, CA: CONVEYANCE_ALTERATION_DETAILS };
 if (Object.entries(process.env).some(([key, value]) => value !== '' && /^npm_config_/i.test(key)
-  && ['apply', 'register', 'regsiter', 'approve', 'existingconveyance', 'noconveyancechanges', 'convnum', 'transacnum', ...retiredNumberOptions].includes(
+  && ['apply', 'regapply', 'register', 'regsiter', 'approve', 'existingconveyance', 'noconveyancechanges', 'convnum', 'transacnum', ...retiredNumberOptions].includes(
     key.slice('npm_config_'.length).toLowerCase().replace(/[-_]/g, ''),
   ))) {
   exitConfigurationError('Pass workflow and number options after npm\'s -- separator. ' + numberUsage);
 }
 const parsed = parseCommandLine(process.argv.slice(2));
+// Older npm versions can consume --user before the separator and export it as config.
+const npmUserMode = valueFromNpmConfig('user');
+const userMode = parsed.userMode ?? (npmUserMode === null ? null : parseUserMode(npmUserMode));
 const overrides = {
   AppType: parsed.selection.AppType ?? valueFromNpmConfig('apptype', 'app_type') ?? undefined,
   PerType: parsed.selection.PerType ?? valueFromNpmConfig('pertype', 'per_type') ?? undefined,
@@ -52,9 +55,9 @@ const overrides = {
   CommType: parsed.selection.CommType ?? valueFromNpmConfig('commtype', 'comm_type') ?? undefined,
 };
 const requestedSpecs = resolveSelectedSpecs(parsed.selectedSpecs, parsed.flowMode);
-const legacyFollowUp = !parsed.subcommand && !parsed.approve && !parsed.register && requestedSpecs.length === SERIAL_FLOW_SPECS.length
+const legacyFollowUp = !parsed.subcommand && !parsed.approve && !parsed.register && !parsed.regapply && requestedSpecs.length === SERIAL_FLOW_SPECS.length
   ? getFollowUpType(overrides.AppType ?? runSettings.AppType) : undefined;
-const flow = parsed.subcommand ?? legacyFollowUp?.flow ?? null;
+const flow = parsed.subcommand ?? (parsed.regapply ? 'initial' : legacyFollowUp?.flow ?? null);
 const followUpCode = flow ? followUpCodes[flow] : undefined;
 const followUp = getFollowUpType(followUpCode);
 const loginOverrides = {
@@ -62,9 +65,14 @@ const loginOverrides = {
   password: parsed.inputs.password,
 };
 const hasLoginOverrides = Object.values(loginOverrides).some(value => String(value ?? '').trim());
-const existingRequested = parsed.existingUser || isTrue(valueFromNpmConfig('existinguser', 'existing_user', 'existing'));
-const directFollowUp = parsed.existingConveyance || (Boolean(followUp) && parsed.apply);
-const reuseApplicant = Boolean(flow) && (parsed.apply || existingRequested || directFollowUp || hasLoginOverrides);
+const legacyExistingUser = parsed.existingUser || isTrue(valueFromNpmConfig('existinguser', 'existing_user', 'existing'));
+const existingRequested = userMode === 'existing' || legacyExistingUser;
+const hasConveyanceNumber = parsed.inputs.conveyanceNumber !== undefined;
+const conveyanceSelector = parsed.existingConveyance ? '--ExistingConveyance' : hasConveyanceNumber ? '--ConvNum' : null;
+const directFollowUp = Boolean(conveyanceSelector);
+const submitFollowUpAfterInstallation = Boolean(followUp) && !directFollowUp && (parsed.apply || parsed.regapply);
+const reuseApplicant = Boolean(flow) && !parsed.regapply
+  && (parsed.apply || existingRequested || directFollowUp || hasLoginOverrides);
 
 let playwrightArgs = [...parsed.playwrightArgs];
 playwrightArgs = applyNpmConfigPlaywrightOptions(playwrightArgs);
@@ -84,8 +92,14 @@ try {
   if (parsed.noConveyanceChanges && followUpCode !== 'CA') {
     throw new Error('--NoConveyanceChanges is only supported with Conveyance Alteration (alt).');
   }
+  if (parsed.existingConveyance && hasConveyanceNumber) {
+    throw new Error('Choose either --ExistingConveyance to use the configured number or --ConvNum to provide a number.');
+  }
+  if (conveyanceSelector && (!parsed.subcommand || !followUp)) {
+    throw new Error(`${conveyanceSelector} requires npm run conv var or npm run conv alt.`);
+  }
   if (parsed.register) {
-    if (parsed.subcommand || parsed.apply || parsed.approve || directFollowUp || existingRequested
+    if (parsed.subcommand || parsed.apply || parsed.regapply || parsed.approve || directFollowUp || existingRequested || userMode
       || hasLoginOverrides || hasSelection || parsed.selectedSpecs.length) {
       throw new Error('--register runs by itself. Omit the flow, applicant, installation and script selection options.');
     }
@@ -95,10 +109,16 @@ try {
     throw new Error('--apply requires npm run conv initial or npm run conv var or npm run conv alt.');
   }
   if (parsed.apply && existingRequested) {
-    throw new Error('Choose either --apply (submit only) or --ExistingUser (submit and approve).');
+    throw new Error('Choose either --apply or --user=existing. Both use the configured applicant.');
+  }
+  if (parsed.regapply && (parsed.apply || parsed.approve || existingRequested || hasLoginOverrides || parsed.selectedSpecs.length)) {
+    throw new Error('--regapply registers a new applicant and submits the application. Omit other workflow, existing user, login and script selection options.');
+  }
+  if (userMode === 'new' && (legacyExistingUser || parsed.apply || (conveyanceSelector && !parsed.regapply) || hasLoginOverrides)) {
+    throw new Error('--user=new registers an applicant. Omit apply-only, existing user, existing conveyance and login options.');
   }
   if (parsed.approve) {
-    if (parsed.subcommand || parsed.existingConveyance || existingRequested || hasLoginOverrides
+    if (parsed.subcommand || parsed.existingConveyance || existingRequested || userMode || hasLoginOverrides
       || hasSelection || parsed.selectedSpecs.length || parsed.flowMode === 'standalone') {
       throw new Error('--approve runs by itself. Omit the flow, applicant, installation and script selection options.');
     }
@@ -111,25 +131,24 @@ try {
     if (parsed.inputs.transactionNumber !== undefined) throw new Error('--TransacNum requires --approve.');
   }
   if (directFollowUp) {
-    if (parsed.existingConveyance && (!parsed.subcommand || !followUp || hasSelection)) {
-      throw new Error('--ExistingConveyance requires var or alt and does not take installation type, permit or endorsement options.');
-    }
+    const mode = parsed.regapply ? `${flow} --regapply` : parsed.apply ? `${flow} --apply` : conveyanceSelector;
     if (hasSelection) {
-      throw new Error(`${flow} --apply submits a ${followUp.phase} application on an existing conveyance and does not take installation selectors. Use --ConvNum to choose the conveyance.`);
+      throw new Error(`${mode} uses an existing conveyance and does not take installation selectors.`);
     }
     const value = parsed.inputs.conveyanceNumber ?? followUpDetails[followUpCode].conveyanceNumber;
     if (!String(value ?? '').trim()) {
-      const mode = parsed.apply ? `${flow} --apply` : '--ExistingConveyance';
       const name = followUp.label.replaceAll(' ', '');
+      if (parsed.existingConveyance) {
+        throw new Error(`--ExistingConveyance requires conveyanceNumber in config/${name}Details.js. Use --ConvNum instead to provide a number.`);
+      }
+      if (mode === '--ConvNum') throw new Error('--ConvNum requires a conveyance number.');
       throw new Error(`${mode} requires --ConvNum or conveyanceNumber in config/${name}Details.js.`);
     }
     conveyanceNumber = normalizeConveyanceNumber(value);
-  } else if (parsed.inputs.conveyanceNumber !== undefined) {
-    throw new Error('--ConvNum requires var --ExistingConveyance or var --apply, or the equivalent alt mode.');
   }
   const standaloneApply = requestedSpecs.includes(SERIAL_FLOW_SPECS[1]) && !requestedSpecs.includes(SERIAL_FLOW_SPECS[0]);
-  if (existingRequested && !flow) {
-    throw new Error('--ExistingUser requires npm run conv initial, var, or alt.');
+  if ((userMode && !parsed.subcommand && !parsed.regapply) || (existingRequested && !flow)) {
+    throw new Error('--user requires npm run conv initial, var, or alt.');
   }
   if (reuseApplicant || standaloneApply) {
     applicantCredentials = resolveApplicantCredentials({ overrides: loginOverrides });
@@ -140,13 +159,18 @@ try {
   } else if (hasLoginOverrides) {
     throw new Error('Applicant login overrides are for initial, var, alt, or standalone apply.');
   }
-  if (parsed.apply) selectedSpecs = [SERIAL_FLOW_SPECS[1]];
+  if (parsed.apply && !submitFollowUpAfterInstallation) selectedSpecs = [SERIAL_FLOW_SPECS[1]];
+  else if (parsed.regapply) selectedSpecs = submitFollowUpAfterInstallation ? SERIAL_FLOW_SPECS : SERIAL_FLOW_SPECS.slice(0, 2);
   else if (reuseApplicant) selectedSpecs = SERIAL_FLOW_SPECS.slice(1);
 
   const axes = flowAxes(playwrightArgs, playwrightConfig.projects.map(project => project.name));
   playwrightArgs = axes.remainingArgs;
   runTargets = expandFlowTargets(resolveApplicationTargets(), axes).map(target => ({
-    ...target, stages: buildFlowStages(target, selectedSpecs, { reuseApplicant, existingConveyance: directFollowUp }),
+    ...target, stages: buildFlowStages(target, selectedSpecs, {
+      reuseApplicant,
+      existingConveyance: directFollowUp,
+      approveFollowUp: !submitFollowUpAfterInstallation,
+    }),
   }));
   const allSelection = parsed.subcommand && ['AppType', 'PerType'].some(option =>
     /^ALL$/i.test(String(overrides[option] ?? runSettings[option] ?? '').trim()));
@@ -162,9 +186,10 @@ try {
     throw new Error('A run for one existing transaction or conveyance requires one browser project and one repeat.');
   }
   parallelRuns = resolveParallelRuns(parsed.parallelRuns, runTargets.length, playwrightArgs);
-  assertMutationRetries(selectedSpecs, playwrightArgs);
+  const plannedSpecs = unique(runTargets.flatMap(({ stages }) => stages.map(({ spec }) => spec)));
+  assertMutationRetries(plannedSpecs, playwrightArgs);
   if (!listOnly) {
-    if (selectedSpecs.includes(SERIAL_FLOW_SPECS[2])) loadApprovalCredentials();
+    if (plannedSpecs.includes(SERIAL_FLOW_SPECS[2])) loadApprovalCredentials();
     if (runTargets.some(({ stages }) => stages.some(({ spec, selection }) =>
       spec === SERIAL_FLOW_SPECS[1] && selection.appType !== 'CHI'))) {
       listUploadFiles();
@@ -178,7 +203,12 @@ for (const message of ignoredEndorsements) console.warn(message);
 console.log(`Application / permit: ${unique(runTargets.map(target => target.selectionLabel)).join(', ')}`);
 if (parsed.register || parsed.approve || flow) {
   const stages = runTargets[0].stages.map(({ spec, phase }) => phase ? `${specName(spec)} [${phase}]` : specName(spec));
-  const label = parsed.apply ? 'apply only' : directFollowUp ? 'existing conveyance' : applicantCredentials ? 'existing applicant' : 'full flow';
+  const label = parsed.regapply
+    ? (submitFollowUpAfterInstallation ? 'register and submit follow-up after installation approval' : 'register and apply')
+    : submitFollowUpAfterInstallation ? 'apply after installation approval'
+      : parsed.apply ? 'apply only'
+        : directFollowUp ? 'existing conveyance'
+          : applicantCredentials ? 'existing applicant' : 'full flow';
   const flowLabel = parsed.register ? 'registration only'
     : parsed.approve ? `approval only (Transaction # ${transactionNumber})` : `${flow} (${label})`;
   console.log(`Flow: ${flowLabel}`);
@@ -530,6 +560,7 @@ function parseCommandLine(rawArgs) {
   const result = {
     flowMode: null,
     apply,
+    regapply: false,
     register: false,
     selection: {},
     inputs: {},
@@ -537,6 +568,7 @@ function parseCommandLine(rawArgs) {
     playwrightArgs: [],
     parallelRuns: null,
     subcommand: null,
+    userMode: null,
     existingUser: false,
     existingConveyance: false,
     noConveyanceChanges: false,
@@ -562,6 +594,12 @@ function parseCommandLine(rawArgs) {
       continue;
     }
 
+    if (/^--user(?:=|$)/i.test(arg)) {
+      const mode = parseUserMode(arg.includes('=') ? valueAfterEquals(arg) : args[++index]);
+      if (result.userMode && result.userMode !== mode) exitConfigurationError('Choose one --user mode.');
+      result.userMode = mode;
+      continue;
+    }
     if (/^--(?:existing-?user|existing|use-applicant)$/i.test(arg)) {
       result.existingUser = true;
       continue;
@@ -575,6 +613,10 @@ function parseCommandLine(rawArgs) {
       continue;
     }
     if (/^--apply$/i.test(arg)) continue;
+    if (/^--regapply$/i.test(arg)) {
+      result.regapply = true;
+      continue;
+    }
     if (/^--(?:register|regsiter)$/i.test(arg)) {
       result.register = true;
       continue;
@@ -661,8 +703,17 @@ function parseCommandLine(rawArgs) {
   if (result.subcommand && result.flowMode === 'standalone') {
     exitConfigurationError('Use npm run conv initial, var, or alt for these flows.');
   }
+  if (result.regapply && result.flowMode === 'standalone') {
+    exitConfigurationError('Use npm run conv -- --regapply to run registration and application together.');
+  }
 
   return result;
+}
+
+function parseUserMode(value) {
+  const mode = String(value ?? '').trim().toLowerCase();
+  if (mode !== 'new' && mode !== 'existing') exitConfigurationError('Use --user=new or --user=existing.');
+  return mode;
 }
 
 function valueAfterEquals(arg) {

@@ -3,69 +3,154 @@ Conveyance Commands
 Run npm run conv from the workspace root or tests/LNI/Conveyance.
 Run the framework shortcuts below from tests/LNI/Conveyance.
 Add --list after npm's -- separator to preview without signing in, submitting,
-approving, or clearing existing reports. IDs in examples are for preview only.
+approving, or clearing existing reports. For live commands, use the conveyance
+or transaction number you intend to use on the TEST site.
 Preview checks command parsing, workflow planning and test discovery. It does not
 exercise ALiS forms, credentials, uploads or approval saves.
 
 FLOW COMMANDS
 -------------
+See ALTERATION FIELD CHANGES for live alt commands with --NoConveyanceChanges.
+
 New applicant and new installation:
-  npm run conv initial
-  npm run conv var
-  npm run conv alt
+  npm run conv initial -- --user=new
+  npm run conv var -- --user=new
+  npm run conv alt -- --user=new
 
 Existing applicant, new installation:
-  npm run conv initial -- --ExistingUser
-  npm run conv var -- --ExistingUser
-  npm run conv alt -- --ExistingUser
+  npm run conv initial -- --user=existing
+  npm run conv var -- --user=existing
+  npm run conv alt -- --user=existing
 
 Existing conveyance, apply and approve:
-  npm run conv var -- --ExistingConveyance
-  npm run conv alt -- --ExistingConveyance
-  npm run conv var -- --ExistingConveyance --ConvNum=9790 --list
-  npm run conv alt -- --ExistingConveyance --ConvNum=9790 --list
+  npm run conv var -- --user=existing --ExistingConveyance
+  npm run conv alt -- --user=existing --ConvNum=202866
 
 One action only:
   npm run conv -- --register
   npm run conv initial -- --apply
-  npm run conv var -- --apply
-  npm run conv alt -- --apply
+  npm run conv var -- --apply --ExistingConveyance
+  npm run conv alt -- --apply --ExistingConveyance
   npm run conv var -- --apply --ConvNum=4749 --list
   npm run conv alt -- --apply --ConvNum=4749 --list
+  npm run conv alt -- --apply --ConvNum=202866
   npm run conv -- --approve
   npm run conv -- --approve --TransacNum=4324 --list
+
+Approve a new installation, then submit the follow-up:
+  npm run conv var -- --apply
+  npm run conv alt -- --apply
+
+Register and submit an installation:
+  npm run conv -- --regapply
+  npm run conv initial -- --regapply
+
+Register, approve a new installation, then submit the follow-up:
+  npm run conv var -- --regapply
+  npm run conv alt -- --regapply
+
+Register and submit the follow-up on an existing conveyance:
+  npm run conv var -- --regapply --ExistingConveyance
+  npm run conv alt -- --regapply --ExistingConveyance
+  npm run conv var -- --regapply --ConvNum=202866
+  npm run conv alt -- --regapply --ConvNum=202866
 
 SELECT, PREVIEW, AND RUN
 -----------------------
   npm run conv initial -- --apply --AppType=NCI --PerType=Comm --list
-  npm run conv initial -- --AppType=NCI --PerType=Res --ResType=ORC --list
-  npm run conv var -- --AppType=NCI --PerType=Comm --CommType=FC --list
-  npm run conv alt -- --AppType=CHI --PerType=CPH-A10.4 --NoConveyanceChanges --headed --list
-  npm run conv alt -- --AppType=CHI --PerType=CMH-A10.5 --list
-  npm run conv alt -- --AppType=NCI,CHI --PerType=Comm,CPH-A10.4 --CommType=FC --parallel=2 --list
-  npm run conv initial -- --AppType=ALL, PerType=ALL, CommType=FC --parallel 3 --list
-  npm run conv alt -- --AppType=ALL --PerType=ALL --ResType=ALL --CommType=ALL --parallel=4 --list
-  npm run conv alt -- --apply --NoConveyanceChanges --list
-  npm run conv alt -- --ExistingConveyance --NoConveyanceChanges --list
-  npm run conv initial -- --AppType= --PerType= --ResType= --CommType= --list
-  npm run conv initial -- --headed --project="Microsoft Edge" --list
-  npm run conv initial -- --project=chromium --repeat-each=2 --parallel=2 --list
-  npm run conv initial -- --debug --project=chromium --list
+  npm run conv var -- --apply --AppType=NCI --PerType=Comm --CommType=FC --list
+  npm run conv alt -- --apply --AppType=CHI --PerType=CPH-A10.4 --list
+  npm run conv initial -- --regapply --AppType=NCI --PerType=Res --ResType=ORC --list
+  npm run conv var -- --regapply --AppType=NCI --PerType=Comm --CommType=FC --list
+  npm run conv alt -- --regapply --AppType=CHI --PerType=CPH-A10.4 --list
+  npm run conv initial -- --user=new --AppType=NCI --PerType=Res --ResType=ORC --list
+  npm run conv var -- --user=new --AppType=NCI --PerType=Comm --CommType=FC --list
+  npm run conv alt -- --user=new --AppType=CHI --PerType=CMH-A10.5 --list
+  npm run conv alt -- --user=new --AppType=NCI,CHI --PerType=Comm,CPH-A10.4 --CommType=FC --parallel=2 --list
+  npm run conv initial -- --user=new --AppType=ALL --PerType=ALL --CommType=FC --parallel 3 --list
+  npm run conv alt -- --user=new --AppType=ALL --PerType=ALL --ResType=ALL --CommType=ALL --parallel=4 --list
+  npm run conv initial -- --user=new --AppType= --PerType= --ResType= --CommType= --list
+  npm run conv initial -- --user=new --headed --project="Microsoft Edge" --list
+  npm run conv initial -- --user=new --project=chromium --repeat-each=2 --parallel=2 --list
+  npm run conv initial -- --user=new --debug --project=chromium --list
+  npm run conv alt -- --apply --repeat-each=2 --parallel=2 --list
+  npm run conv var -- --regapply --project=chromium --project=firefox --parallel=2 --list
+
+COMMAND CHECKS
+--------------
+Conveyance_Command_Smoke_Checklist.xlsx records the command, expected behavior,
+and observed --list result for each case. A valid preview lists the expected
+scripts in order for every target. An invalid combination passes its check
+when the runner explains the configuration error before listing any tests.
+
+Last checked 2026-11-20. All 114 command previews passed, including the 28
+valid plans and 23 expected rejections in the checklist. The full alteration
+matrix listed all 170 stages across 34 installation targets.
+
+The new-installation previews above can plan separate runs per browser or
+repeat. An existing conveyance or approval transaction requires one project
+and one repeat. These commands should be rejected:
+  npm run conv alt -- --apply --ExistingConveyance --repeat-each=2 --list
+  npm run conv alt -- --regapply --ExistingConveyance --ConvNum=202866 --list
+
+If a CLI conveyance number is blank, supply a numeric --ConvNum or replace it
+with --ExistingConveyance to select the saved number.
 
 HOW THE MODES WORK
 ------------------
-initial registers, applies for an installation, and approves it. var and alt
-then use the approved Conveyance # to apply for and approve the follow-up.
---ExistingUser skips registration but still creates and approves an installation.
---ExistingConveyance applies for and approves only the variance or alteration.
---apply submits the selected application without approval. With var or alt it
-starts on an approved existing conveyance. Do not combine --apply with --ExistingUser.
+--user=new registers an applicant, applies for an installation, and approves it.
+var and alt then use the approved Conveyance # to apply for and approve the follow-up.
+--user=existing uses the configured applicant for the same application and approval stages.
+For var and alt, --ExistingConveyance selects the number saved in config.
+--ConvNum selects the number you enter. The runner rejects using both selectors.
+Either selector starts an existing conveyance flow.
+initial --apply submits a new installation with the configured applicant.
+Plain var --apply and alt --apply submit and approve a new installation with
+the configured applicant, then submit the follow-up for the resulting Conveyance #.
+They stop after the follow-up submission and require approver credentials for
+the installation approval. Installation selectors apply to the new installation.
+With var or alt, add --ExistingConveyance or --ConvNum to submit the follow-up
+directly on an approved conveyance the configured applicant can access.
+initial --regapply registers a new applicant and submits an installation.
+Use --regapply by itself as a shortcut for initial --regapply.
+Plain var --regapply and alt --regapply register a new applicant, submit and
+approve an installation, then submit the follow-up for the resulting Conveyance #.
+They stop after follow-up submission. Installation selectors apply to the new
+installation, and approver credentials are needed for the installation approval.
+With var or alt --regapply, add --ExistingConveyance or --ConvNum to register
+and submit the follow-up directly. The new applicant must have access to the
+approved conveyance. Direct follow-ups do not accept installation selectors.
 --approve finds the exact Work Queue transaction and uses its application checklist.
 It does not register or apply. --regsiter is a legacy alias for --register.
 
-Alteration fills a random contract value and may change zero or more editable
-Conveyance Information fields. --NoConveyanceChanges leaves that section unchanged;
-it does not disable the random contract value. This flag only applies to alt.
+ALTERATION FIELD CHANGES
+------------------------
+Add --NoConveyanceChanges after npm's -- separator on an alteration (alt) command.
+It skips randomized edits to eligible Conveyance Information fields. The normal
+alteration steps still fill the random Conveyance Contract Value and the configured
+Restriction, upload documents, and submit. The selected workflow controls approval.
+
+The flag works with --user=new, --user=existing, --apply and --regapply.
+It also works when an alteration targets an existing conveyance through
+--ExistingConveyance or --ConvNum. The runner rejects the flag on initial and var.
+
+Live alteration commands:
+  npm run conv alt -- --user=new --NoConveyanceChanges
+  npm run conv alt -- --user=existing --NoConveyanceChanges
+  npm run conv alt -- --user=existing --ConvNum=202866 --NoConveyanceChanges
+  npm run conv alt -- --apply --ConvNum=202866 --NoConveyanceChanges
+
+Preview examples:
+  npm run conv alt -- --user=new --AppType=CHI --PerType=CPH-A10.4 --NoConveyanceChanges --headed --list
+  npm run conv alt -- --user=existing --NoConveyanceChanges --list
+  npm run conv alt -- --apply --NoConveyanceChanges --list
+  npm run conv alt -- --regapply --NoConveyanceChanges --list
+  npm run conv alt -- --apply --ExistingConveyance --NoConveyanceChanges --list
+  npm run conv alt -- --regapply --ConvNum=202866 --NoConveyanceChanges --list
+  npm run conv alt -- --user=existing --ConvNum=202866 --NoConveyanceChanges --list
+
+Add --list to a live command to preview it. The line "Conveyance Information: unchanged"
+confirms the randomized edits are disabled for the alteration stage.
 
 SELECTION AND CONFIGURATION
 ---------------------------
@@ -85,8 +170,11 @@ or ALL for ResType and CommType.
 Existing applicants: config/LoginCredentials.js or LOGIN_NAME / LOGIN_PASSWORD.
 CLI --LoginName and --LoginPassword take priority; prefer local config or env,
 because command-line passwords can be visible in logs and shell history.
-Existing conveyances: config/ConveyanceVarianceDetails.js for var, or
-config/ConveyanceAlterationDetails.js for alt. --ConvNum overrides the selected file.
+Configured conveyance numbers are in config/ConveyanceVarianceDetails.js for var
+and config/ConveyanceAlterationDetails.js for alt. Use --ExistingConveyance for
+the configured number or --ConvNum for a number you supply. With --apply,
+either selector submits just the follow-up. With --regapply, either selector
+registers a new applicant and submits the follow-up on that conveyance.
 Approval only: config/approvalTransacNumber.js; --TransacNum overrides the file.
 Approver login: local .env, CONVEYANCE_APPROVER_LOGIN_NAME and CONVEYANCE_APPROVER_PASSWORD.
 Forms and upload comments: config/editableData.js. Upload steps choose from

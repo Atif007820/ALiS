@@ -119,10 +119,14 @@ function isFollowUpInstallationType(appType, env) {
 
 export function loadFollowUpConveyance(testInfo, { env = process.env } = {}) {
   const { runId, baseUrl, project, repeatIndex, testRepeatIndex, appType } = identity(testInfo, env);
-  const sameFlow = getFollowUpType(appType) && env.CONVEYANCE_FOLLOW_UP_APP_TYPE === appType;
+  const followUp = getFollowUpType(appType);
+  const sameFlow = followUp && env.CONVEYANCE_FOLLOW_UP_APP_TYPE === appType;
   if (env.CONVEYANCE_EXISTING_CONVEYANCE_NUMBER) {
-    if (!sameFlow || !runId || env.CONVEYANCE_LOGIN_SOURCE !== 'existing-applicant') {
-      throw new Error('An existing conveyance number requires a variance or alteration run with an existing applicant.');
+    const registeredForFollowUp = env.CONVEYANCE_LOGIN_SOURCE === 'registered'
+      && env.CONVEYANCE_FOLLOW_UP_PHASE === followUp?.phase
+      && !env.CONVEYANCE_APPROVED_INSTALLATION_PATH;
+    if (!sameFlow || !runId || (env.CONVEYANCE_LOGIN_SOURCE !== 'existing-applicant' && !registeredForFollowUp)) {
+      throw new Error('An existing conveyance number requires a variance or alteration run with the selected applicant.');
     }
     return { conveyanceNumber: normalizeConveyanceNumber(env.CONVEYANCE_EXISTING_CONVEYANCE_NUMBER) };
   }

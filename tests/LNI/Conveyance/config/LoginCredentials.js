@@ -1,5 +1,5 @@
 /**
- * Applicant credentials for --ExistingUser, --ExistingConveyance, and standalone Login Apply.
+ * Applicant credentials for --user=existing, --ExistingConveyance, and standalone Login Apply.
  * Plain initial, var, and alt register a new user.
  *
  * With both blank, standalone apply can reuse the last saved registration in

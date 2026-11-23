@@ -7,19 +7,29 @@ export const SERIAL_FLOW_SPECS = [
   'testScripts/03_ApproveApplication.spec.js',
 ];
 
-export function buildFlowStages(target, specs, { reuseApplicant = false, existingConveyance = false } = {}) {
+export function buildFlowStages(target, specs, {
+  reuseApplicant = false, existingConveyance = false, approveFollowUp = true,
+} = {}) {
   const followUp = getFollowUpType(target.appType);
   if (!followUp) return specs.map(spec => ({ spec, selection: target, phase: '' }));
-  const applyAndApprove = SERIAL_FLOW_SPECS.slice(1);
-  if (existingConveyance && specs.length === 1 && specs[0] === applyAndApprove[0]) {
-    return [{ spec: specs[0], selection: target, phase: followUp.phase }];
+  const [registerSpec, applySpec] = SERIAL_FLOW_SPECS;
+  if (existingConveyance && specs.length === 1 && specs[0] === applySpec) {
+    return [{ spec: applySpec, selection: target, phase: followUp.phase }];
   }
+  if (existingConveyance && specs.length === 2 && specs[0] === registerSpec && specs[1] === applySpec) {
+    return [
+      { spec: registerSpec, selection: target, phase: '' },
+      { spec: applySpec, selection: target, phase: followUp.phase },
+    ];
+  }
+  const applyAndApprove = SERIAL_FLOW_SPECS.slice(1);
   const installationSpecs = reuseApplicant ? applyAndApprove : SERIAL_FLOW_SPECS;
   if (specs.length !== installationSpecs.length || specs.some((spec, index) => spec !== installationSpecs[index])) {
     throw new Error(`Use npm run conv ${followUp.flow} to create an installation and run its ${followUp.phase} flow.`);
   }
 
-  const followUpStages = applyAndApprove.map(spec => ({ spec, selection: target, phase: followUp.phase }));
+  const followUpSpecs = approveFollowUp ? applyAndApprove : [applySpec];
+  const followUpStages = followUpSpecs.map(spec => ({ spec, selection: target, phase: followUp.phase }));
   if (existingConveyance) return followUpStages;
   if (!target.installation) throw new Error(`New ${followUp.phase} requires an installation target.`);
   return [...specs.map(spec => ({ spec, selection: target.installation, phase: 'installation' })), ...followUpStages];
