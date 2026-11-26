@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { appConfig } from '../config/runConfig.js';
 import { APPLICATION_TYPES, getFollowUpType } from '../config/applicationTypes.js';
 import { logger } from '../utils/logger.js';
-import { normalizeConveyanceNumber, normalizeTransactionNumber } from '../utils/transactionStore.js';
+import { normalizeConveyanceNumber, normalizePermitNumber, normalizeTransactionNumber } from '../utils/transactionStore.js';
 import { BasePage } from './BasePage.js';
 import { LoginPage } from './LoginPage.js';
 
@@ -13,17 +13,20 @@ const ADDITIONAL = { name: /Additional Supporting\b/i, count: 1 };
 const CONTRACT_REVIEW = { name: /\bReview\s+copy\s+of\s+contract\b/i, count: 1 };
 const FEE_REVIEW = { name: /\bReview\s+Application\s+Fee\b/i, count: 1 };
 const PAYMENT_LINK = { name: /\bEnsure\s+payment\s+linked\s+to\s+permit\b/i, count: 1 };
+const BUILDING_OFFICIAL = { name: /\bApproval\s+by\s+(?:the\s+)?Building\s+Official\b/i, count: 1, optional: true };
 const OPTIONAL_FEE_PAYMENT = [FEE_REVIEW, PAYMENT_LINK].map(item => ({ ...item, optional: true }));
 const ACCEPTANCE_CHECKLIST = [
   MANDATORY,
   CONTRACT_REVIEW,
   ADDITIONAL,
   ...OPTIONAL_FEE_PAYMENT,
+  BUILDING_OFFICIAL,
 ];
 const APPROVAL_CHECKLIST = [
   MANDATORY,
   ADDITIONAL,
   ...OPTIONAL_FEE_PAYMENT,
+  BUILDING_OFFICIAL,
   { name: /\bVerify\s+Blind\s+Hoistway\b/i, count: 1, optional: true },
 ];
 const HOIST_ACCEPTANCE_CHECKLIST = [ADDITIONAL, FEE_REVIEW, PAYMENT_LINK];
@@ -51,9 +54,9 @@ const TRANSACTION_COLUMN = /^(?:Transaction|TXN)\s*(?:#|Number|No\.?)(?:\s+Filte
 const CONVEYANCE_COLUMN = /^Conveyance\s*(?:#|Number|No\.?)(?:\s+Filter)?\s*:?$/i;
 const ASSIGNEE_COLUMN = /^(?:Assigned Staff|Assigned To|Assignee)(?:\s+Filter)?$/i;
 const APPLICATION_COLUMN = /^Application Type(?:\s+Filter)?$/i;
-const BUILDING_OFFICIAL = /\bApproval\s+by\s+(?:the\s+)?Building\s+Official\b/i;
 const SAVE_VALIDATION = /please review (?:the )?following errors|validation failed/i;
 const ALREADY_ASSIGNED = /^Please select task\(s\) not assigned to you\.?$/i;
+const QUEUE_LOADING = '[aria-busy="true"], [role="progressbar"], mat-spinner, mat-progress-spinner, .loading-overlay, .loading-spinner, .spinner-overlay';
 const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 export function chooseChecklistStatus(enabledOptions, pickIndex = randomInt) {
@@ -69,7 +72,9 @@ export class ApproveApplicationPage extends BasePage {
     this.licensingLink = page.getByRole('link', { name: 'Licensing', exact: true });
     this.workQueueLink = page.getByRole('link', { name: 'Work Queue', exact: true });
     this.transactionField = page.getByRole('textbox', { name: /^Transaction\s*(?:#|Number|No\.?)\s*:?$/i });
+    this.permitField = page.getByRole('textbox', { name: 'Permit #', exact: true }).filter({ visible: true });
     this.searchButton = page.getByRole('button', { name: 'Search', exact: true });
+    this.queueLoading = page.locator(QUEUE_LOADING).filter({ visible: true });
     this.pullLink = page.getByRole('link', { name: /^Pull\s*\|?$/i });
     this.queueRows = page.getByRole('row').filter({
       has: page.getByRole('checkbox'),
@@ -78,14 +83,13 @@ export class ApproveApplicationPage extends BasePage {
       .filter({ has: page.getByLabel('Application Status', { exact: true }), visible: true });
   }
 
-  async openWorkQueue(credentials) {
+  async openWorkQueue(credentials, { lookup = 'transaction' } = {}) {
     await this.loginPage.login(credentials, { force: true, landing: this.licensingLink });
     const welcome = this.page.getByText(/^Welcome\s+\S/i).filter({ visible: true });
     const welcomeText = await welcome.allInnerTexts();
     this.reviewerName = welcomeText.length === 1 ? normalize(welcomeText[0].replace(/^\s*Welcome\s+/i, '')) : '';
     await this.licensingLink.hover();
     await this.workQueueLink.click();
-    await expect(this.transactionField).toBeVisible({ timeout: appConfig.timeouts.expect });
     await this.selectQueueFilter({
       label: /^(?:Business Unit|Program|Licensing Program|Board|BU)\s*:?$/i,
       recordedValue: /^(?:Transport Networking Company|Conveyance)$/i,
@@ -98,6 +102,10 @@ export class ApproveApplicationPage extends BasePage {
       attributes: '[id*="assignedTo" i], [name*="assignedTo" i], [id*="assignee" i], [name*="assignee" i]',
       description: 'assignee',
     }, 'All');
+    const lookupField = lookup === 'permit' ? this.permitField : this.transactionField;
+    const lookupLabel = lookup === 'permit' ? 'Permit #' : 'Transaction #';
+    await expect(lookupField, `Work Queue must show editable ${lookupLabel} after selecting Conveyance`)
+      .toBeEditable({ timeout: appConfig.timeouts.expect });
   }
 
   async selectQueueFilter({ label, recordedValue, attributes, description }, value) {
@@ -123,12 +131,38 @@ export class ApproveApplicationPage extends BasePage {
     const control = candidates[selectedIndex].locator;
 
     if (await control.evaluate((element) => element.tagName === 'SELECT')) {
-      await control.selectOption({ label: value });
+      const [selectedValue] = await control.selectOption({ label: value });
+      await expect(control).toHaveValue(selectedValue);
       return;
     }
 
     await control.click();
-    await this.page.getByRole('option', { name: value, exact: true }).filter({ visible: true }).click();
+    const openedLists = this.page.getByRole('listbox').filter({ visible: true });
+    const optionCandidates = [
+      this.page.getByRole('option', { name: value, exact: true }),
+      openedLists.getByTitle(value, { exact: true }),
+      openedLists.getByText(value, { exact: true }),
+      this.page.getByTitle(value, { exact: true }),
+      this.page.getByText(value, { exact: true }),
+    ].map(locator => locator.filter({ visible: true }));
+    let option;
+    await expect.poll(async () => {
+      const optionCounts = await Promise.all(optionCandidates.map(locator => locator.count()));
+      option = optionCandidates[optionCounts.indexOf(1)];
+      return Boolean(option);
+    }, {
+      message: `Work Queue must show one selectable "${value}" option for ${description}`,
+      timeout: appConfig.timeouts.expect,
+    }).toBe(true);
+    await option.click();
+    await expect.poll(async () => {
+      const values = await control.evaluate(element => [
+        element.value, element.querySelector('input')?.value, element.getAttribute('aria-valuetext'),
+        element.getAttribute('aria-label'), element.getAttribute('title'), element.innerText,
+      ], undefined, { timeout: appConfig.timeouts.action });
+      return values.map(normalize);
+    }, { message: `Work Queue ${description} must be set to ${value}`, timeout: appConfig.timeouts.expect })
+      .toContain(normalize(value));
   }
 
   async acceptApplication(application) {
@@ -138,17 +172,17 @@ export class ApproveApplicationPage extends BasePage {
     return entityName;
   }
 
-  async approveApplication(application, { captureConveyanceNumber = false } = {}) {
+  async approveApplication(application, { captureConveyanceNumber = false, searchRow } = {}) {
     let conveyanceNumber;
     const entityName = await this.openTransaction(application, captureConveyanceNumber ? async row => {
       conveyanceNumber = await this.readQueueColumn(row, CONVEYANCE_COLUMN);
-    } : undefined);
+    } : undefined, searchRow);
     const [, checklist] = CHECKLISTS[application.appType ?? 'NCI'];
     await this.saveReview(application, checklist, 'APR');
     if (!captureConveyanceNumber) return entityName;
     if (!/^\d+$/.test(conveyanceNumber)) {
       // Some builds only assign the number after APR. Search the exact transaction again.
-      await this.searchButton.click();
+      await this.submitQueueSearch();
       const row = await this.findExactTransactionRow(application.transactionNumber);
       conveyanceNumber = await this.readQueueColumn(row, CONVEYANCE_COLUMN);
     }
@@ -158,6 +192,32 @@ export class ApproveApplicationPage extends BasePage {
   async approveExistingTransaction(transactionNumber) {
     const number = normalizeTransactionNumber(transactionNumber);
     const row = await this.searchTransactionRow(number);
+    return this.approveStandaloneRow(row, number);
+  }
+
+  async approveExistingPermit(value) {
+    const permitNumber = normalizePermitNumber(value);
+    await this.searchPermit(permitNumber, { waitForFreshRows: true });
+    const row = this.queueRows.first();
+    await expect(row, `Expected a Work Queue result for Permit # ${permitNumber}`)
+      .toBeVisible({ timeout: appConfig.timeouts.workQueueSearch });
+    const number = normalizeTransactionNumber(await this.readQueueColumn(row, TRANSACTION_COLUMN));
+    return this.approveStandaloneRow(row, number, {
+      permitNumber,
+      searchRow: async transactionNumber => {
+        await this.searchPermit(permitNumber);
+        return this.findExactTransactionRow(transactionNumber);
+      },
+    });
+  }
+
+  async searchPermit(permitNumber, options) {
+    await this.permitField.fill(permitNumber);
+    await expect(this.permitField).toHaveValue(permitNumber);
+    await this.submitQueueSearch(options);
+  }
+
+  async approveStandaloneRow(row, number, { permitNumber, searchRow } = {}) {
     const label = await this.readQueueColumn(row, APPLICATION_COLUMN);
     const match = Object.entries(APPLICATION_TYPES).find(([key, type]) =>
       normalize(key) === normalize(label) || normalize(type.label) === normalize(label)
@@ -168,6 +228,7 @@ export class ApproveApplicationPage extends BasePage {
     const [appType, type] = match;
     const conveyanceNumber = await this.readQueueColumn(row, CONVEYANCE_COLUMN, { optional: true });
     const application = { transactionNumber: number, appType,
+      ...(permitNumber && { permitNumber }),
       conveyanceNumber: /^\d+$/.test(conveyanceNumber) ? conveyanceNumber : undefined };
     const entityName = await this.openTransactionRow(row, application);
     const status = this.reviewDialog.getByLabel('Application Status', { exact: true });
@@ -180,7 +241,7 @@ export class ApproveApplicationPage extends BasePage {
       await this.saveReview(application, approval, 'APR');
     } else if (['PEN', 'UDR'].includes(current)) {
       await this.saveReview(application, acceptance, 'ACP');
-      await this.approveApplication({ ...application, entityName });
+      await this.approveApplication({ ...application, entityName }, { searchRow });
     } else {
       throw new Error(`Transaction ${number} has review status "${current}"; approval requires pending, administrative review or technical review.`);
     }
@@ -191,19 +252,43 @@ export class ApproveApplicationPage extends BasePage {
     const number = normalizeTransactionNumber(transactionNumber);
     await this.transactionField.fill(number);
     await expect(this.transactionField).toHaveValue(number);
-    await this.searchButton.click();
+    await this.submitQueueSearch();
 
     // Search by the value of the Transaction column only. Matching any text in
     // the row could pull the wrong application when another column repeats it.
     return this.findExactTransactionRow(number);
   }
 
-  async openTransaction(application, inspectRow) {
-    const row = await this.searchTransactionRow(application.transactionNumber);
+  async submitQueueSearch({ waitForFreshRows = false } = {}) {
+    const timeout = appConfig.timeouts.workQueueSearch;
+    // A first permit lookup uses row order, so do not open rows left over from an earlier search.
+    const [previousRow] = waitForFreshRows ? await this.queueRows.first().elementHandles() : [];
+    try {
+      const previousCount = previousRow ? await this.queueRows.count() : 0;
+      const previousText = previousRow ? await previousRow.textContent() : '';
+      await this.searchButton.click({ timeout });
+      const gridWasBusy = await this.queueLoading.count() > 0;
+      await expect(this.searchButton, 'Work Queue Search must become available').toBeEnabled({ timeout });
+      await expect(this.queueLoading, 'Work Queue search results must finish loading').toHaveCount(0, { timeout });
+      if (previousRow && !gridWasBusy) {
+        await expect.poll(async () => {
+          if (await this.queueRows.count() !== previousCount) return true;
+          return previousRow.evaluate((row, text) => !row.isConnected || row.textContent !== text, previousText)
+            .catch(() => true);
+        }, { message: 'Work Queue rows must refresh for the first permit search', timeout }).toBe(true);
+      }
+    } finally {
+      if (previousRow) await previousRow.dispose().catch(() => {});
+    }
+  }
+
+  async openTransaction(application, inspectRow, searchRow) {
+    const row = searchRow ? await searchRow(application.transactionNumber)
+      : await this.searchTransactionRow(application.transactionNumber);
     return this.openTransactionRow(row, application, inspectRow);
   }
 
-  async openTransactionRow(row, { transactionNumber: number, entityName, conveyanceNumber, appType }, inspectRow) {
+  async openTransactionRow(row, { transactionNumber: number, entityName, conveyanceNumber, permitNumber, appType }, inspectRow) {
     if (conveyanceNumber && await this.readQueueColumn(row, CONVEYANCE_COLUMN) !== conveyanceNumber) {
       throw new Error(`Transaction ${number} does not belong to conveyance ${conveyanceNumber}.`);
     }
@@ -214,7 +299,7 @@ export class ApproveApplicationPage extends BasePage {
         throw new Error(`Transaction ${number} is "${actual}", not "${expected.label}". Check the flow or AppType before approving.`);
       }
     }
-    const entityLink = await this.getApplicantLink(row, number, entityName, conveyanceNumber);
+    const entityLink = await this.getApplicantLink(row, number, entityName, conveyanceNumber, permitNumber);
     await expect(entityLink, 'Expected one applicant link in transaction ' + number)
       .toHaveCount(1, { timeout: appConfig.timeouts.expect });
     const matchedEntityName = (await entityLink.innerText()).trim();
@@ -252,9 +337,6 @@ export class ApproveApplicationPage extends BasePage {
   }
 
   async findExactTransactionRow(transactionNumber) {
-    await expect(this.queueRows.first(), 'The Conveyance Work Queue must return application rows')
-      .toBeVisible({ timeout: appConfig.timeouts.expect });
-
     const inspectRows = async () => {
       const matches = [];
       const count = await this.queueRows.count();
@@ -269,7 +351,7 @@ export class ApproveApplicationPage extends BasePage {
 
     await expect.poll(inspectRows, {
       message: 'Expected exactly one Work Queue result in the Transaction column for ' + transactionNumber,
-      timeout: appConfig.timeouts.expect,
+      timeout: appConfig.timeouts.workQueueSearch,
     }).toHaveLength(1);
 
     const matches = await inspectRows();
@@ -326,7 +408,7 @@ export class ApproveApplicationPage extends BasePage {
     return result.value;
   }
 
-  async getApplicantLink(row, transactionNumber, entityName, conveyanceNumber) {
+  async getApplicantLink(row, transactionNumber, entityName, conveyanceNumber, permitNumber) {
     if (entityName) return row.getByRole('link', { name: entityName, exact: true });
 
     // A reused applicant may have no saved entity name. Accept only a single
@@ -335,7 +417,7 @@ export class ApproveApplicationPage extends BasePage {
     const candidates = [];
     for (let index = 0; index < await links.count(); index += 1) {
       const label = (await links.nth(index).innerText()).replace(/\s+/g, ' ').trim();
-      if (label && label !== transactionNumber && label !== conveyanceNumber) candidates.push(index);
+      if (label && ![transactionNumber, conveyanceNumber, permitNumber].includes(label)) candidates.push(index);
     }
 
     if (candidates.length !== 1) {
@@ -356,21 +438,6 @@ export class ApproveApplicationPage extends BasePage {
           .filter(Boolean).join(' ');
         return `${label || 'Unnamed checklist item'} (${field.selectedOptions?.[0]?.textContent.trim() || 'unset'})`;
       }), Object.keys(CHECKLIST_OUTCOMES));
-  }
-
-  async waiveNonApplicableBuildingApproval(application) {
-    const rows = this.reviewDialog.getByRole('row', { name: BUILDING_OFFICIAL }).filter({ visible: true });
-    if (!(await rows.count())) return;
-    await expect(rows, 'Expected one Building Official approval checklist row').toHaveCount(1);
-    const control = rows.getByLabel('item-status', { exact: true });
-    if (!(await control.count())) return;
-    const value = await control.inputValue();
-    if (Object.hasOwn(CHECKLIST_OUTCOMES, value)) return;
-    if (value !== 'PEN' || !/^(?:no|n\s*\/?\s*a|not applicable)$/i.test(String(application.existingBuildingAnswer ?? '').trim())) {
-      return;
-    }
-    await control.selectOption('WOF');
-    await expect(control, 'Building Official approval is not applicable to this installation').toHaveValue('WOF');
   }
 
   async readSaveValidation(validation) {
@@ -417,9 +484,6 @@ export class ApproveApplicationPage extends BasePage {
     await expect(applicationStatus).toHaveValue(status);
     for (const selection of selections) await expect(selection.control).toHaveValue(selection.status);
 
-    if (application.appType === 'NCI' && application.perType === 'Comm') {
-      await this.waiveNonApplicableBuildingApproval(application);
-    }
     const pending = await this.unresolvedChecklistItems();
     if (pending.length) {
       throw new Error(`Transaction ${application.transactionNumber} has unresolved approval checklist items for status ${status}: ${pending.join(' | ')}.`);

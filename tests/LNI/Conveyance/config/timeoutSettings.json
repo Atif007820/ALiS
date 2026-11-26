@@ -1,0 +1,9 @@
+{
+  "testTimeoutMs": 600000,
+  "expectTimeoutMs": 100000,
+  "workQueueSearchTimeoutMs": 150000,
+  "actionTimeoutMs": 30000,
+  "navigationTimeoutMs": 150000,
+  "slowFieldTimeoutMs": 30000,
+  "documentUploadResultTimeoutMs": 90000
+}

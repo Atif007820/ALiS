@@ -11,15 +11,15 @@ import { copyFileSync, existsSync, mkdirSync } from 'fs';
 import { basename, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import playwrightConfig from '../playwright.config.js';
-import { loadApprovalCredentials, TransactionNumber } from '../config/approvalTransacNumber.js';
-import { CONVEYANCE_VARIANCE_DETAILS } from '../config/ConveyanceVarianceDetails.js';
-import { CONVEYANCE_ALTERATION_DETAILS } from '../config/ConveyanceAlterationDetails.js';
-import { normalizeConveyanceNumber, normalizeTransactionNumber } from '../utils/transactionStore.js';
+import { CONVEYANCE_VARIANCE_DETAILS } from '../runInputs/ConveyanceVarianceDetails.js';
+import { CONVEYANCE_ALTERATION_DETAILS } from '../runInputs/ConveyanceAlterationDetails.js';
+import { normalizeConveyanceNumber } from '../utils/transactionStore.js';
+import { resolveStandaloneApprovalTarget } from '../utils/approvalTarget.js';
 import { resolveApplicantCredentials } from '../utils/userStore.js';
 import { listUploadFiles } from '../utils/uploadFilePool.js';
 import { assertApprovalSelection, assertMutationRetries, buildFlowStages, expandFlowTargets, flowAxes, SERIAL_FLOW_SPECS } from './flowPlan.mjs';
 import { buildApplicationTargets, FOLLOW_UP_TYPES, getFollowUpType, selectInstallationTargets } from '../config/applicationTypes.js';
-import { appConfig, runSettings, USER_DATA_PATH } from '../config/runConfig.js';
+import { appConfig, loadApprovalCredentials, runSettings, USER_DATA_PATH } from '../config/runConfig.js';
 
 const require = createRequire(import.meta.url);
 const playwrightCli = require.resolve('@playwright/test/cli');
@@ -32,14 +32,14 @@ const selectionOption = /^(--)?(app-?type|per-?type|res-?type|comm-?type)(?:=(.*
 const selectionSeparator = /,\s*(?=(?:--)?(?:app-?type|per-?type|res-?type|comm-?type)(?:=|,|$))/i;
 const inputOptions = {
   loginname: 'loginName', loginpassword: 'password', password: 'password',
-  convnum: 'conveyanceNumber', transacnum: 'transactionNumber',
+  convnum: 'conveyanceNumber', transacnum: 'transactionNumber', pernum: 'permitNumber',
 };
 const retiredNumberOptions = new Set(['conveyancenumber', 'transacnumber', 'transaction', 'transactionnumber']);
-const numberUsage = 'Use --ConvNum with var or alt, or --TransacNum with --approve, after npm\'s -- separator.';
+const numberUsage = 'Use --ConvNum with var or alt, or --PerNum or --TransacNum with --approve, after npm\'s -- separator.';
 const followUpCodes = Object.fromEntries(Object.entries(FOLLOW_UP_TYPES).map(([code, type]) => [type.flow, code]));
 const followUpDetails = { CV: CONVEYANCE_VARIANCE_DETAILS, CA: CONVEYANCE_ALTERATION_DETAILS };
 if (Object.entries(process.env).some(([key, value]) => value !== '' && /^npm_config_/i.test(key)
-  && ['apply', 'regapply', 'register', 'regsiter', 'approve', 'existingconveyance', 'noconveyancechanges', 'convnum', 'transacnum', ...retiredNumberOptions].includes(
+  && ['apply', 'regapply', 'register', 'regsiter', 'approve', 'existingconveyance', 'noconveyancechanges', 'convnum', 'transacnum', 'pernum', ...retiredNumberOptions].includes(
     key.slice('npm_config_'.length).toLowerCase().replace(/[-_]/g, ''),
   ))) {
   exitConfigurationError('Pass workflow and number options after npm\'s -- separator. ' + numberUsage);
@@ -85,7 +85,7 @@ let parallelRuns;
 let selectedSpecs = requestedSpecs;
 let applicantCredentials;
 let conveyanceNumber;
-let transactionNumber;
+let approvalTarget;
 const ignoredEndorsements = [];
 try {
   const hasSelection = Object.values(overrides).some(value => String(value ?? '').trim());
@@ -122,13 +122,16 @@ try {
       || hasSelection || parsed.selectedSpecs.length || parsed.flowMode === 'standalone') {
       throw new Error('--approve runs by itself. Omit the flow, applicant, installation and script selection options.');
     }
-    const value = parsed.inputs.transactionNumber ?? TransactionNumber;
-    if (!String(value ?? '').trim()) throw new Error('--approve requires --TransacNum or TransactionNumber in config/approvalTransacNumber.js.');
-    transactionNumber = normalizeTransactionNumber(value);
+    approvalTarget = resolveStandaloneApprovalTarget({
+      permitNumber: parsed.inputs.permitNumber,
+      transactionNumber: parsed.inputs.transactionNumber,
+      defaultLookup: runSettings.defaultApprovalLookup,
+    });
     selectedSpecs = [SERIAL_FLOW_SPECS[2]];
   } else {
     assertApprovalSelection(requestedSpecs);
     if (parsed.inputs.transactionNumber !== undefined) throw new Error('--TransacNum requires --approve.');
+    if (parsed.inputs.permitNumber !== undefined) throw new Error('--PerNum requires --approve.');
   }
   if (directFollowUp) {
     const mode = parsed.regapply ? `${flow} --regapply` : parsed.apply ? `${flow} --apply` : conveyanceSelector;
@@ -139,10 +142,10 @@ try {
     if (!String(value ?? '').trim()) {
       const name = followUp.label.replaceAll(' ', '');
       if (parsed.existingConveyance) {
-        throw new Error(`--ExistingConveyance requires conveyanceNumber in config/${name}Details.js. Use --ConvNum instead to provide a number.`);
+        throw new Error(`--ExistingConveyance requires conveyanceNumber in runInputs/${name}Details.js. Use --ConvNum instead to provide a number.`);
       }
       if (mode === '--ConvNum') throw new Error('--ConvNum requires a conveyance number.');
-      throw new Error(`${mode} requires --ConvNum or conveyanceNumber in config/${name}Details.js.`);
+      throw new Error(`${mode} requires --ConvNum or conveyanceNumber in runInputs/${name}Details.js.`);
     }
     conveyanceNumber = normalizeConveyanceNumber(value);
   }
@@ -183,7 +186,7 @@ try {
     ignoredEndorsements.push(`Ignoring --${option}: no NCI ${permit} target in this run.`);
   }
   if ((parsed.approve || directFollowUp) && runTargets.length !== 1) {
-    throw new Error('A run for one existing transaction or conveyance requires one browser project and one repeat.');
+    throw new Error('A run for one existing application or conveyance requires one browser project and one repeat.');
   }
   parallelRuns = resolveParallelRuns(parsed.parallelRuns, runTargets.length, playwrightArgs);
   const plannedSpecs = unique(runTargets.flatMap(({ stages }) => stages.map(({ spec }) => spec)));
@@ -210,8 +213,9 @@ if (parsed.register || parsed.approve || flow) {
         : directFollowUp ? 'existing conveyance'
           : applicantCredentials ? 'existing applicant' : 'full flow';
   const flowLabel = parsed.register ? 'registration only'
-    : parsed.approve ? `approval only (Transaction # ${transactionNumber})` : `${flow} (${label})`;
+    : approvalTarget ? `approval only (${approvalTarget.label} ${approvalTarget.number})` : `${flow} (${label})`;
   console.log(`Flow: ${flowLabel}`);
+  if (approvalTarget) console.log(`Approval lookup source: ${approvalTarget.source}`);
   if (conveyanceNumber) console.log(`Conveyance #: ${conveyanceNumber}`);
   if (followUpCode === 'CA') console.log(`Conveyance Information: ${parsed.noConveyanceChanges ? 'unchanged' : 'random subset'}`);
   console.log(`Planned stages: ${stages.join(' -> ')}`);
@@ -308,7 +312,8 @@ async function runTarget(target, targetIndex) {
     CONVEYANCE_FOLLOW_UP_APP_TYPE: getFollowUpType(target.appType) ? target.appType : '',
     CONVEYANCE_NO_INFORMATION_CHANGES: parsed.noConveyanceChanges ? '1' : '',
     CONVEYANCE_EXISTING_CONVEYANCE_NUMBER: conveyanceNumber ?? '',
-    CONVEYANCE_APPROVAL_ONLY_TRANSACTION: transactionNumber ?? '',
+    CONVEYANCE_APPROVAL_ONLY_TRANSACTION: approvalTarget?.lookup === 'transaction' ? approvalTarget.number : '',
+    CONVEYANCE_APPROVAL_ONLY_PERMIT: approvalTarget?.lookup === 'permit' ? approvalTarget.number : '',
     FULLY_PARALLEL: 'false',
   };
 

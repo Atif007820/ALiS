@@ -7,9 +7,12 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { assertApprovalSelection, assertMutationRetries, expandFlowTargets, flowAxes, SERIAL_FLOW_SPECS } from '../flowPlan.mjs';
 import { loadApprovalTransaction, loadFollowUpConveyance, normalizeTransactionNumber, saveApplicationTransaction, saveApprovedInstallation } from '../../utils/transactionStore.js';
-import { CONVEYANCE_ALTERATION_DETAILS } from '../../config/ConveyanceAlterationDetails.js';
-import { CONVEYANCE_VARIANCE_DETAILS } from '../../config/ConveyanceVarianceDetails.js';
-import { TransactionNumber } from '../../config/approvalTransacNumber.js';
+import { CONVEYANCE_ALTERATION_DETAILS } from '../../runInputs/ConveyanceAlterationDetails.js';
+import { CONVEYANCE_VARIANCE_DETAILS } from '../../runInputs/ConveyanceVarianceDetails.js';
+import { PermitNumber } from '../../runInputs/approvalPermitNumber.js';
+import { TransactionNumber } from '../../runInputs/approvalTransacNumber.js';
+import { runSettings } from '../../config/runConfig.js';
+import { resolveStandaloneApprovalTarget } from '../../utils/approvalTarget.js';
 
 const projects = ['chromium', 'firefox', 'Microsoft Edge'];
 const chromium = { project: { name: 'chromium' }, repeatEachIndex: 0 };
@@ -460,14 +463,64 @@ test('variance apply and approval accept either the configured conveyance or a C
   }
 });
 
-test('approval-only uses the configured transaction unless TransacNum overrides it', () => {
+test('standalone approval resolves the saved lookup and prefers either explicit number', () => {
+  const saved = { savedPermitNumber: '0101216', savedTransactionNumber: '004324' };
+  assert.deepEqual(resolveStandaloneApprovalTarget(saved), {
+    lookup: 'permit', number: '0101216', label: 'Permit #', source: 'runInputs/approvalPermitNumber.js',
+  });
+  assert.deepEqual(resolveStandaloneApprovalTarget({ ...saved, defaultLookup: 'transaction' }), {
+    lookup: 'transaction', number: '004324', label: 'Transaction #', source: 'runInputs/approvalTransacNumber.js',
+  });
+  assert.equal(resolveStandaloneApprovalTarget({ ...saved, transactionNumber: '004325' }).number, '004325');
+  assert.equal(resolveStandaloneApprovalTarget({ ...saved, defaultLookup: 'transaction', permitNumber: '0101217' }).number, '0101217');
+  assert.throws(() => resolveStandaloneApprovalTarget({ ...saved, defaultLookup: 'invalid' }), /must be "permit" or "transaction"/);
+  assert.throws(() => resolveStandaloneApprovalTarget({ ...saved, savedPermitNumber: '' }), /requires a Permit #/);
+  assert.throws(() => resolveStandaloneApprovalTarget({ ...saved, defaultLookup: 'transaction', savedTransactionNumber: '' }), /requires a Transaction #/);
+});
+
+test('approval-only previews the selected lookup and runs just script 03', () => {
   const args = ['--e2e', '--approve'];
-  const configured = String(TransactionNumber ?? '').trim();
-  if (configured) assert.ok(listRunner(args).includes(`Transaction # ${configured}`));
-  else assert.match(listRunner(args, {}, 1), /requires --TransacNum or TransactionNumber/);
-  const output = listRunner([...args, '--TransacNum=004324']);
-  assert.match(output, /Flow: approval only \(Transaction # 004324\)/);
-  assert.deepEqual([...output.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage), ['03']);
+  const useTransaction = runSettings.defaultApprovalLookup === 'transaction';
+  const defaultLabel = useTransaction ? 'Transaction #' : 'Permit #';
+  const defaultNumber = useTransaction ? TransactionNumber : PermitNumber;
+  const defaultFile = useTransaction ? 'runInputs/approvalTransacNumber.js' : 'runInputs/approvalPermitNumber.js';
+  if (String(defaultNumber ?? '').trim()) {
+    const output = listRunner(args);
+    assert.ok(output.includes(`Flow: approval only (${defaultLabel} ${defaultNumber})`));
+    assert.ok(output.includes(`Approval lookup source: ${defaultFile}`));
+    assert.deepEqual([...output.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage), ['03']);
+  } else assert.match(listRunner(args, {}, 1), /--approve requires a (?:Permit|Transaction) #/);
+
+  for (const [flag, label, number] of [
+    ['--PerNum', 'Permit #', '0101216'],
+    ['--TransacNum', 'Transaction #', '004324'],
+  ]) {
+    const output = listRunner([...args, `${flag}=${number}`]);
+    assert.ok(output.includes(`Flow: approval only (${label} ${number})`));
+    assert.ok(output.includes(`Approval lookup source: ${flag}`));
+    assert.deepEqual([...output.matchAll(/^Running (0[123])_/gm)].map(([, stage]) => stage), ['03']);
+  }
+});
+
+test('standalone approval rejects invalid or conflicting lookup flags', () => {
+  for (const [argv, error] of [
+    [['--approve', '--PerNum=101216', '--TransacNum=4324'], /Choose either --PerNum or --TransacNum/],
+    [['--approve', '--TransacNum=4324', '--PerNum=101216'], /Choose either --PerNum or --TransacNum/],
+    [['--approve', '--PerNum='], /--PerNum requires a value/],
+    [['--approve', '--PerNum=ABC'], /permit number must contain digits only/],
+    [['--approve', '--TransacNum='], /--TransacNum requires a value/],
+    [['initial', '--user=new', '--PerNum=101216'], /--PerNum requires --approve/],
+    [['--approve', '--PerNum=101216', '--repeat-each=2'], /requires one browser project and one repeat/],
+    [['--approve', '--PerNum=101216', '--retries=1'], /require --retries=0/],
+  ]) assert.match(listRunner(['--e2e', ...argv], {}, 1), error);
+});
+
+test('combined approval does not inherit the standalone permit lookup', () => {
+  const output = listRunner(['--e2e', 'alt', '--user=new', '--AppType=NCI', '--PerType=Res'], {
+    CONVEYANCE_APPROVAL_ONLY_PERMIT: '101216',
+  });
+  assert.match(output, /Conveyance - Approve Alteration/);
+  assert.doesNotMatch(output, /Approval lookup source:|approval only/);
 });
 
 test('alt plans new, existing-applicant, existing-conveyance, and apply-only combinations', () => {

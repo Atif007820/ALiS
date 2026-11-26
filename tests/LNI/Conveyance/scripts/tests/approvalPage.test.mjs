@@ -5,6 +5,7 @@ import { appConfig } from '../../config/runConfig.js';
 import { ApproveApplicationPage, chooseChecklistStatus } from '../../pages/ApproveApplicationPage.js';
 
 const application = { transactionNumber: '009341', entityName: 'CONV_APPROVAL_FIXTURE' };
+const permitNumber = '101216';
 const credentials = { loginName: 'fixture-admin', password: 'FixtureOnly@123' };
 let browser;
 
@@ -12,6 +13,7 @@ before(async () => {
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   appConfig.timeouts.expect = 1_500;
   appConfig.timeouts.action = 1_500;
+  appConfig.timeouts.workQueueSearch = 1_500;
 });
 
 after(async () => browser?.close());
@@ -26,7 +28,9 @@ function filterMarkup(id, label, initialValue, option) {
   </div>`;
 }
 
-function queueFixture(resultMode) {
+function queueFixture(resultMode, lookup) {
+  const permitLookup = lookup === 'permit';
+  const delayedSearch = ['slow-search', 'stuck-search'].includes(resultMode);
   return `<!doctype html><meta charset="utf-8"><title>Conveyance Work Queue fixture</title>
     <main id="loginForm">
       <label>Login Name <input id="loginName"></label>
@@ -46,13 +50,16 @@ function queueFixture(resultMode) {
         <div id="businessUnit" role="combobox" aria-label="Transport Networking Company" aria-haspopup="listbox">
           <input name="businessUnit" value="Transport Networking Company" readonly aria-label="Transport Networking Company">
         </div>
-        <div role="listbox" hidden><button type="button" role="option">Conveyance</button></div>
+        <div role="listbox" hidden><button type="button" ${delayedSearch ? 'title="Conveyance"' : 'role="option"'}>Conveyance</button></div>
       </div>
-      ${filterMarkup('assignedTo', 'Assigned To', 'ADMIN ADMIN', 'All')}
-      <label>Transaction # <input id="transaction"></label>
+      <div id="dependentFilters" ${delayedSearch ? 'hidden' : ''}>
+        ${filterMarkup('assignedTo', 'Assigned To', 'ADMIN ADMIN', 'All')}
+        <label>Transaction # <input id="transaction"></label>
+        ${permitLookup ? '<label>Permit # <input id="permit"></label>' : ''}
+      </div>
       <button id="search" type="button">Search</button>
       <a id="pull" href="#">Pull |</a>
-      <table><thead><tr><th>Select</th><th>Application ID</th><th><button>Conveyance #</button><span hidden>EqualsNot Equal</span></th><th>TXN # Filter</th><th>Entity Name</th><th>Application Type</th><th>Assigned Staff</th></tr></thead><tbody id="results"></tbody></table>
+      <table id="queueTable"><thead><tr><th>Select</th><th>Application ID</th><th><button>Conveyance #</button><span hidden>EqualsNot Equal</span></th><th>TXN # Filter</th><th>Entity Name</th><th>Application Type</th><th>Assigned Staff</th>${permitLookup ? '<th>Permit #</th>' : ''}</tr></thead><tbody id="results"></tbody></table>
     </main>
     <div id="pullDialog" role="dialog" aria-label="Confirm Pull" hidden><button id="confirmPull">OK</button></div>
     <div id="statusDialog" role="dialog" aria-label="modal" hidden>
@@ -67,9 +74,14 @@ function queueFixture(resultMode) {
     </div>
     <script>
       const app = ${JSON.stringify(application)};
+      const permitNumber = ${JSON.stringify(permitNumber)};
       const resultMode = ${JSON.stringify(resultMode)};
+      const delayedSearch = ${delayedSearch};
       const byId = (id) => document.getElementById(id);
-      const state = window.approvalState = { loggedIn: false, searches: [], pulls: [], opened: [], saved: [], closedDialogs: 0 };
+      const state = window.approvalState = {
+        loggedIn: false, searches: [], filterChanges: [], transactionChanges: [], pulls: [], opened: [], saved: [], closedDialogs: 0,
+      };
+      byId('transaction').addEventListener('input', event => { state.transactionChanges.push(event.target.value); });
       byId('login').onclick = (event) => {
         event.preventDefault();
         if (byId('loginName').value !== ${JSON.stringify(credentials.loginName)} || byId('password').value !== ${JSON.stringify(credentials.password)}) return;
@@ -84,25 +96,58 @@ function queueFixture(resultMode) {
         const valueControl = field.querySelector('input') || field;
         const list = field.nextElementSibling;
         field.onclick = () => { list.hidden = false; };
-        list.firstElementChild.onclick = () => { valueControl.value = list.firstElementChild.textContent; list.hidden = true; };
+        list.firstElementChild.onclick = () => {
+          valueControl.value = list.firstElementChild.textContent;
+          state.filterChanges.push([id, valueControl.value]);
+          list.hidden = true;
+          if (id === 'businessUnit') byId('dependentFilters').hidden = false;
+        };
       }
       byId('search').onclick = () => {
+        const permitField = byId('permit');
         const filters = [
           byId('businessUnit').querySelector('input').value,
           byId('assignedTo').value,
           byId('transaction').value,
+          ...(permitField ? [permitField.value] : []),
         ];
         state.searches.push(filters);
-        if (filters.join('|') !== ['Conveyance', 'All', app.transactionNumber].join('|')) return;
+        const expected = permitField ? ['Conveyance', 'All', '', permitNumber] : ['Conveyance', 'All', app.transactionNumber];
+        if (filters.join('|') !== expected.join('|')) return;
         // The same entity can have multiple transactions; its name alone is not safe.
         // The unrelated application repeats the exact requested number in its
         // Application ID column. Only the Transaction # column identifies a match.
-        const rows = [['unrelated', app.transactionNumber, app.transactionNumber + '0', app.entityName]];
-        if (resultMode !== 'prefix-only') rows.push(['target', 'APP-2026-0001', app.transactionNumber, app.entityName]);
-        if (resultMode === 'duplicate') rows.push(['duplicate', 'APP-2026-0002', app.transactionNumber, app.entityName]);
+        const targetRow = ['target', 'APP-2026-0001', app.transactionNumber, app.entityName];
+        const unrelated = ['unrelated', app.transactionNumber, app.transactionNumber + '0', app.entityName];
+        const rows = [];
+        if (permitField) {
+          rows.push(['hidden-result', 'APP-2026-0000', '009339', app.entityName]);
+          // The same permit appears on two transactions. Move the originally selected row after acceptance.
+          rows.push(...(state.saved.length ? [unrelated, targetRow] : [targetRow, unrelated]));
+        } else {
+          rows.push(unrelated);
+          if (resultMode !== 'prefix-only') rows.push(targetRow);
+          if (resultMode === 'duplicate') rows.push(['duplicate', 'APP-2026-0002', app.transactionNumber, app.entityName]);
+        }
+        if (delayedSearch) {
+          // Keep an actionable stale row on screen until the new result has arrived.
+          const staleNumber = permitField ? '009339' : app.transactionNumber;
+          byId('queueTable').setAttribute('aria-busy', 'true');
+          renderRows([['stale', 'APP-2026-STALE', staleNumber, 'STALE_APPLICANT']], permitField);
+          if (resultMode === 'stuck-search') return;
+          setTimeout(() => {
+            renderRows(rows, permitField);
+            byId('queueTable').setAttribute('aria-busy', 'false');
+          }, 500);
+        } else {
+          renderRows(rows, permitField);
+        }
+      };
+      function renderRows(rows, permitField) {
         byId('results').replaceChildren(...rows.map(([key, applicationId, number, name]) => {
           const row = document.createElement('tr');
           row.dataset.key = key;
+          row.hidden = key === 'hidden-result';
           row.innerHTML = '<td><input type="checkbox" aria-label="checkbox"></td><td></td><td></td><td></td><td><a href="#"></a></td><td></td><td></td>';
           row.cells[1].textContent = applicationId;
           row.cells[2].textContent = key === 'target' ? '001563' : '001562';
@@ -110,16 +155,24 @@ function queueFixture(resultMode) {
           row.cells[5].textContent = resultMode === 'alteration' ? 'Conveyance Alteration' : resultMode === 'variance' ? 'Conveyance Variance'
             : resultMode.startsWith('hoist') ? 'Construction Hoist' : resultMode === 'unknown-type'
               ? 'Unrecognized Application' : 'New Conveyance Installation';
-          row.cells[6].textContent = ['variance', 'alteration'].includes(resultMode) ? 'Fixture Admin' : '';
+          const alreadyAssigned = ['variance', 'alteration', 'permit-already-approved'].includes(resultMode);
+          row.cells[6].textContent = alreadyAssigned ? 'Fixture Admin' : '';
           row.querySelector('a').textContent = name;
           row.querySelector('a').onclick = (event) => {
             event.preventDefault();
             state.opened.push(key);
-            if (key === 'target' && (['variance', 'alteration'].includes(resultMode) || state.pulls.at(-1)?.join() === 'target')) openStatus();
+            if (key === 'target' && (alreadyAssigned || state.pulls.at(-1)?.join() === 'target')) openStatus();
           };
+          if (permitField) {
+            const permitLink = document.createElement('a');
+            permitLink.href = '#';
+            permitLink.textContent = permitNumber;
+            permitLink.onclick = (event) => { event.preventDefault(); state.opened.push('permit-link'); };
+            row.insertCell().append(permitLink);
+          }
           return row;
         }));
-      };
+      }
       byId('pull').onclick = (event) => { event.preventDefault(); byId('pullDialog').hidden = false; };
       byId('confirmPull').onclick = () => {
         const checked = [...byId('results').querySelectorAll('input:checked')];
@@ -172,7 +225,8 @@ function queueFixture(resultMode) {
         byId('checklist').innerHTML = items.map(([key, wording]) => '<tr><td>' + wording + '</td><td>' +
           '<select data-key="' + key + '" aria-label="item-status"><option value=""></option>' +
           '<option value="CPT">Complete</option><option value="WOF">Waived</option><option value="PEN" selected>Pending</option></select></td></tr>').join('');
-        byId('applicationStatus').value = state.saved.at(-1)?.status || (resultMode === 'hoist-technical' ? 'ACP' : 'PEN');
+        const initialStatus = resultMode === 'permit-already-approved' ? 'APR' : resultMode === 'hoist-technical' ? 'ACP' : 'PEN';
+        byId('applicationStatus').value = state.saved.at(-1)?.status || initialStatus;
         byId('statusDialog').hidden = false;
       }
       byId('saveStatus').onclick = () => {
@@ -187,13 +241,13 @@ function queueFixture(resultMode) {
     </script>`;
 }
 
-async function setup(t, resultMode = 'default', pickIndex) {
+async function setup(t, resultMode = 'default', pickIndex, lookup) {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   t.after(() => context.close());
   // Fulfill the configured login URL locally. No other request can reach the portal.
   await context.route('**/*', (route) => {
     if (route.request().isNavigationRequest() && new URL(route.request().url()).pathname.endsWith('/LoginCMS.aspx')) {
-      return route.fulfill({ contentType: 'text/html', body: queueFixture(resultMode) });
+      return route.fulfill({ contentType: 'text/html', body: queueFixture(resultMode, lookup) });
     }
     return route.abort();
   });
@@ -201,7 +255,7 @@ async function setup(t, resultMode = 'default', pickIndex) {
   page.setDefaultTimeout(2_000);
   page.setDefaultNavigationTimeout(10_000);
   const workflow = new ApproveApplicationPage(page, { pickIndex });
-  await workflow.openWorkQueue(credentials);
+  await workflow.openWorkQueue(credentials, { lookup });
   return { page, workflow };
 }
 
@@ -246,6 +300,77 @@ test('approval-only refuses an unknown application type before pulling a task', 
   await assert.rejects(() => workflow.approveExistingTransaction(application.transactionNumber), /Unsupported Work Queue application type/);
   const state = await page.evaluate(() => window.approvalState);
   assert.deepEqual(state.pulls, []);
+  assert.deepEqual(state.saved, []);
+});
+
+test('permit approval uses the first visible result and retains its exact transaction after acceptance', { timeout: 25_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'default', () => 0, 'permit');
+  const result = await workflow.approveExistingPermit(permitNumber);
+
+  assert.equal(result.permitNumber, permitNumber);
+  assert.equal(result.transactionNumber, application.transactionNumber);
+  assert.equal(result.appType, 'NCI');
+  assert.equal(result.entityName, application.entityName);
+  const state = await page.evaluate(() => window.approvalState);
+  assert.deepEqual(state.searches, [
+    ['Conveyance', 'All', '', permitNumber],
+    ['Conveyance', 'All', '', permitNumber],
+  ]);
+  assert.deepEqual(state.transactionChanges, []);
+  assert.deepEqual(state.pulls, [['target'], ['target']]);
+  assert.deepEqual(state.opened, ['target', 'target']);
+  assertChecklistSaves(state.saved, [
+    ['ACP', 'mandatory', 'review-a', 'review-b', 'ensure', 'additional'],
+    ['APR', 'mandatory', 'additional'],
+  ]);
+});
+
+test('permit approval skips Pull and Save for an assigned transaction already approved', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'permit-already-approved', () => 0, 'permit');
+  const result = await workflow.approveExistingPermit(permitNumber);
+
+  assert.equal(result.permitNumber, permitNumber);
+  assert.equal(result.transactionNumber, application.transactionNumber);
+  assert.equal(result.alreadyApproved, true);
+  const state = await page.evaluate(() => window.approvalState);
+  assert.deepEqual(state.searches, [['Conveyance', 'All', '', permitNumber]]);
+  assert.deepEqual(state.transactionChanges, []);
+  assert.deepEqual(state.pulls, []);
+  assert.deepEqual(state.opened, ['target']);
+  assert.deepEqual(state.saved, []);
+});
+
+for (const lookup of ['permit', 'transaction']) {
+  test(`${lookup} approval sets Work Queue filters before lookup and waits for fresh Search results`, { timeout: 25_000 }, async (t) => {
+    const { page, workflow } = await setup(t, 'slow-search', () => 0, lookup);
+    const result = lookup === 'permit'
+      ? await workflow.approveExistingPermit(permitNumber)
+      : await workflow.approveExistingTransaction(application.transactionNumber);
+
+    assert.equal(result.transactionNumber, application.transactionNumber);
+    assert.equal(result.entityName, application.entityName);
+    const state = await page.evaluate(() => window.approvalState);
+    assert.deepEqual(state.filterChanges, [['businessUnit', 'Conveyance'], ['assignedTo', 'All']]);
+    const expectedSearch = lookup === 'permit'
+      ? ['Conveyance', 'All', '', permitNumber]
+      : ['Conveyance', 'All', application.transactionNumber];
+    assert.deepEqual(state.searches, [expectedSearch, expectedSearch]);
+    if (lookup === 'permit') assert.deepEqual(state.transactionChanges, []);
+    assert.deepEqual(state.pulls, [['target'], ['target']]);
+    assert.deepEqual(state.opened, ['target', 'target']);
+    assert.deepEqual(state.saved.map(({ status }) => status), ['ACP', 'APR']);
+  });
+}
+
+test('permit approval stops without touching the stale row when Work Queue Search times out', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'stuck-search', () => 0, 'permit');
+  await assert.rejects(() => workflow.approveExistingPermit(permitNumber), /work queue|search|busy/i);
+
+  const state = await page.evaluate(() => window.approvalState);
+  assert.deepEqual(state.searches, [['Conveyance', 'All', '', permitNumber]]);
+  assert.deepEqual(state.transactionChanges, []);
+  assert.deepEqual(state.pulls, []);
+  assert.deepEqual(state.opened, []);
   assert.deepEqual(state.saved, []);
 });
 
@@ -304,25 +429,33 @@ test('CV approval checks the conveyance number before pull and uses its own chec
   ]);
 });
 
-test('waives the Building Official row only when the NCI commercial application says it is not applicable', { timeout: 15_000 }, async (t) => {
-  const { page, workflow } = await setup(t, 'building-official');
-  const target = { ...application, appType: 'NCI', perType: 'Comm', existingBuildingAnswer: 'N/A' };
+for (const [choice, status] of [[0, 'CPT'], [1, 'WOF']]) {
+  test(`standalone approval selects ${status} for Building Official in both NCI review stages`, { timeout: 15_000 }, async (t) => {
+    const { page, workflow } = await setup(t, 'building-official', () => choice);
+    const result = await workflow.approveExistingTransaction(application.transactionNumber);
+    assert.equal(result.appType, 'NCI');
+
+    const saves = await page.evaluate(() => window.approvalState.saved);
+    assert.deepEqual(saves.map(({ status: savedStatus, items }) => [savedStatus, items['building-official']]), [
+      ['ACP', status], ['APR', status],
+    ]);
+    assertChecklistSaves(saves, [
+      ['ACP', 'building-official', 'mandatory', 'review-a', 'review-b', 'ensure', 'additional'],
+      ['APR', 'building-official', 'mandatory', 'additional'],
+    ]);
+  });
+}
+
+test('combined NCI approval handles Building Official through the standard checklist selection', { timeout: 15_000 }, async (t) => {
+  const { page, workflow } = await setup(t, 'building-official', () => 0);
+  const target = { ...application, appType: 'NCI', perType: 'Comm', existingBuildingAnswer: 'Yes' };
   await workflow.acceptApplication(target);
   await workflow.approveApplication(target);
+
   const saves = await page.evaluate(() => window.approvalState.saved);
   assert.deepEqual(saves.map(({ status, items }) => [status, items['building-official']]), [
-    ['ACP', 'WOF'], ['APR', 'WOF'],
+    ['ACP', 'CPT'], ['APR', 'CPT'],
   ]);
-});
-
-test('does not guess Building Official approval status for an existing building or missing answer', { timeout: 15_000 }, async (t) => {
-  const { page, workflow } = await setup(t, 'building-official');
-  for (const existingBuildingAnswer of ['Yes', undefined]) {
-    const target = { ...application, appType: 'NCI', perType: 'Comm', existingBuildingAnswer };
-    await assert.rejects(() => workflow.acceptApplication(target), /unresolved approval checklist.*ACP.*Approval by Building Official.*Pending/);
-    assert.deepEqual(await page.evaluate(() => window.approvalState.saved), []);
-    await page.locator('#statusDialog').evaluate(dialog => { dialog.hidden = true; });
-  }
 });
 
 test('names an unrecognized pending checklist item and stops before saving approval', { timeout: 15_000 }, async (t) => {

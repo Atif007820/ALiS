@@ -12,6 +12,12 @@ export function normalizeTransactionNumber(value) {
   return transactionNumber;
 }
 
+export function normalizePermitNumber(value) {
+  const permitNumber = String(value ?? '').trim();
+  if (!/^\d+$/.test(permitNumber)) throw new Error('The Conveyance permit number must contain digits only.');
+  return permitNumber;
+}
+
 export function normalizeConveyanceNumber(value) {
   const number = String(value ?? '').trim();
   if (!/^\d+$/.test(number)) throw new Error('The captured Conveyance # must contain digits only.');

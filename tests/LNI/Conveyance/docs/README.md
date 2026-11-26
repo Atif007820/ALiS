@@ -17,25 +17,29 @@ From `tests/LNI/Conveyance`, run `npm ci` and `npm run setup` to install depende
 | `npm run conv initial -- --apply` | Submits an installation only with the standalone applicant. No registration or approval. |
 | `npm run conv var -- --apply` | Uses the configured applicant to submit and approve a new installation, then submit its variance. Stops before variance approval. |
 | `npm run conv alt -- --apply` | Uses the configured applicant to submit and approve a new installation, then submit its alteration. Stops before alteration approval. |
-| `npm run conv var -- --apply --ExistingConveyance` | Submits a variance using the number in `config/ConveyanceVarianceDetails.js`. |
-| `npm run conv alt -- --apply --ExistingConveyance` | Submits an alteration using the number in `config/ConveyanceAlterationDetails.js`. |
+| `npm run conv var -- --apply --ExistingConveyance` | Submits a variance using the number in `runInputs/ConveyanceVarianceDetails.js`. |
+| `npm run conv alt -- --apply --ExistingConveyance` | Submits an alteration using the number in `runInputs/ConveyanceAlterationDetails.js`. |
 | `npm run conv alt -- --apply --ConvNum=202866` | Submits an alteration for conveyance 202866. |
 | `npm run conv -- --regapply` | Registers a new applicant and submits an installation. Same as `initial --regapply`. |
 | `npm run conv initial -- --regapply` | Registers a new applicant and submits an installation without approval. |
 | `npm run conv var -- --regapply` | Registers a new applicant, submits and approves a new installation, then submits its variance. Stops before variance approval. |
 | `npm run conv alt -- --regapply` | Registers a new applicant, submits and approves a new installation, then submits its alteration. Stops before alteration approval. |
-| `npm run conv var -- --regapply --ExistingConveyance` | Registers a new applicant and submits a variance for the number saved in `config/ConveyanceVarianceDetails.js`. |
-| `npm run conv alt -- --regapply --ExistingConveyance` | Registers a new applicant and submits an alteration for the number saved in `config/ConveyanceAlterationDetails.js`. |
+| `npm run conv var -- --regapply --ExistingConveyance` | Registers a new applicant and submits a variance for the number saved in `runInputs/ConveyanceVarianceDetails.js`. |
+| `npm run conv alt -- --regapply --ExistingConveyance` | Registers a new applicant and submits an alteration for the number saved in `runInputs/ConveyanceAlterationDetails.js`. |
 | `npm run conv var -- --regapply --ConvNum=202866` | Registers a new applicant and submits a variance for conveyance 202866. |
 | `npm run conv alt -- --regapply --ConvNum=202866` | Registers a new applicant and submits an alteration for conveyance 202866. |
 | `npm run conv initial -- --user=existing` | Applies for and approves a new installation with the configured applicant. |
 | `npm run conv var -- --user=existing` | Creates and approves a new installation, then applies for and approves its variance with the configured applicant. |
 | `npm run conv alt -- --user=existing` | Creates and approves a new installation, then applies for and approves its alteration with the configured applicant. |
-| `npm run conv var -- --user=existing --ExistingConveyance` | Uses the configured applicant to submit and approve a variance for the conveyance saved in config. |
+| `npm run conv var -- --user=existing --ExistingConveyance` | Uses the configured applicant to submit and approve a variance for the conveyance saved in `runInputs/ConveyanceVarianceDetails.js`. |
 | `npm run conv alt -- --user=existing --ConvNum=202866` | Uses the configured applicant to submit and approve an alteration for conveyance 202866. |
-| `npm run conv -- --approve` | Approves the transaction saved in the config file. Does not register or apply. |
+| `npm run conv -- --approve` | Runs standalone approval using the saved lookup. The default is permit 101216. |
+| `npm run conv -- --approve --PerNum=101216` | Searches for the specified permit and approves its first visible Work Queue result. |
+| `npm run conv -- --approve --TransacNum=4324` | Searches for and approves the exact transaction. |
 
-Combined flows pass the new transaction number from Apply to Approve. An approval-only run finds the exact Work Queue row, reads its application type, and uses the matching review checklist.
+Combined flows pass the new transaction number from Apply to Approve. Standalone approval reads the selected Work Queue row's application type and uses the matching review checklist. Permit searches select the first visible result and track it by transaction number through approval. Transaction searches select the exact transaction number.
+
+Every approval selects **Conveyance** in the Work Queue Business Unit filter before waiting for the lookup input. Work Queue searches wait for results to finish loading. The result wait defaults to 150 seconds and can be adjusted with `workQueueSearchTimeoutMs` in `config/timeoutSettings.json`.
 
 Plain `var --apply` and `alt --apply` need applicant credentials for both submissions and approver credentials for the installation approval. The follow-up uses the conveyance number captured from the new installation.
 
@@ -47,7 +51,19 @@ Use `--AppType` and `--PerType` only when you are creating an installation. For 
 
 `--apply` and `--regapply` accept installation selectors when the command starts a new installation. For example, `npm run conv var -- --regapply --AppType=NCI --PerType=Comm --CommType=FC` registers an applicant, submits and approves a freight cable installation, then submits its variance. In `--apply` commands, a selector written without a value is treated as omitted. Use `--Key=` to clear its configured value.
 
-With `var` or `alt`, choose `--ExistingConveyance` for the number in the corresponding details file or `--ConvNum=<number>` for a number you supply. The runner rejects using both selectors together. With either selector, `--apply` submits the follow-up with the configured applicant and `--regapply` registers an applicant before submitting. Existing conveyance paths do not take installation selectors. `--TransacNum` overrides the saved transaction for `--approve`.
+With `var` or `alt`, choose `--ExistingConveyance` for the number in the corresponding details file or `--ConvNum=<number>` for a number you supply. The runner rejects using both selectors together. With either selector, `--apply` submits the follow-up with the configured applicant and `--regapply` registers an applicant before submitting. Existing conveyance paths do not take installation selectors.
+
+### Choose a standalone approval lookup
+
+Set `defaultApprovalLookup` in `config/runSettings.json` to `"permit"` to use `PermitNumber` in `runInputs/approvalPermitNumber.js`, or to `"transaction"` to use `TransactionNumber` in `runInputs/approvalTransacNumber.js`. Use `--PerNum` or `--TransacNum` with `--approve` to override the lookup for one run. The runner rejects using both.
+
+Use these previews to verify the lookup type and number before a live run.
+
+```powershell
+npm run conv -- --approve --list
+npm run conv -- --approve --PerNum=101216 --list
+npm run conv -- --approve --TransacNum=4324 --list
+```
 
 ### Skip randomized edits to conveyance information
 
@@ -82,14 +98,16 @@ Place Conveyance options after npm's `--` separator. Add `--list` to preview a w
 
 | File | What it controls |
 | --- | --- |
-| `config/runSettings.json` | Default type, permit, endorsement, browser, workers and timeouts. CLI selections take priority; blank choices allow a compatible random selection. |
+| `config/runSettings.json` | Default type, permit, endorsement, browser, workers, and standalone approval lookup. CLI selections take priority; blank installation choices allow a compatible random selection. |
+| `config/timeoutSettings.json` | Time limits in milliseconds for Playwright and Work Queue searches. |
 | `config/LoginCredentials.js` | The existing applicant login name and password. Both are needed to reuse an account. |
-| `config/ConveyanceVarianceDetails.js` | Saved variance `conveyanceNumber` used with `--ExistingConveyance`. |
-| `config/ConveyanceAlterationDetails.js` | Saved alteration `conveyanceNumber` used with `--ExistingConveyance`. |
-| `config/approvalTransacNumber.js` | Default `TransactionNumber` for `--approve` and separate approver login setup. |
+| `runInputs/ConveyanceVarianceDetails.js` | Saved variance `conveyanceNumber` used with `--ExistingConveyance`. |
+| `runInputs/ConveyanceAlterationDetails.js` | Saved alteration `conveyanceNumber` used with `--ExistingConveyance`. |
+| `runInputs/approvalPermitNumber.js` | Saved `PermitNumber` for standalone approval when the lookup is `"permit"`. |
+| `runInputs/approvalTransacNumber.js` | Saved `TransactionNumber` for standalone approval when the lookup is `"transaction"`. |
 | `config/editableData.js` | Form inputs, variance answers, alteration values and upload comments. Upload steps randomly choose from the files in `UploadFiles/`. |
 
-`--apply` and `--user=existing` use the configured applicant. An existing conveyance flow also uses the configured applicant unless you choose `--regapply`. Explicit `--LoginName` and `--LoginPassword` take priority over environment variables and config when using an existing applicant. Choose `--user=existing` for a full flow that also approves the final application. Use one browser project and one repeat for an existing conveyance or a specific approval transaction.
+`--apply` and `--user=existing` use the configured applicant. An existing conveyance flow also uses the configured applicant unless you choose `--regapply`. Explicit `--LoginName` and `--LoginPassword` take priority over environment variables and config when using an existing applicant. Choose `--user=existing` for a full flow that also approves the final application. Use one browser project and one repeat for an existing conveyance or standalone approval.
 
 ## Applications, parallel runs and reports
 

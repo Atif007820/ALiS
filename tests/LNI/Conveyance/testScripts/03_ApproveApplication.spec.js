@@ -1,24 +1,33 @@
 import { test, addApprovalAnnotations, getApplicationTarget, logger } from '../framework.js';
-import { loadApprovalCredentials } from '../config/approvalTransacNumber.js';
+import { loadApprovalCredentials } from '../config/runConfig.js';
 import { getFollowUpType } from '../config/applicationTypes.js';
-import { loadApprovalTransaction, normalizeTransactionNumber, saveApprovedInstallation } from '../utils/transactionStore.js';
+import {
+  loadApprovalTransaction, normalizePermitNumber, normalizeTransactionNumber, saveApprovedInstallation,
+} from '../utils/transactionStore.js';
 
 // Artifacts could include the approver login form and privileged application data.
 test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 
-const approvalOnly = process.env.CONVEYANCE_APPROVAL_ONLY_TRANSACTION;
+const approvalPermit = process.env.CONVEYANCE_APPROVAL_ONLY_PERMIT;
+const approvalTransaction = process.env.CONVEYANCE_APPROVAL_ONLY_TRANSACTION;
+const approvalOnly = approvalPermit || approvalTransaction;
 const followUp = !approvalOnly && getFollowUpType(getApplicationTarget().appType);
 const installationForFollowUp = process.env.CONVEYANCE_FOLLOW_UP_PHASE === 'installation';
 
 test(followUp ? `Conveyance - Approve ${followUp.label.slice('Conveyance '.length)}` : 'Conveyance - Approve Application', async ({ approvalPage }, testInfo) => {
   if (approvalOnly) {
-    const transactionNumber = normalizeTransactionNumber(approvalOnly);
-    testInfo.annotations.push({ type: 'Transaction Number', description: transactionNumber });
-    await test.step('Sign in as approver and open Conveyance Work Queue', () => approvalPage.openWorkQueue(loadApprovalCredentials()));
-    await test.step('Read and approve the exact Work Queue transaction', async () => {
-      const result = await approvalPage.approveExistingTransaction(transactionNumber);
+    const lookup = approvalPermit ? 'permit' : 'transaction';
+    const label = approvalPermit ? 'Permit' : 'Transaction';
+    const number = approvalPermit ? normalizePermitNumber(approvalPermit) : normalizeTransactionNumber(approvalTransaction);
+    testInfo.annotations.push({ type: `${label} Number`, description: number });
+    await test.step('Sign in as approver and open Conveyance Work Queue',
+      () => approvalPage.openWorkQueue(loadApprovalCredentials(), { lookup }));
+    await test.step(`Find and approve the Work Queue application by ${label} #`, async () => {
+      const result = approvalPermit ? await approvalPage.approveExistingPermit(number)
+        : await approvalPage.approveExistingTransaction(number);
       addApprovalAnnotations(testInfo, { ...result, status: 'Approved (APR)' });
-      logger.success(result.alreadyApproved ? `Transaction ${transactionNumber} is already approved` : `Approved transaction ${transactionNumber}`);
+      logger.success(result.alreadyApproved ? `Transaction ${result.transactionNumber} is already approved`
+        : `Approved transaction ${result.transactionNumber}`);
     });
     return;
   }

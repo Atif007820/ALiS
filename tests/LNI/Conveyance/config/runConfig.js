@@ -4,10 +4,10 @@ import { fileURLToPath } from 'url';
 import { buildApplicationTargets, getFollowUpType } from './applicationTypes.js';
 
 export const FRAMEWORK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const RUN_SETTINGS_PATH = join(FRAMEWORK_ROOT, 'config', 'runSettings.json');
 
 loadLocalEnv();
-export const runSettings = loadRunSettings();
+export const runSettings = loadSettings('runSettings.json');
+const timeoutSettings = loadSettings('timeoutSettings.json');
 
 function loadLocalEnv() {
   const envPath = join(FRAMEWORK_ROOT, '.env');
@@ -31,6 +31,13 @@ function loadLocalEnv() {
   }
 }
 
+export function loadApprovalCredentials({ env = process.env } = {}) {
+  const loginName = env.CONVEYANCE_APPROVER_LOGIN_NAME?.trim();
+  const password = env.CONVEYANCE_APPROVER_PASSWORD;
+  if (loginName && password?.trim()) return { loginName, password };
+  throw new Error('Approval requires CONVEYANCE_APPROVER_LOGIN_NAME and CONVEYANCE_APPROVER_PASSWORD in the Conveyance .env file or process configuration.');
+}
+
 function boolFromEnv(name, fallback) {
   const value = process.env[name];
   if (value === undefined) return fallback;
@@ -52,12 +59,12 @@ function intFromEnv(name, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function intFromEnvOrSettings(envName, settingName, fallback) {
+function intFromEnvOrSettings(envName, configuredValue, fallback) {
   if (process.env[envName] !== undefined) {
     return intFromEnv(envName, fallback);
   }
 
-  const value = Number.parseInt(runSettings[settingName] ?? '', 10);
+  const value = Number.parseInt(configuredValue ?? '', 10);
   return Number.isFinite(value) ? value : fallback;
 }
 
@@ -66,13 +73,14 @@ function intFromSettings(settingName, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function loadRunSettings() {
-  if (!existsSync(RUN_SETTINGS_PATH)) return {};
+function loadSettings(fileName) {
+  const settingsPath = join(FRAMEWORK_ROOT, 'config', fileName);
+  if (!existsSync(settingsPath)) return {};
 
   try {
-    return JSON.parse(readFileSync(RUN_SETTINGS_PATH, 'utf-8'));
+    return JSON.parse(readFileSync(settingsPath, 'utf-8'));
   } catch (error) {
-    throw new Error(`Invalid JSON in ${RUN_SETTINGS_PATH}: ${error.message}`);
+    throw new Error(`Invalid JSON in ${settingsPath}: ${error.message}`);
   }
 }
 
@@ -95,10 +103,10 @@ export function getApplicationTarget(env = process.env) {
 
 export const appConfig = {
   defaultProject: process.env.DEFAULT_PROJECT || runSettings.defaultProject || 'chromium',
-  workers: intFromEnvOrSettings('WORKERS', 'workers', runSettings.workers ?? 3),
-  parallelWorkers: intFromEnvOrSettings('PARALLEL_WORKERS', 'parallelWorkers', runSettings.parallelWorkers ?? 3),
-  registrationLoginRetryLimit: intFromEnvOrSettings('REGISTRATION_LOGIN_RETRY_LIMIT', 'registrationLoginRetryLimit', 8),
-  documentUploadRetryLimit: intFromEnvOrSettings('DOCUMENT_UPLOAD_RETRY_LIMIT', 'documentUploadRetryLimit', 3),
+  workers: intFromEnvOrSettings('WORKERS', runSettings.workers, runSettings.workers ?? 3),
+  parallelWorkers: intFromEnvOrSettings('PARALLEL_WORKERS', runSettings.parallelWorkers, runSettings.parallelWorkers ?? 3),
+  registrationLoginRetryLimit: intFromEnvOrSettings('REGISTRATION_LOGIN_RETRY_LIMIT', runSettings.registrationLoginRetryLimit, 8),
+  documentUploadRetryLimit: intFromEnvOrSettings('DOCUMENT_UPLOAD_RETRY_LIMIT', runSettings.documentUploadRetryLimit, 3),
   fullyParallel: boolFromEnvOrSettings('FULLY_PARALLEL', 'fullyParallel', false),
   headless: boolFromEnvOrSettings('HEADLESS', 'headless', !!process.env.CI),
   slowMo: intFromSettings('slowMo', 0),
@@ -111,14 +119,15 @@ export const appConfig = {
         height: intFromEnv('VIEWPORT_HEIGHT', runSettings.viewport?.height ?? 900),
       },
   timeouts: {
-    test: intFromEnvOrSettings('TEST_TIMEOUT_MS', 'testTimeoutMs', 10 * 60 * 1000),
-    expect: intFromEnvOrSettings('EXPECT_TIMEOUT_MS', 'expectTimeoutMs', 100 * 1000),
-    action: intFromEnvOrSettings('ACTION_TIMEOUT_MS', 'actionTimeoutMs', 30 * 1000),
-    navigation: intFromEnvOrSettings('NAVIGATION_TIMEOUT_MS', 'navigationTimeoutMs', 150 * 1000),
-    slowField: intFromEnvOrSettings('SLOW_FIELD_TIMEOUT_MS', 'slowFieldTimeoutMs', 30 * 1000),
+    test: intFromEnvOrSettings('TEST_TIMEOUT_MS', timeoutSettings.testTimeoutMs, 10 * 60 * 1000),
+    expect: intFromEnvOrSettings('EXPECT_TIMEOUT_MS', timeoutSettings.expectTimeoutMs, 100 * 1000),
+    workQueueSearch: intFromEnvOrSettings('WORK_QUEUE_SEARCH_TIMEOUT_MS', timeoutSettings.workQueueSearchTimeoutMs, 150 * 1000),
+    action: intFromEnvOrSettings('ACTION_TIMEOUT_MS', timeoutSettings.actionTimeoutMs, 30 * 1000),
+    navigation: intFromEnvOrSettings('NAVIGATION_TIMEOUT_MS', timeoutSettings.navigationTimeoutMs, 150 * 1000),
+    slowField: intFromEnvOrSettings('SLOW_FIELD_TIMEOUT_MS', timeoutSettings.slowFieldTimeoutMs, 30 * 1000),
     documentUploadResult: intFromEnvOrSettings(
       'DOCUMENT_UPLOAD_RESULT_TIMEOUT_MS',
-      'documentUploadResultTimeoutMs',
+      timeoutSettings.documentUploadResultTimeoutMs,
       90 * 1000,
     ),
   },

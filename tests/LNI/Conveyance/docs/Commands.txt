@@ -34,7 +34,13 @@ One action only:
   npm run conv var -- --apply --ConvNum=4749 --list
   npm run conv alt -- --apply --ConvNum=4749 --list
   npm run conv alt -- --apply --ConvNum=202866
+
+Standalone approval:
   npm run conv -- --approve
+  npm run conv -- --approve --list
+  npm run conv -- --approve --PerNum=101216
+  npm run conv -- --approve --PerNum=101216 --list
+  npm run conv -- --approve --TransacNum=4324
   npm run conv -- --approve --TransacNum=4324 --list
 
 Approve a new installation, then submit the follow-up:
@@ -101,7 +107,7 @@ HOW THE MODES WORK
 --user=new registers an applicant, applies for an installation, and approves it.
 var and alt then use the approved Conveyance # to apply for and approve the follow-up.
 --user=existing uses the configured applicant for the same application and approval stages.
-For var and alt, --ExistingConveyance selects the number saved in config.
+For var and alt, --ExistingConveyance selects the number saved in runInputs.
 --ConvNum selects the number you enter. The runner rejects using both selectors.
 Either selector starts an existing conveyance flow.
 initial --apply submits a new installation with the configured applicant.
@@ -120,8 +126,12 @@ installation, and approver credentials are needed for the installation approval.
 With var or alt --regapply, add --ExistingConveyance or --ConvNum to register
 and submit the follow-up directly. The new applicant must have access to the
 approved conveyance. Direct follow-ups do not accept installation selectors.
---approve finds the exact Work Queue transaction and uses its application checklist.
-It does not register or apply. --regsiter is a legacy alias for --register.
+--approve runs the approval script by itself. It defaults to the saved permit.
+A permit search selects the first visible row returned by the Work Queue
+and tracks it by its transaction number through approval. A transaction search
+selects the exact transaction. Both use the checklist for that application's type.
+--list displays the lookup type and number without searching or approving.
+--regsiter is a legacy alias for --register.
 
 ALTERATION FIELD CHANGES
 ------------------------
@@ -170,18 +180,26 @@ or ALL for ResType and CommType.
 Existing applicants: config/LoginCredentials.js or LOGIN_NAME / LOGIN_PASSWORD.
 CLI --LoginName and --LoginPassword take priority; prefer local config or env,
 because command-line passwords can be visible in logs and shell history.
-Configured conveyance numbers are in config/ConveyanceVarianceDetails.js for var
-and config/ConveyanceAlterationDetails.js for alt. Use --ExistingConveyance for
+Configured conveyance numbers are in runInputs/ConveyanceVarianceDetails.js for var
+and runInputs/ConveyanceAlterationDetails.js for alt. Use --ExistingConveyance for
 the configured number or --ConvNum for a number you supply. With --apply,
 either selector submits just the follow-up. With --regapply, either selector
 registers a new applicant and submits the follow-up on that conveyance.
-Approval only: config/approvalTransacNumber.js; --TransacNum overrides the file.
+Standalone approval uses defaultApprovalLookup in config/runSettings.json.
+Set it to "permit" for PermitNumber in runInputs/approvalPermitNumber.js
+or "transaction" for TransactionNumber in runInputs/approvalTransacNumber.js.
+The framework ships with "permit" and PermitNumber 101216. Use --PerNum or
+--TransacNum with --approve to override the saved lookup. Choose one override.
 Approver login: local .env, CONVEYANCE_APPROVER_LOGIN_NAME and CONVEYANCE_APPROVER_PASSWORD.
+All approval paths select Conveyance in the Work Queue Business Unit filter
+before waiting for the lookup input. The search result wait is 150 seconds.
+Set workQueueSearchTimeoutMs in config/timeoutSettings.json to adjust it.
 Forms and upload comments: config/editableData.js. Upload steps choose from
 the files in UploadFiles at runtime; place only supported files there.
 Approval checks randomly choose Complete or Waived Off when both are enabled.
 If only one is enabled it is used. Pending is never selected.
-TEST URL: config/URL.js. Browsers, parallel defaults and timeouts: config/runSettings.json.
+TEST URL: config/URL.js. Browsers and parallel defaults: config/runSettings.json.
+Timeouts: config/timeoutSettings.json.
 
 --parallel=N or --parallel N caps concurrent combinations. Each combination's
 stages run in order. --serial limits combinations to one. --workers sets

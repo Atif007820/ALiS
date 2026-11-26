@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { loadApprovalCredentials } from '../../config/approvalTransacNumber.js';
+import { loadApprovalCredentials } from '../../config/runConfig.js';
 
 test('reads the configured approver credential pair', () => {
   const env = {
