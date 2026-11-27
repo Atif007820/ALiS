@@ -6,6 +6,7 @@ allure-results/
 test-results/
 # Local verification archives contain generated reports and long trace paths.
 validation-runs/
+/tests/HMB.zip
 .agents/
 userData.json
 *.log

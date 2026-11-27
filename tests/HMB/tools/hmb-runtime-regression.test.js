@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -81,13 +82,96 @@ test('HMB keeps standalone Apply and Approval inputs separate from E2E handoffs'
       env: standaloneEnv,
       standaloneCredentials: { loginName: 'configured-user' },
     }),
-    /standaloneLoginCredentials.js must provide both loginName and password/,
+    /LoginCredentials.js must provide both loginName and password/,
   );
   assert.equal(
     loadApprovalTransaction(testInfo, { env: standaloneEnv, standaloneTransactionNumber }).transactionNumber,
     standaloneTransactionNumber,
   );
+  assert.equal(loadApprovalTransaction(testInfo, {
+    env: { ...standaloneEnv, HMB_TRANSACTION_NUMBER: '2733' },
+    standaloneTransactionNumber,
+  }).transactionNumber, '2733');
 });
+
+test('HMB CLI credential override replaces the complete applicant pair only for existing users', async () => {
+  const testInfo = { project: { name: 'chromium' } };
+  const standaloneCredentials = { loginName: 'configured-user', password: 'configured-password' };
+  const env = { HMB_APPLICANT_LOGIN_NAME: 'override-user', HMB_APPLICANT_PASSWORD: 'Override@123' };
+  assert.deepEqual(await loadLoginApplyUser(testInfo, { env, standaloneCredentials }), {
+    user: { loginName: 'override-user', password: 'Override@123' },
+    freshRegistration: false,
+  });
+  await assert.rejects(
+    () => loadLoginApplyUser(testInfo, { env: { ...env, HMB_APPLICANT_PASSWORD: undefined }, standaloneCredentials }),
+    /applicant override .* must provide both loginName and password/i,
+  );
+});
+
+test('HMB CLI --list previews each flow and credential source without executing tests', () => {
+  const register = '01_RegisterUser.spec.js';
+  const apply = '02_LoginApply.spec.js';
+  const approve = '03_ApproveApplication.spec.js';
+  const override = ['--LoginName=PreviewApplicant', '--password=Preview@123'];
+  const cases = [
+    [['--user=new'], [register, apply, approve], 'Approval: transaction from this run'],
+    [['--user=existing'], [apply, approve], 'Applicant: config/LoginCredentials.js'],
+    [['--user=existing', ...override], [apply, approve], 'Applicant: command-line override'],
+    [['--apply'], [apply], 'Applicant: config/LoginCredentials.js'],
+    [['--apply', ...override], [apply], 'Applicant: command-line override'],
+    [['--regapply'], [register, apply]],
+    [['--reg'], [register]],
+    [['--approve'], [approve], 'Approval: config/approvalTransacNumber.js'],
+    [['--approve', '--TransacNum=2733'], [approve], 'Approval: command-line transaction (2733)'],
+    [['--approve', '--transaction=12345'], [approve], 'Approval: command-line transaction'],
+    [['--spec=register'], [register]],
+  ];
+  for (const [args, specs, source] of cases) {
+    const result = previewHmb(args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.split(/\r?\n/).includes(`HMB serial flow: ${specs.join(' -> ')}`), result.stdout);
+    assert.deepEqual([...result.stdout.matchAll(/^\s+\[chromium\].*?(\d{2}_\w+\.spec\.js):/gm)]
+      .map(match => match[1]), specs);
+    if (source) assert.ok(result.stdout.includes(source), result.stdout);
+    assert.doesNotMatch(result.stdout + result.stderr, /PreviewApplicant|Preview@123/);
+  }
+});
+
+test('HMB CLI --list rejects ambiguous modes, wrong credentials and unsafe approval repeats', () => {
+  const cases = [
+    [['--user=unknown'], /--user must be new or existing/],
+    [['--user=existing', '--apply'], /Choose one HMB mode/],
+    [['--reg', '--approve'], /Choose one HMB mode/],
+    [['--regapply', '--spec=apply'], /Do not combine an HMB mode/],
+    [['--user=new', '--LoginName=PreviewApplicant', '--password=Preview@123'], /require --user=existing or --apply/],
+    [['--apply', '--LoginName=PreviewApplicant'], /must provide both loginName and password/],
+    [['--approve', '--repeat-each=2'], /must target one project and one repeat/],
+    [['--approve', '--TransacNum=ABC'], /must contain digits only/],
+    [['--approve', '--TransacNum='], /--TransacNum requires a transaction number/],
+    [['--approve', '--TransacNum=2733', '--transaction=12345'], /Provide only one transaction number override/],
+    [['--user=existing', '--TransacNum=2733'], /uses the transaction captured by Script 02/],
+    [['--apply', '--TransacNum=2733'], /only be used with standalone approval/],
+  ];
+  for (const [args, message] of cases) {
+    const result = previewHmb(args);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, message);
+    assert.doesNotMatch(result.stdout, /Listing tests/);
+  }
+});
+
+function previewHmb(args) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)));
+  const result = spawnSync(process.execPath, ['scripts/run-hmb.mjs', ...args, '--project=chromium', '--list'], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    env,
+    encoding: 'utf8',
+    timeout: 30_000,
+    windowsHide: true,
+  });
+  assert.ifError(result.error);
+  return result;
+}
 
 test('HMB retries initial navigation after a transient network change', async () => {
   let attempts = 0;

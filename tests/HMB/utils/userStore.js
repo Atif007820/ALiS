@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STANDALONE_LOGIN_CREDENTIALS } from '../config/standaloneLoginCredentials.js';
+import { LOGIN_CREDENTIALS } from '../config/LoginCredentials.js';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
 import { URLS } from '../config/urls.js';
 import { registrationEntityNames } from './entityNames.js';
@@ -42,11 +42,11 @@ export async function findRegisteredEntityNames(projectName, { loginName, entity
 
 export async function loadLoginApplyUser(testInfo, {
   env = process.env,
-  standaloneCredentials = STANDALONE_LOGIN_CREDENTIALS,
+  standaloneCredentials = LOGIN_CREDENTIALS,
 } = {}) {
   if (env.HMB_LOGIN_SOURCE !== 'current-run') {
     return {
-      user: requireCredentials(standaloneCredentials, 'config/standaloneLoginCredentials.js'),
+      user: resolveExistingApplicant({ env, configured: standaloneCredentials }),
       freshRegistration: false,
     };
   }
@@ -67,6 +67,15 @@ export async function loadLoginApplyUser(testInfo, {
     user: { ...record.user, ...requireCredentials(record.user, 'Script 01 registration handoff') },
     freshRegistration: true,
   };
+}
+
+export function resolveExistingApplicant({ env = process.env, configured = LOGIN_CREDENTIALS } = {}) {
+  const loginName = env.HMB_APPLICANT_LOGIN_NAME;
+  const password = env.HMB_APPLICANT_PASSWORD;
+  if (loginName !== undefined || password !== undefined) {
+    return requireCredentials({ loginName, password }, 'The applicant override (--LoginName and --password)');
+  }
+  return requireCredentials(configured, 'config/LoginCredentials.js');
 }
 
 function requireCredentials(credentials, source) {

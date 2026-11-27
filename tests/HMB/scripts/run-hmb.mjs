@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import runSettings from '../config/runSettings.json' with { type: 'json' };
+import { resolveExistingApplicant } from '../utils/userStore.js';
 
 const require = createRequire(import.meta.url);
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,6 +22,16 @@ const flowSpecs = [
   'tests/02_LoginApply.spec.js',
   'tests/03_ApproveApplication.spec.js',
 ];
+const userModes = {
+  new: flowSpecs,
+  existing: flowSpecs.slice(1),
+};
+const actionModes = {
+  '--reg': [flowSpecs[0]],
+  '--apply': [flowSpecs[1]],
+  '--regapply': flowSpecs.slice(0, 2),
+  '--approve': [flowSpecs[2]],
+};
 
 try {
   const options = parseArgs(process.argv.slice(2));
@@ -43,6 +54,17 @@ try {
     const transactionNumber = resolveTransactionNumber(options);
     validateRun(options, targets, transactionNumber);
 
+    console.log(`HMB serial flow: ${options.specs.map(spec => path.basename(spec)).join(' -> ')}`);
+    console.log(`Project(s): ${options.projects.join(', ')}; complete-flow repeats: ${options.repeat}`);
+    if (usesExistingApplicant(options.specs)) {
+      console.log(options.applicantEnv.HMB_APPLICANT_LOGIN_NAME === undefined
+        ? 'Applicant: config/LoginCredentials.js' : 'Applicant: command-line override');
+    }
+    if (options.specs.includes(flowSpecs[2])) {
+      console.log(options.specs.includes(flowSpecs[1]) ? 'Approval: transaction from this run'
+        : options.rawTransaction ? `Approval: command-line transaction (${transactionNumber})` : 'Approval: config/approvalTransacNumber.js');
+    }
+
     if (options.listOnly) {
       for (const project of options.projects) {
         const result = spawnSync(process.execPath, [
@@ -54,8 +76,6 @@ try {
     } else {
       const blobRoot = path.join(frameworkRoot, 'test-results', 'hmb-runs', randomUUID());
       const results = [];
-      console.log(`HMB serial flow: ${options.specs.join(' -> ')}`);
-      console.log(`Project(s): ${options.projects.join(', ')}; complete-flow repeats: ${options.repeat}`);
 
       for (const [targetIndex, target] of targets.entries()) {
         const result = await runTarget(target, targetIndex, options, transactionNumber, blobRoot);
@@ -96,6 +116,8 @@ async function runTarget(target, targetIndex, options, transactionNumber, blobRo
   const registrationPath = includesRegister && includesApply ? path.join(handoffDir, 'registration.json') : '';
   const targetEnv = {
     ...process.env,
+    HMB_APPLICANT_LOGIN_NAME: undefined,
+    HMB_APPLICANT_PASSWORD: undefined,
     HMB_FLOW_RUN_ID: target.runId,
     HMB_FLOW_REPEAT: String(target.repeatIndex),
     HMB_LOGIN_SOURCE: registrationPath ? 'current-run' : 'standalone',
@@ -126,7 +148,11 @@ async function runTarget(target, targetIndex, options, transactionNumber, blobRo
     console.log(`Running ${path.basename(spec)} for ${label}`);
     const result = await runChild(commandArgs, {
       cwd: frameworkRoot,
-      env: { ...targetEnv, PLAYWRIGHT_BLOB_OUTPUT_FILE: blobFile },
+      env: {
+        ...targetEnv,
+        ...(spec === flowSpecs[1] && options.applicantEnv),
+        PLAYWRIGHT_BLOB_OUTPUT_FILE: blobFile,
+      },
       stdio: 'inherit',
     });
     if (registrationPath && (spec === flowSpecs[1] || result.status !== 0)) {
@@ -155,6 +181,13 @@ function parseArgs(args) {
   let reportOnly = false;
   let serveReportOnly = false;
   let rawTransaction = '';
+  let requestedSpecs;
+  let loginName;
+  let password;
+  function selectMode(specs) {
+    if (requestedSpecs) throw new Error(`Choose one HMB mode: --user=new, --user=existing, or one of ${Object.keys(actionModes).join(', ')}.`);
+    requestedSpecs = specs;
+  }
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -162,6 +195,30 @@ function parseArgs(args) {
     if (arg === '--list') { listOnly = true; continue; }
     if (arg === '--report') { reportOnly = true; continue; }
     if (arg === '--serve-report') { serveReportOnly = true; continue; }
+
+    const equals = arg.indexOf('=');
+    const flag = (equals === -1 ? arg : arg.slice(0, equals)).toLowerCase();
+    if (Object.hasOwn(actionModes, flag) && equals === -1) {
+      selectMode(actionModes[flag]);
+      continue;
+    }
+    if (flag === '--user' || flag === '--loginname' || flag === '--password') {
+      const value = equals === -1 ? args[index + 1] : arg.slice(equals + 1);
+      if (!value?.trim() || (equals === -1 && value.startsWith('--'))) {
+        throw new Error(`${flag} requires a value.`);
+      }
+      if (equals === -1) index += 1;
+      if (flag === '--user') {
+        const user = value.trim().toLowerCase();
+        if (!Object.hasOwn(userModes, user)) throw new Error('--user must be new or existing.');
+        selectMode(userModes[user]);
+      } else if (flag === '--loginname') {
+        loginName = value;
+      } else {
+        password = value;
+      }
+      continue;
+    }
 
     if (arg === '--spec' || arg === '--script') {
       addSpec(selectedSpecs, args[++index]);
@@ -191,12 +248,12 @@ function parseArgs(args) {
       repeat = parsePositiveInt(arg.slice('--repeat-each='.length), '--repeat-each');
       continue;
     }
-    if (arg === '--transaction' || arg === '--transaction-number') {
-      rawTransaction = args[++index] ?? '';
-      continue;
-    }
-    if (arg.startsWith('--transaction=') || arg.startsWith('--transaction-number=')) {
-      rawTransaction = arg.slice(arg.indexOf('=') + 1);
+    if (['--transacnum', '--transaction', '--transaction-number'].includes(flag)) {
+      const value = equals === -1 ? args[index + 1] : arg.slice(equals + 1);
+      if (!value?.trim() || value.startsWith('--')) throw new Error('--TransacNum requires a transaction number.');
+      if (rawTransaction) throw new Error('Provide only one transaction number override.');
+      if (equals === -1) index += 1;
+      rawTransaction = value;
       continue;
     }
 
@@ -223,7 +280,11 @@ function parseArgs(args) {
   if (isTruthy(process.env.npm_config_headed) && !playwrightArgs.includes('--headed')) playwrightArgs.push('--headed');
   if (isTruthy(process.env.npm_config_list)) listOnly = true;
 
-  const specs = selectedSpecs.length ? orderSpecs(selectedSpecs) : flowSpecs;
+  if (requestedSpecs && selectedSpecs.length) throw new Error('Do not combine an HMB mode with --spec or --script.');
+  if ((reportOnly || serveReportOnly) && (requestedSpecs || loginName !== undefined || password !== undefined || rawTransaction)) {
+    throw new Error('Report commands do not accept HMB modes, applicant credentials, or transaction numbers.');
+  }
+  const specs = requestedSpecs ?? (selectedSpecs.length ? orderSpecs(selectedSpecs) : flowSpecs);
   const projectTargets = [...new Set(projects.length ? projects.map(normalizeProject) : [runSettings.defaultProject || 'chromium'])];
   for (const project of projectTargets) {
     if (!knownProjects.includes(project)) throw new Error(`Unknown HMB project "${project}". Use ${knownProjects.join(', ')}.`);
@@ -236,6 +297,10 @@ function parseArgs(args) {
     reportOnly,
     serveReport: serveReportOnly,
     rawTransaction,
+    applicantEnv: {
+      HMB_APPLICANT_LOGIN_NAME: loginName,
+      HMB_APPLICANT_PASSWORD: password,
+    },
     playwrightArgs,
   };
 }
@@ -289,16 +354,29 @@ function resolveTransactionNumber(options) {
   return raw ? normalizeTransactionNumber(raw) : '';
 }
 
+function usesExistingApplicant(specs) {
+  return specs.includes(flowSpecs[1]) && !specs.includes(flowSpecs[0]);
+}
+
 function validateRun(options, targets, transactionNumber) {
-  if (options.listOnly) return;
   const includesApproval = options.specs.includes(flowSpecs[2]);
   const includesApply = options.specs.includes(flowSpecs[1]);
-  if (transactionNumber && !includesApproval) throw new Error('A transaction number can only be used with --spec=approve.');
+  const existingApplicant = usesExistingApplicant(options.specs);
+  const hasLoginOverride = Object.values(options.applicantEnv).some(value => value !== undefined);
+  if (hasLoginOverride && !existingApplicant) {
+    throw new Error('Applicant overrides (--LoginName and --password) require --user=existing or --apply.');
+  }
+  if (hasLoginOverride || (existingApplicant && !options.listOnly)) {
+    resolveExistingApplicant({ env: options.applicantEnv });
+  }
+  if (transactionNumber && !includesApproval) throw new Error('A transaction number can only be used with standalone approval (--approve).');
   if (includesApproval && includesApply && transactionNumber) {
     throw new Error('Register/Login-Apply/Approve uses the transaction captured by Script 02; omit the standalone transaction number.');
   }
   if (includesApproval && !includesApply) {
-    if (!transactionNumber) throw new Error('Standalone approval requires TransactionNumber in config/approvalTransacNumber.js.');
+    if (!options.listOnly && !transactionNumber) {
+      throw new Error('Standalone approval requires TransactionNumber in config/approvalTransacNumber.js.');
+    }
     if (targets.length !== 1) throw new Error('Standalone approval must target one project and one repeat to prevent duplicate approvals.');
   }
   if (includesApply || includesApproval) {

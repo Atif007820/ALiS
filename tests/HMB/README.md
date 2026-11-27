@@ -11,18 +11,28 @@ The serial end-to-end flow runs three separate tests in this order:
 
 ## Main Commands
 
-Run commands from the `tests/HMB` framework folder.
+Run setup and framework shortcuts from `tests/HMB`. The `npm run hmb` command
+also works from the workspace root.
 
 ```bash
 npm install
-npm run hmb
+npm run browsers:install
 ```
 
-Before a multi-browser run, install the browser revisions required by this
-framework's installed Playwright version:
+| Command | What runs |
+| --- | --- |
+| `npm run hmb -- --user=new` | Register, apply, approve. This is also the default for `npm run hmb`. |
+| `npm run hmb -- --user=existing` | Sign in with an existing applicant, apply, then approve the new transaction. |
+| `npm run hmb -- --apply` | Sign in with an existing applicant and apply. No approval. |
+| `npm run hmb -- --regapply` | Register and apply with the new account. No approval. |
+| `npm run hmb -- --approve` | Approve the transaction set in `config/approvalTransacNumber.js`. |
+| `npm run hmb -- --reg` | Register only. No application or approval. |
 
-```bash
-npm run browsers:install
+Append `--list` to preview the selected scripts without signing in, submitting
+or approving. A preview does not verify whether credentials work in ALiS.
+
+```powershell
+npm run hmb -- --user=existing --list
 ```
 
 Run the local HMB runtime regression checks (no application account is created):
@@ -52,24 +62,20 @@ section. Form helpers check loading overlays together and use Playwright's
 built-in field readiness checks. ASP.NET postbacks and page transitions are
 still awaited, with no fixed pause after each action.
 
-Register only:
+## Applicant and Approver Inputs
 
-```bash
-npm run test -- --spec=register --headed
-npm run test -- --spec=01_RegisterUser.spec.js
+Set both `loginName` and `password` in `config/LoginCredentials.js` for
+`--user=existing` and `--apply`. To override them for one run, pass both flags:
+
+```powershell
+npm run hmb -- --user=existing --LoginName=ExampleUser --password='ExamplePassword' --list
+npm run hmb -- --apply --LoginName=ExampleUser --password='ExamplePassword' --list
 ```
 
-Standalone Login/Apply:
-
-```bash
-npm run test -- --spec=apply --headed
-npm run test -- --spec=02_LoginApply.spec.js --project=chromium
-```
-
-For standalone Login/Apply, enter both `loginName` and `password` in
-`config/standaloneLoginCredentials.js`. To use an account from a standalone
-registration, copy both values from the registration's project-specific user
-file into that config.
+Remove `--list` to execute. Prefer the config file for real passwords, since
+npm and your shell may echo or retain command arguments. Commands that
+register always use the new account. To reuse a previously registered account,
+copy both values from the project-specific user file into the config.
 
 When the portal omits a legal or DBA name, the report uses the matching
 registration data. Standalone Login/Apply matches by login name, and standalone
@@ -79,12 +85,15 @@ Standalone approval for an already-submitted application:
 
 1. Set `TransactionNumber` in `config/approvalTransacNumber.js`.
 2. Approver credentials are configured in `config/approvalTransacNumber.js`.
-3. Run `npm run test -- --spec=approve --headed` or
-   `npm run test -- --spec=03_ApproveApplication.spec.js --project=chromium`.
+3. Run `npm run hmb -- --approve`. Add `--headed` to show the browser.
 
-The standalone approval command accepts `--transaction=<digits>` as an optional
-one-run override when you do not want to edit the config file. It never reuses a
-transaction from an older E2E run.
+Use `npm run hmb -- --approve --TransacNum=2733 --list` to preview a one-run
+override without changing `approvalTransacNumber.js`. Remove `--list` to run
+approval. The legacy `--transaction` and `--transaction-number` flags still work.
+Flows that apply and approve together always use the transaction from that run.
+
+Existing `hmb:*` shortcuts and `npm run test -- --spec=...` commands still work.
+Use one mode at a time; do not combine a mode flag with `--spec`.
 
 ## Editable Files
 
@@ -92,7 +101,7 @@ transaction from an older E2E run.
 - `config/runSettings.json` - headless/headed defaults, timeouts, report behavior.
 - Payment recovery controls: `paymentReadyTimeoutMs`, `paymentApiRetries`, `paymentRetryDelayMs`, `paymentRetryMaxDelayMs`, and `paymentRetryJitterMs` in `config/runSettings.json`. Transient API errors use bounded exponential backoff, add jitter to spread concurrent retries, and honor `Retry-After` when provided. The default is 8 retries (9 total attempts), with a hard cap of 10 retries.
 - Navigation recovery controls: `navigationRetries`, `navigationRetryDelayMs`, and `navigationRetryMaxDelayMs` in `config/runSettings.json` retry transient browser network errors with capped exponential backoff.
-- `config/standaloneLoginCredentials.js` - required credentials for standalone Login/Apply.
+- `config/LoginCredentials.js` - existing applicant credentials (`LOGIN_CREDENTIALS`).
 - `config/approvalTransacNumber.js` - standalone approval transaction number and approver credential loader.
 - `config/editableData.js` - hardcoded HMB form data.
 - `fixtures/hmb.fixture.js` - Playwright fixtures for page objects.

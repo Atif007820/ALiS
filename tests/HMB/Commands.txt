@@ -12,58 +12,60 @@ npm install
 npm run browsers:install
 
 
-List Tests
-----------
-npm run hmb:list
+Main Commands
+-------------
+Run npm run hmb from the workspace root or the HMB framework folder.
 
+Register -> Apply -> Approve (also the default for npm run hmb):
+  npm run hmb -- --user=new
+Existing applicant -> Apply -> Approve:
+  npm run hmb -- --user=existing
+Existing applicant -> Apply only:
+  npm run hmb -- --apply
+Register -> Apply only:
+  npm run hmb -- --regapply
+Approve an already submitted transaction:
+  npm run hmb -- --approve
+Register only:
+  npm run hmb -- --reg
 
-Run Register Only
------------------
-npm run test -- --spec=register --headed
-npm run test -- --spec=01_RegisterUser.spec.js
+Account and Transaction Inputs
+------------------------------
+Use config\LoginCredentials.js for an existing applicant, or supply both
+flags after npm's -- separator to override that file for one run:
+  npm run hmb -- --user=existing --LoginName=ExampleUser --password='ExamplePassword' --list
+  npm run hmb -- --apply --LoginName=ExampleUser --password='ExamplePassword' --list
+Do not combine flow modes. Registering flows always use the newly created
+account. Prefer the config file for real passwords, since npm and your shell
+may echo or retain arguments.
 
+With --approve, set TransactionNumber in config\approvalTransacNumber.js.
+Approver credentials are separate and come from the same approval config.
+To override the transaction for one run (example; remove --list to approve):
+  npm run hmb -- --approve --TransacNum=2733 --list
+The legacy --transaction and --transaction-number flags still work.
+When a flow includes both Apply and Approve, only the transaction captured
+in that run is approved. Account and transaction handoffs are scoped to the
+current run, project, and repeat.
 
-Run Login Apply Only
---------------------
-npm run test -- --spec=apply --headed
-npm run test -- --spec=02_LoginApply.spec.js --project=chromium
+Preview and Reports
+-------------------
+Append --list to any mode to check command selection without logging in or
+submitting anything:
+  npm run hmb -- --regapply --list
+  npm run hmb:list
+  npm run report
 
-Set both loginName and password in:
-  config\standaloneLoginCredentials.js
-To use an account from a standalone registration, copy both credentials from
-the project-specific user file, for example testData\lastRegisteredHmbUser.chromium.json.
-
-
-Run Approval Only for an Already Submitted Application
-------------------------------------------------------
-Set the exact transaction number in:
-  config\approvalTransacNumber.js -> TransactionNumber
-
-Approver credentials are configured in:
-  config\approvalTransacNumber.js
-
-Run Script 3 by itself:
-  npm run test -- --spec=approve --headed
-  npm run test -- --spec=03_ApproveApplication.spec.js --project=chromium
-
-
-Run Full E2E
-------------
-npm run hmb
-
-Show the browser during the full flow:
-npm run hmb -- --headed
-
-The default is headless=true in config\runSettings.json.
-
-This runs Register, Login/Apply, and Approve as separate Playwright scripts in
-strict serial order for each selected browser project:
-  01_RegisterUser.spec.js -> 02_LoginApply.spec.js -> 03_ApproveApplication.spec.js
-
-Login/Apply uses the account created by Register for the current run. Approve
-uses the transaction number captured and printed by Login/Apply. Both handoffs
-are scoped to the current run, browser, and repeat. A missing or mismatched
-handoff stops the flow.
+Legacy shortcuts (from the HMB framework folder):
+  npm run hmb:e2e
+  npm run hmb:headed
+  npm run hmb:e2e:headed
+  npm run hmb:register
+  npm run hmb:apply
+  npm run hmb:approve
+  npm run test -- --spec=register
+  npm run test -- --spec=apply
+  npm run test -- --spec=approve
 
 Execution Time
 --------------
@@ -106,7 +108,7 @@ Config Files
 URLs and run behavior:
   config\urls.js
   config\runSettings.json
-  config\standaloneLoginCredentials.js
+  config\LoginCredentials.js
   config\approvalTransacNumber.js
 
 Payment recovery:

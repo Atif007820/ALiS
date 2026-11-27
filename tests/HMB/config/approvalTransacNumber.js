@@ -1,5 +1,5 @@
 /** Standalone Script 03 reads this exact HMB transaction number. */
-export const TransactionNumber = '6504';
+export const TransactionNumber = '6520';
 
 const APPROVER_CREDENTIALS = Object.freeze({
   loginName: 'admin',
